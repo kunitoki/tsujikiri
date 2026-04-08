@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tsujikiri"
+description = "辻斬り Generic C++ Bindings Generator"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "kunitoki", email = "kunitoki@gmail.com" },
+]
+dependencies = [
+  "libclang==16.0.6",
+  "pyyaml>=6.0",
+]
+license = "MIT"
+classifiers = [
+  "Topic :: Utilities",
+  "Programming Language :: Python :: 3 :: Only",
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/kunitoki/tsujikiri"
+
+[project.scripts]
+tsujikiri = "tsujikiri.__main__:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tsujikiri*"]
+
+[tool.setuptools.package-data]
+tsujikiri = ["formats/*.yml"]
+
+[tool.setuptools.dynamic]
+version = { attr = "tsujikiri.__version__" }
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0",
+  "pytest-cov>=5.0",
+  "cmake>=3.20",
+  "zig-bin>=0.15.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"

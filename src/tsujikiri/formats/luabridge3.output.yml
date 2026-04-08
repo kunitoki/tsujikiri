@@ -1,0 +1,94 @@
+format_name: luabridge3
+format_version: "1.0"
+description: "LuaBridge3 C++ to Lua binding templates"
+
+# Types that force a method/function/field to be commented out
+unsupported_types:
+  - CFStringRef
+  - OSType
+
+# Optional C++ → target-language type remapping (informational; apply via add_type_mapping transform)
+type_mappings: {}
+
+templates:
+  line_comment: "//"
+
+  prologue: |
+    // DO NOT EDIT — Auto-generated LuaBridge3 bindings for {module_name} by tsujikiri
+    #include <LuaBridge/LuaBridge.h>
+
+    void register_{module_name}(lua_State* L)
+    {{
+      luabridge::getGlobalNamespace(L)
+
+  epilogue: |
+    ;
+    }}
+
+  module_name: "{module_name}"
+
+  # ---- Class ----
+  class_begin: |
+        .beginClass<{qualified_class_name}>("{class_name}")
+  class_derived_begin: |
+        .deriveClass<{qualified_class_name}, {class_base_name}>("{class_name}")
+  class_end: |
+        .endClass()
+
+  class_methods_begin: ""
+  class_methods_end: ""
+
+  # ---- Regular methods ----
+  class_method_begin: |
+          {method_comment}.addFunction("{method_name}", &{qualified_class_name}::{method_spelling})
+  class_method_end: ""
+
+  class_overloaded_method_begin: |
+          {method_comment}.addFunction("{method_name}", static_cast<{method_return} ({qualified_class_name}::*)({method_args}){method_is_const}>(&{qualified_class_name}::{method_spelling}))
+  class_overloaded_method_end: ""
+
+  # ---- Static methods ----
+  class_static_method_begin: |
+          {method_comment}.addStaticFunction("{method_name}", &{qualified_class_name}::{method_spelling})
+  class_static_method_end: ""
+
+  class_overloaded_static_method_begin: |
+          {method_comment}.addStaticFunction("{method_name}", static_cast<{method_return} (*)({method_args})>(&{qualified_class_name}::{method_spelling}))
+  class_overloaded_static_method_end: ""
+
+  class_overload_const_definition: " const"
+
+  # ---- Constructors ----
+  class_constructor_begin: |
+          {method_comment}.addConstructor<void (*)({constructor_args})>()
+  class_constructor_end: ""
+
+  class_overloaded_constructor_begin: |
+          {method_comment}.addConstructor<void (*)({constructor_args})>()
+  class_overloaded_constructor_end: ""
+
+  # ---- Fields / Properties ----
+  class_field_begin: |
+          {field_comment}.addProperty("{field_name}", &{qualified_class_name}::{field_name})
+  class_field_end: ""
+
+  class_readonly_field_begin: |
+          {field_comment}.addProperty("{field_name}", &{qualified_class_name}::{field_name}, nullptr)
+  class_readonly_field_end: ""
+
+  # ---- Free functions ----
+  function_begin: |
+        {function_comment}.addFunction("{function_name}", &{function_spelling})
+  function_end: ""
+
+  function_overloaded_begin: |
+        {function_comment}.addFunction("{function_name}", static_cast<{function_return} (*)({function_args})>(&{function_spelling}))
+  function_overloaded_end: ""
+
+  # ---- Enums ----
+  enum_begin: |
+        .beginNamespace("{enum_name}")
+  enum_end: |
+        .endNamespace()
+  enum_value: |
+          .addProperty("{value_name}", +[] {{ return {qualified_enum_name}::{value_name}; }})

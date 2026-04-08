@@ -1,0 +1,51 @@
+source:
+  path: "tests/test_configurations/simple.hpp"
+  parse_args: ["-std=c++17"]
+  include_paths: []
+
+filters:
+  namespaces: ["myns"]
+  sources:
+    exclude_patterns: ["*.mm"]
+  classes:
+    whitelist: []
+    blacklist:
+      - pattern: "Private"
+      - pattern: ".*Impl$"
+        is_regex: true
+    internal:
+      - pattern: "BaseHelper"
+  methods:
+    global_blacklist:
+      - pattern: "operator.*"
+        is_regex: true
+    per_class:
+      Foo:
+        - pattern: "internalReset"
+  fields:
+    global_blacklist:
+      - pattern: "pimpl_"
+  constructors:
+    include: true
+    signatures: []
+  functions:
+    whitelist: []
+    blacklist:
+      - pattern: "detail_helper"
+  enums:
+    whitelist: []
+    blacklist:
+      - pattern: "InternalState"
+
+transforms:
+  - stage: rename_method
+    class: Foo
+    from: getValue
+    to: get
+  - stage: suppress_class
+    pattern: "Unused"
+
+tweaks:
+  Foo:
+    rename: "FooExported"
+    skip_methods: ["legacyApi"]

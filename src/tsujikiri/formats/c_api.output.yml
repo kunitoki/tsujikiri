@@ -1,0 +1,103 @@
+format_name: c_api
+format_version: "1.0"
+description: "Plain C API wrapper declaration templates"
+
+unsupported_types:
+  - CFStringRef
+  - OSType
+
+type_mappings: {}
+
+templates:
+  line_comment: "//"
+
+  prologue: |
+    /* DO NOT EDIT — Auto-generated C Api bindings for {module_name} by tsujikiri */
+    #pragma once
+    #ifdef __cplusplus
+    extern "C" {{
+    #endif
+
+  epilogue: |
+    #ifdef __cplusplus
+    }}
+    #endif
+
+  module_name: "{module_name}"
+
+  # ---- Class ----
+  # Emit an opaque handle typedef and lifecycle declarations
+  class_begin: |
+
+    /* === {class_name} === */
+    typedef struct {class_name}Opaque* {class_name}_t;
+    {class_name}_t {class_name}_create(void);
+    void {class_name}_destroy({class_name}_t self);
+
+  class_derived_begin: |
+
+    /* === {class_name} (extends {class_base_name}) === */
+    typedef {class_base_name}_t {class_name}_t;
+
+  class_end: ""
+
+  class_methods_begin: ""
+  class_methods_end: ""
+
+  # ---- Regular methods ----
+  class_method_begin: |
+    {method_comment}{method_return} {class_name}_{method_name}({class_name}_t self{method_args_sep});
+  class_method_end: ""
+
+  class_overloaded_method_begin: |
+    {method_comment}{method_return} {class_name}_{method_name}({class_name}_t self{method_args_sep});
+  class_overloaded_method_end: ""
+
+  # ---- Static methods ----
+  class_static_method_begin: |
+    {method_comment}{method_return} {class_name}_{method_name}({method_args});
+  class_static_method_end: ""
+
+  class_overloaded_static_method_begin: |
+    {method_comment}{method_return} {class_name}_{method_name}({method_args});
+  class_overloaded_static_method_end: ""
+
+  class_overload_const_definition: ""
+
+  # ---- Constructors ----
+  class_constructor_begin: |
+    {class_name}_t {class_name}_create_with({constructor_args});
+  class_constructor_end: ""
+
+  class_overloaded_constructor_begin: |
+    {class_name}_t {class_name}_create_with({constructor_args});
+  class_overloaded_constructor_end: ""
+
+  # ---- Fields / Properties ----
+  class_field_begin: |
+    {field_comment}{field_type} {class_name}_get_{field_name}({class_name}_t self);
+    {field_comment}void {class_name}_set_{field_name}({class_name}_t self, {field_type} value);
+  class_field_end: ""
+
+  class_readonly_field_begin: |
+    {field_comment}{field_type} {class_name}_get_{field_name}({class_name}_t self);
+  class_readonly_field_end: ""
+
+  # ---- Free functions ----
+  function_begin: |
+    {function_comment}{function_return} {function_name}({function_args});
+  function_end: ""
+
+  function_overloaded_begin: |
+    {function_comment}{function_return} {function_name}({function_args});
+  function_overloaded_end: ""
+
+  # ---- Enums ----
+  enum_begin: |
+
+    /* === {enum_name} === */
+    typedef enum {{
+  enum_end: |
+    }} {enum_name};
+  enum_value: |
+        {value_name},
