@@ -22,7 +22,8 @@ if(NOT lua_POPULATED)
     file(GLOB LUA_SOURCES "${lua_SOURCE_DIR}/*.c")
     list(REMOVE_ITEM LUA_SOURCES
         "${lua_SOURCE_DIR}/lua.c"
-        "${lua_SOURCE_DIR}/luac.c")
+        "${lua_SOURCE_DIR}/luac.c"
+        "${lua_SOURCE_DIR}/onelua.c")
 
     add_library(lua_static STATIC ${LUA_SOURCES})
     target_include_directories(lua_static PUBLIC "${lua_SOURCE_DIR}")
