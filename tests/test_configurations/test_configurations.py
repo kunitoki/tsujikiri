@@ -121,6 +121,18 @@ class TestOutputConfigLoading:
         fp = FilterPattern(pattern=".*Impl$", is_regex=True)
         assert fp.is_regex
 
+    def test_plain_string_pattern_in_yaml(self, tmp_path):
+        """_parse_filter_pattern handles plain string entries (not dicts)."""
+        yml = tmp_path / "plain.input.yml"
+        yml.write_text(
+            "source:\n  path: 'dummy.hpp'\n"
+            "filters:\n  classes:\n    blacklist:\n      - 'MyClass'\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        names = [p.pattern for p in cfg.filters.classes.blacklist]
+        assert "MyClass" in names
+
 
 class TestMultiSourceLoading:
     @pytest.fixture(scope="class")

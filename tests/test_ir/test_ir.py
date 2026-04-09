@@ -14,6 +14,7 @@ from tsujikiri.ir import (
     IRMethod,
     IRModule,
     IRParameter,
+    merge_modules,
 )
 
 
@@ -166,3 +167,36 @@ class TestIRModule:
         assert len(cls.enums) == 1
         assert len(mod.enums) == 1
         assert len(mod.functions) == 1
+
+
+class TestMergeModules:
+    def test_single_module_returned_directly(self):
+        m = IRModule(name="a")
+        assert merge_modules([m]) is m
+
+    def test_merges_multiple_modules(self):
+        cls_a = IRClass(name="A", qualified_name="ns::A", namespace="ns")
+        cls_b = IRClass(name="B", qualified_name="ns::B", namespace="ns")
+        fn = IRFunction(name="f", qualified_name="ns::f", namespace="ns", return_type="void")
+        en = IREnum(name="E", qualified_name="ns::E")
+        m1 = IRModule(name="mod", namespaces=["ns"], classes=[cls_a], enums=[en],
+                      class_by_name={"A": cls_a})
+        m2 = IRModule(name="mod", namespaces=["ns"], classes=[cls_b], functions=[fn],
+                      class_by_name={"B": cls_b})
+        merged = merge_modules([m1, m2])
+        assert merged.name == "mod"
+        assert len(merged.classes) == 2
+        assert len(merged.functions) == 1
+        assert len(merged.enums) == 1
+        assert "A" in merged.class_by_name
+        assert "B" in merged.class_by_name
+
+    def test_deduplicates_namespaces(self):
+        m1 = IRModule(name="mod", namespaces=["ns"])
+        m2 = IRModule(name="mod", namespaces=["ns"])
+        merged = merge_modules([m1, m2])
+        assert merged.namespaces == ["ns"]
+
+    def test_requires_at_least_one_module(self):
+        with pytest.raises(ValueError):
+            merge_modules([])

@@ -302,3 +302,67 @@ class TestEnumFilter:
         )).apply(mod)
         emitted = [e.name for e in mod.enums if e.emit]
         assert emitted == ["Keep"]
+
+    def test_whitelist_suppresses_non_matching(self):
+        mod = IRModule(name="m", enums=[
+            IREnum(name="Keep", qualified_name="ns::Keep"),
+            IREnum(name="Other", qualified_name="ns::Other"),
+        ])
+        FilterEngine(FilterConfig(
+            enums=EnumFilter(whitelist=[FilterPattern("Keep")])
+        )).apply(mod)
+        emitted = [e.name for e in mod.enums if e.emit]
+        assert emitted == ["Keep"]
+
+
+# ---------------------------------------------------------------------------
+# Pre-suppressed node handling
+# ---------------------------------------------------------------------------
+
+class TestPreSuppressedNodes:
+    def test_pre_suppressed_class_skips_filter_class(self):
+        cls = IRClass(name="X", qualified_name="ns::X", namespace="ns")
+        cls.emit = False
+        mod = IRModule(name="m", classes=[cls], class_by_name={"X": cls})
+        FilterEngine(FilterConfig()).apply(mod)
+        assert cls.emit is False
+
+    def test_pre_suppressed_method_skips_filter(self):
+        method = IRMethod(name="f", spelling="f", qualified_name="C::f", return_type="void")
+        method.emit = False
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns", methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        FilterEngine(FilterConfig()).apply(mod)
+        assert method.emit is False
+
+    def test_pre_suppressed_field_skips_filter(self):
+        f = IRField(name="x_", type_spelling="int")
+        f.emit = False
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns", fields=[f])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        FilterEngine(FilterConfig()).apply(mod)
+        assert f.emit is False
+
+    def test_pre_suppressed_function_skips_filter(self):
+        fn = IRFunction(name="g", qualified_name="ns::g", namespace="ns", return_type="void")
+        fn.emit = False
+        mod = IRModule(name="m", functions=[fn])
+        FilterEngine(FilterConfig()).apply(mod)
+        assert fn.emit is False
+
+    def test_pre_suppressed_enum_skips_filter(self):
+        en = IREnum(name="E", qualified_name="ns::E")
+        en.emit = False
+        mod = IRModule(name="m", enums=[en])
+        FilterEngine(FilterConfig()).apply(mod)
+        assert en.emit is False
+
+    def test_inner_class_recursive_filter(self):
+        inner = IRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
+        outer = IRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
+                        inner_classes=[inner])
+        mod = IRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
+        FilterEngine(FilterConfig(
+            classes=ClassFilter(blacklist=[FilterPattern("Inner")])
+        )).apply(mod)
+        assert inner.emit is False

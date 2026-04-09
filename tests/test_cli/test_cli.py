@@ -170,3 +170,56 @@ class TestErrors:
     def test_unknown_format_raises(self, simple_input_yml):
         with pytest.raises((FileNotFoundError, SystemExit)):
             _run("--input", str(simple_input_yml), "--output", "definitely_fake_xyz")
+
+    def test_no_source_prints_error(self, no_source_input_yml):
+        _, stderr = _run(
+            "--input", str(no_source_input_yml),
+            "--output", "luabridge3",
+        )
+        assert "no source" in stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# Format-level overrides
+# ---------------------------------------------------------------------------
+
+class TestFormatOverrides:
+    def test_format_filter_override(self, fmt_filters_input_yml):
+        stdout, _ = _run("--input", str(fmt_filters_input_yml), "--output", "luabridge3")
+        assert "Widget" in stdout
+
+    def test_format_transform_override(self, fmt_transforms_input_yml):
+        stdout, _ = _run("--input", str(fmt_transforms_input_yml), "--output", "luabridge3")
+        assert "Widget" in stdout
+
+    def test_format_generation_prefix_postfix(self, fmt_generation_input_yml):
+        stdout, _ = _run("--input", str(fmt_generation_input_yml), "--output", "luabridge3")
+        assert "// FMT PREFIX" in stdout
+        assert "// FMT POSTFIX" in stdout
+
+
+# ---------------------------------------------------------------------------
+# --classname not matching (suppresses non-matching classes)
+# ---------------------------------------------------------------------------
+
+class TestClassnameNoMatch:
+    def test_classname_no_match_suppresses_class(self, simple_input_yml):
+        stdout, _ = _run(
+            "--input", str(simple_input_yml),
+            "--output", "luabridge3",
+            "--classname", "NonExistent",
+        )
+        assert ".beginClass" not in stdout
+
+
+# ---------------------------------------------------------------------------
+# Per-source generation.includes
+# ---------------------------------------------------------------------------
+
+class TestPerSourceGenerationIncludes:
+    def test_source_generation_includes_in_output(self, multi_source_with_generation_yml):
+        stdout, _ = _run(
+            "--input", str(multi_source_with_generation_yml),
+            "--output", "luabridge3",
+        )
+        assert "<simple_extra.h>" in stdout

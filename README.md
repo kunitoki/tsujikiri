@@ -2,3 +2,4 @@
 辻斬り Generic C++ Bindings Generator
 
 [![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
+[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)

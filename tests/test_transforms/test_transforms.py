@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tsujikiri.configurations import TransformSpec
-from tsujikiri.ir import IRClass, IRMethod, IRModule, IRParameter
+from tsujikiri.ir import IRClass, IRField, IRFunction, IRMethod, IRModule, IRParameter
 from tsujikiri.transforms import (
     AddTypeMappingStage,
     InjectMethodStage,
@@ -14,6 +14,7 @@ from tsujikiri.transforms import (
     SuppressClassStage,
     SuppressMethodStage,
     TransformPipeline,
+    TransformStage,
     build_pipeline_from_config,
     register_stage,
 )
@@ -204,6 +205,36 @@ class TestAddTypeMappingStage:
         stage.apply(mod)
         assert m.parameters[0].type_spelling == "std::string"
 
+    def test_remaps_field_type(self):
+        mod = _simple_module()
+        f = IRField(name="data_", type_spelling="juce::String")
+        _get_cls(mod).fields.append(f)
+        stage = AddTypeMappingStage(**{"from": "juce::String", "to": "std::string"})
+        stage.apply(mod)
+        assert f.type_spelling == "std::string"
+
+    def test_remaps_inner_class_types(self):
+        mod = _simple_module()
+        inner_method = IRMethod(name="get", spelling="get",
+                                qualified_name="Cls::Inner::get",
+                                return_type="juce::String")
+        inner = IRClass(name="Inner", qualified_name="ns::Cls::Inner", namespace="ns",
+                        methods=[inner_method])
+        _get_cls(mod).inner_classes.append(inner)
+        stage = AddTypeMappingStage(**{"from": "juce::String", "to": "std::string"})
+        stage.apply(mod)
+        assert inner_method.return_type == "std::string"
+
+    def test_remaps_function_return_and_params(self):
+        fn = IRFunction(name="process", qualified_name="ns::process",
+                        namespace="ns", return_type="juce::String",
+                        parameters=[IRParameter("s", "juce::String")])
+        mod = IRModule(name="m", functions=[fn])
+        stage = AddTypeMappingStage(**{"from": "juce::String", "to": "std::string"})
+        stage.apply(mod)
+        assert fn.return_type == "std::string"
+        assert fn.parameters[0].type_spelling == "std::string"
+
 
 # ---------------------------------------------------------------------------
 # Pipeline and registry
@@ -257,5 +288,26 @@ class TestTransformPipeline:
         specs = [TransformSpec(stage="my_custom_stage", kwargs={})]
         pipeline = build_pipeline_from_config(specs)
         mod = _simple_module()
+
         pipeline.run(mod)
         assert MyStage.called is True
+
+
+class TestTransformStageBase:
+    def test_apply_raises_not_implemented(self):
+        stage = TransformStage()
+        mod = _simple_module()
+        with pytest.raises(NotImplementedError):
+            stage.apply(mod)
+
+
+class TestFindClassesWithInner:
+    def test_finds_nested_inner_class(self):
+        from tsujikiri.transforms import _find_classes
+        inner = IRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
+        outer = IRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
+                        inner_classes=[inner])
+        mod = IRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
+        result = _find_classes(mod, "Inner")
+        assert len(result) == 1
+        assert result[0].name == "Inner"

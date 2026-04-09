@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import MagicMock
+
 import pytest
+
+HERE = Path(__file__).parent
 
 
 class TestNamespaceAndTopLevel:
@@ -145,3 +150,62 @@ class TestNamespaceFiltering:
     def test_class_by_name_populated(self, parsed_module):
         assert "Shape" in parsed_module.class_by_name
         assert "Circle" in parsed_module.class_by_name
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for private helpers
+# ---------------------------------------------------------------------------
+
+class TestSourceFileHelper:
+    def test_returns_none_when_no_file(self):
+        from tsujikiri.parser import _source_file
+        cursor = MagicMock()
+        cursor.location.file = None
+        assert _source_file(cursor) is None
+
+
+class TestParseTranslationUnitErrors:
+    def test_raises_file_not_found(self):
+        from tsujikiri.configurations import SourceConfig
+        from tsujikiri.parser import parse_translation_unit
+        src = SourceConfig(path="/definitely/does/not/exist.hpp")
+        with pytest.raises(FileNotFoundError, match="Source file not found"):
+            parse_translation_unit(src, [], "test")
+
+
+# ---------------------------------------------------------------------------
+# Nested classes and enums (nested_types.hpp)
+# ---------------------------------------------------------------------------
+
+class TestNestedTypes:
+    def test_container_class_found(self, nested_parsed_module):
+        names = {c.name for c in nested_parsed_module.classes}
+        assert "Container" in names
+
+    def test_nested_enum_parsed(self, nested_parsed_module):
+        container = next(c for c in nested_parsed_module.classes if c.name == "Container")
+        enum_names = {e.name for e in container.enums}
+        assert "Status" in enum_names
+
+    def test_nested_enum_values(self, nested_parsed_module):
+        container = next(c for c in nested_parsed_module.classes if c.name == "Container")
+        status = next(e for e in container.enums if e.name == "Status")
+        value_names = {v.name for v in status.values}
+        assert "Active" in value_names
+        assert "Inactive" in value_names
+
+    def test_inner_class_parsed(self, nested_parsed_module):
+        container = next(c for c in nested_parsed_module.classes if c.name == "Container")
+        inner_names = {c.name for c in container.inner_classes}
+        assert "Item" in inner_names
+
+    def test_inner_class_qualified_name(self, nested_parsed_module):
+        container = next(c for c in nested_parsed_module.classes if c.name == "Container")
+        item = next(c for c in container.inner_classes if c.name == "Item")
+        assert "Container" in item.qualified_name
+        assert "Item" in item.qualified_name
+
+    def test_toplevel_non_namespace_triggers_continue(self, nested_parsed_module):
+        # nested_types.hpp has a top-level typedef; parser skips it (continue)
+        # If parsing succeeded, the continue branch was exercised
+        assert nested_parsed_module.name == "nested"

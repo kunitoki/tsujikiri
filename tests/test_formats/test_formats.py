@@ -49,3 +49,9 @@ class TestResolveFormatPath:
     def test_builtin_path_contains_format_name(self):
         path = resolve_format_path("luabridge3")
         assert "luabridge3" in path.name
+
+    def test_extra_dir_resolution(self, tmp_path):
+        fmt_file = tmp_path / "myfmt.output.yml"
+        fmt_file.write_text("format_name: myfmt\ntemplates: {}\n", encoding="utf-8")
+        result = resolve_format_path("myfmt", extra_dirs=[tmp_path])
+        assert result == fmt_file

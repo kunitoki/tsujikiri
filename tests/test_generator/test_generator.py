@@ -230,6 +230,52 @@ class TestTemplateOverrides:
         # the custom include appears before the prologue (which has its own #include lines)
         assert out.index("import <foo.h>;") < out.index("getGlobalNamespace")
 
+    def test_include_no_override_uses_default(self, make_ir_module, luabridge3_output_config):
+        from tsujikiri.configurations import GenerationConfig
+        gen_cfg = GenerationConfig(includes=["<myheader.h>"])
+        buf = io.StringIO()
+        Generator(luabridge3_output_config, generation=gen_cfg).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        assert "#include <myheader.h>" in out
+
+    def test_include_super_in_override(self, make_ir_module, luabridge3_output_config):
+        from tsujikiri.configurations import GenerationConfig
+        overrides = {"include_directive": "{{ super }}// extra\n"}
+        gen_cfg = GenerationConfig(includes=["<bar.h>"])
+        buf = io.StringIO()
+        Generator(
+            luabridge3_output_config,
+            generation=gen_cfg,
+            template_overrides=overrides,
+        ).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        assert "#include <bar.h>" in out
+        assert "// extra" in out
+
+    def test_generation_prefix_written(self, make_ir_module, luabridge3_output_config):
+        from tsujikiri.configurations import GenerationConfig
+        gen_cfg = GenerationConfig(prefix="// MY PREFIX\n")
+        buf = io.StringIO()
+        Generator(luabridge3_output_config, generation=gen_cfg).generate(make_ir_module(), buf)
+        assert buf.getvalue().startswith("// MY PREFIX\n")
+
+    def test_generation_postfix_written(self, make_ir_module, luabridge3_output_config):
+        from tsujikiri.configurations import GenerationConfig
+        gen_cfg = GenerationConfig(postfix="// MY POSTFIX\n")
+        buf = io.StringIO()
+        Generator(luabridge3_output_config, generation=gen_cfg).generate(make_ir_module(), buf)
+        assert buf.getvalue().endswith("// MY POSTFIX\n")
+
+    def test_get_template_returns_override(self, luabridge3_output_config):
+        overrides = {"class_overload_cast": "MY_CAST"}
+        gen = Generator(luabridge3_output_config, template_overrides=overrides)
+        assert gen._get_template("class_overload_cast") == "MY_CAST"
+
+    def test_render_raises_key_error_for_undefined_var(self, luabridge3_output_config):
+        gen = Generator(luabridge3_output_config)
+        with pytest.raises(KeyError):
+            gen._render("{{ undefined_variable }}", {})
+
 
 class TestTypeMappings:
     def test_luals_return_types_mapped(self, make_ir_module, luals_output_config):
@@ -270,3 +316,105 @@ class TestRenaming:
         out = _generate(mod, luabridge3_output_config)
         assert '.addFunction("get"' in out
         assert "getValueLong" in out  # spelling still used for the pointer
+
+
+# ---------------------------------------------------------------------------
+# Inner classes
+# ---------------------------------------------------------------------------
+
+class TestInnerClasses:
+    def test_inner_class_emitted(self, luabridge3_output_config):
+        inner = IRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns",
+                        variable_name="classOuterInner")
+        outer = IRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
+                        variable_name="classOuter", inner_classes=[inner])
+        mod = IRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
+        out = _generate(mod, luabridge3_output_config)
+        assert "Inner" in out
+
+    def test_suppressed_inner_class_skipped(self, luabridge3_output_config):
+        inner = IRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns",
+                        variable_name="classOuterInner")
+        inner.emit = False
+        outer = IRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
+                        variable_name="classOuter", inner_classes=[inner])
+        mod = IRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
+        out = _generate(mod, luabridge3_output_config)
+        assert "Inner" not in out
+
+
+# ---------------------------------------------------------------------------
+# Const/non-const overload cast
+# ---------------------------------------------------------------------------
+
+class TestConstNonConstOverload:
+    def test_const_nonconst_overload_uses_cast(self, luabridge3_output_config):
+        m_const = IRMethod(name="get", spelling="get", qualified_name="C::get",
+                           return_type="int", is_const=True, is_overload=True)
+        m_nonconst = IRMethod(name="get", spelling="get", qualified_name="C::get",
+                              return_type="int", is_const=False, is_overload=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", methods=[m_const, m_nonconst])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        out = _generate(mod, luabridge3_output_config)
+        assert "C::get" in out
+
+
+# ---------------------------------------------------------------------------
+# Suppressed fields and unsupported field types
+# ---------------------------------------------------------------------------
+
+class TestFieldEdgeCases:
+    def test_suppressed_field_skipped_in_emit(self, luabridge3_output_config):
+        f = IRField(name="secret_", type_spelling="int")
+        f.emit = False
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", fields=[f])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        out = _generate(mod, luabridge3_output_config)
+        assert "secret_" not in out
+
+    def test_suppressed_field_skipped_in_annotation(self, make_ir_module, luals_output_config):
+        mod = make_ir_module()
+        mod.classes[0].fields[0].emit = False
+        out = _generate(mod, luals_output_config)
+        assert "---@field value_" not in out
+
+    def test_unsupported_field_type_commented(self, luabridge3_output_config):
+        f = IRField(name="data_", type_spelling="CFStringRef")
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", fields=[f])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        out = _generate(mod, luabridge3_output_config)
+        assert "// " in out
+
+
+# ---------------------------------------------------------------------------
+# Function with unsupported return type
+# ---------------------------------------------------------------------------
+
+class TestFunctionUnsupportedType:
+    def test_unsupported_function_return_commented(self, luabridge3_output_config):
+        fn = IRFunction(name="badFn", qualified_name="ns::badFn",
+                        namespace="ns", return_type="CFStringRef")
+        mod = IRModule(name="m", functions=[fn])
+        out = _generate(mod, luabridge3_output_config)
+        assert "// " in out
+
+
+# ---------------------------------------------------------------------------
+# Topo-sort with cycle (leftover append path)
+# ---------------------------------------------------------------------------
+
+class TestTopoSortCycle:
+    def test_cycle_classes_still_emitted(self, luabridge3_output_config):
+        from tsujikiri.generator import Generator
+        cls_a = IRClass(name="A", qualified_name="ns::A", namespace="ns",
+                        variable_name="classA", bases=["ns::B"])
+        cls_b = IRClass(name="B", qualified_name="ns::B", namespace="ns",
+                        variable_name="classB", bases=["ns::A"])
+        mod = IRModule(name="m", classes=[cls_a, cls_b],
+                       class_by_name={"A": cls_a, "B": cls_b})
+        gen = Generator(luabridge3_output_config)
+        sorted_classes = gen._topo_sort(mod.classes, mod.class_by_name)
+        assert len(sorted_classes) == 2
