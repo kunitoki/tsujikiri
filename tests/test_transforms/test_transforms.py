@@ -15,6 +15,7 @@ from tsujikiri.transforms import (
     SuppressMethodStage,
     TransformPipeline,
     TransformStage,
+    _find_classes,
     build_pipeline_from_config,
     register_stage,
 )
@@ -303,7 +304,6 @@ class TestTransformStageBase:
 
 class TestFindClassesWithInner:
     def test_finds_nested_inner_class(self):
-        from tsujikiri.transforms import _find_classes
         inner = IRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
         outer = IRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
                         inner_classes=[inner])
