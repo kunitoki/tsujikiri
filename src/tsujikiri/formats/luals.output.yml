@@ -39,7 +39,7 @@ templates:
 
   # ---- Globals ----
   prologue: |
-    -- DO NOT EDIT — Auto-generated LuaLS annotations for {{ module_name }} by tsujikiri
+    -- DO NOT EDIT - Auto-generated LuaLS annotations for {{ module_name }} by tsujikiri
 
   # ---- Class ----
   class_begin: |

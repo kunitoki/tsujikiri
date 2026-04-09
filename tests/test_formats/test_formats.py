@@ -38,7 +38,7 @@ class TestResolveFormatPath:
 
     def test_filesystem_path_resolves(self, tmp_path):
         yml = tmp_path / "custom.output.yml"
-        yml.write_text("format_name: custom\ntemplates: {}\n")
+        yml.write_text("format_name: custom\ntemplates: {}\n", encoding="utf-8")
         result = resolve_format_path(str(yml))
         assert result == yml
 

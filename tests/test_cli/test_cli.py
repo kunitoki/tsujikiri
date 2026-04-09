@@ -122,7 +122,7 @@ class TestGeneration:
             "--output-file", str(out_file),
         )
         assert out_file.exists()
-        content = out_file.read_text()
+        content = out_file.read_text(encoding="utf-8")
         assert "getGlobalNamespace" in content
 
     def test_classname_filter(self, simple_input_yml):

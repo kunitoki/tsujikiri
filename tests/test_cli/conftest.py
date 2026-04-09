@@ -24,5 +24,5 @@ def simple_input_yml(tmp_path) -> Path:
         },
     }
     p = tmp_path / "simple.input.yml"
-    p.write_text(yaml.dump(data))
+    p.write_text(yaml.dump(data), encoding="utf-8")
     return p

@@ -19,7 +19,7 @@ templates:
   header: ""
 
   prologue: |
-    // DO NOT EDIT — Auto-generated LuaBridge3 bindings for {{ module_name }} by tsujikiri
+    // DO NOT EDIT - Auto-generated LuaBridge3 bindings for {{ module_name }} by tsujikiri
     extern "C" {
     #include <lua.h>
     #include <lualib.h>

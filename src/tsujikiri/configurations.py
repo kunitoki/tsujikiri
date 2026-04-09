@@ -352,7 +352,7 @@ def _parse_source_entry(entry_raw: Dict[str, Any], config_dir: Path) -> SourceEn
 
 
 def load_input_config(config_file: Path) -> InputConfig:
-    with open(config_file, "r") as f:
+    with open(config_file, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
     config_dir = config_file.parent
@@ -425,7 +425,7 @@ def _parse_template_set(raw: Dict[str, Any]) -> TemplateSet:
 
 
 def load_output_config(config_file: Path) -> OutputConfig:
-    with open(config_file, "r") as f:
+    with open(config_file, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
     templates = _parse_template_set(data.get("templates", {}))
