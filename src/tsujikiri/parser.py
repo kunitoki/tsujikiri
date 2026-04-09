@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 from clang import cindex
 
 from tsujikiri.clang_base_enumerations import AccessSpecifier, CursorKind
-from tsujikiri.configurations import InputConfig
+from tsujikiri.configurations import SourceConfig
 from tsujikiri.ir import (
     IRClass,
     IRConstructor,
@@ -149,17 +149,17 @@ def _collect_namespace_cursors(top_level, namespaces: List[str]):
             yield entry
 
 
-def parse_translation_unit(input_config: InputConfig, module_name: str) -> IRModule:
+def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_name: str) -> IRModule:
     """Parse a C++ translation unit and return a fully populated IRModule.
 
     No filtering is applied — all discovered entities are added with emit=True.
     """
-    source_path = Path(input_config.source.path)
+    source_path = Path(source.path)
     if not source_path.exists():
         raise FileNotFoundError(f"Source file not found: {source_path.resolve()}")
 
-    args = list(input_config.source.parse_args)
-    args += [f"-I{p}" for p in input_config.source.include_paths]
+    args = list(source.parse_args)
+    args += [f"-I{p}" for p in source.include_paths]
     # Ensure we parse as C++ by default if not already specified
     if "-x" not in args:
         args = ["-x", "c++"] + args
@@ -167,11 +167,11 @@ def parse_translation_unit(input_config: InputConfig, module_name: str) -> IRMod
     index = cindex.Index.create()
     tu = index.parse(str(source_path.absolute()), args=args)
 
-    module = IRModule(name=module_name, namespaces=list(input_config.filters.namespaces))
+    module = IRModule(name=module_name, namespaces=list(namespaces))
 
     namespace_cursors = list(_collect_namespace_cursors(
         tu.cursor.get_children(),
-        input_config.filters.namespaces,
+        namespaces,
     ))
 
     # --- Free functions ---

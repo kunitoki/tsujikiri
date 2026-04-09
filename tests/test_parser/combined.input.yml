@@ -1,5 +1,5 @@
 source:
-  path: ""   # patched to absolute path in conftest
+  path: "combined.hpp"
   parse_args: ["-std=c++17"]
 
 filters:

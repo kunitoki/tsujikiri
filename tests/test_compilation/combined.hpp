@@ -54,7 +54,10 @@ public:
     int  getValue() const;
     void setValue(int v);
 
-public:
+protected:
+    int protectedValue_;
+
+private:
     int value_;
 };
 

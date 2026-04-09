@@ -1,0 +1,80 @@
+cmake_minimum_required(VERSION 3.20)
+project(tsujikiri_luabridge3_test C CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+include(FetchContent)
+
+# --------------------------------------------------------------------------
+# Lua 5.4 (required by LuaBridge3)
+# --------------------------------------------------------------------------
+FetchContent_Declare(
+    lua
+    GIT_REPOSITORY https://github.com/lua/lua.git
+    GIT_TAG        v5.4.8
+    GIT_SHALLOW    TRUE)
+FetchContent_GetProperties(lua)
+if(NOT lua_POPULATED)
+    FetchContent_Populate(lua)
+
+    file(GLOB LUA_SOURCES "${lua_SOURCE_DIR}/*.c")
+    list(REMOVE_ITEM LUA_SOURCES
+        "${lua_SOURCE_DIR}/lua.c"
+        "${lua_SOURCE_DIR}/luac.c")
+
+    add_library(lua_static STATIC ${LUA_SOURCES})
+    target_include_directories(lua_static PUBLIC "${lua_SOURCE_DIR}")
+    if(UNIX AND NOT APPLE)
+        target_compile_definitions(lua_static PRIVATE LUA_USE_POSIX LUA_USE_DLOPEN)
+        target_link_libraries(lua_static PUBLIC dl m)
+    endif()
+
+    add_library(Lua::Lua ALIAS lua_static)
+endif()
+
+# --------------------------------------------------------------------------
+# LuaBridge3
+# --------------------------------------------------------------------------
+set(LUABRIDGE_TESTING OFF CACHE BOOL "Enable testing for LuaBridge3")
+FetchContent_Declare(
+    LuaBridge3
+    GIT_REPOSITORY https://github.com/kunitoki/LuaBridge3.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE)
+FetchContent_GetProperties(LuaBridge3)
+if(NOT luabridge3_POPULATED)
+    FetchContent_Populate(LuaBridge3)
+
+    add_library(LuaBridge3_headers INTERFACE)
+    target_include_directories(LuaBridge3_headers INTERFACE "${luabridge3_SOURCE_DIR}/Source")
+    target_link_libraries(LuaBridge3_headers INTERFACE Lua::Lua)
+
+    add_library(LuaBridge3::LuaBridge3 ALIAS LuaBridge3_headers)
+endif()
+
+# --------------------------------------------------------------------------
+# LuaBridge3 bindings compilation test
+# --------------------------------------------------------------------------
+set(INPUT_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/combined.input.yml)
+set(GENERATED_SOURCE ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.cpp)
+set(GENERATED_LUALS ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.lua)
+
+add_custom_command(
+    OUTPUT ${GENERATED_SOURCE}
+    COMMAND tsujikiri -i ${INPUT_SOURCE} -o luabridge3 -O ${GENERATED_SOURCE}
+    DEPENDS ${INPUT_SOURCE}
+    COMMENT "Generating LuaBridge3 bindings with tsujikiri..."
+    VERBATIM)
+
+add_custom_command(
+    OUTPUT ${GENERATED_LUALS}
+    COMMAND tsujikiri -i ${INPUT_SOURCE} -o luals -O ${GENERATED_LUALS}
+    DEPENDS ${INPUT_SOURCE}
+    COMMENT "Generating LuaLS bindings with tsujikiri..."
+    VERBATIM)
+
+add_library(test_luabridge3_bindings STATIC ${GENERATED_SOURCE} ${GENERATED_LUALS})
+target_include_directories(test_luabridge3_bindings PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_luabridge3_bindings PRIVATE LuaBridge3::LuaBridge3)

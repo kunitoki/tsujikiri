@@ -103,11 +103,72 @@ class ClassTweak:
 
 
 @dataclass
-class InputConfig:
+class GenerationConfig:
+    """Per-project generation settings: headers to include, prefix/postfix code."""
+    includes: List[str] = field(default_factory=list)
+    prefix: str = ""
+    postfix: str = ""
+
+
+@dataclass
+class SourceEntry:
+    """A single source in a multi-source configuration.
+
+    ``filters`` and ``transforms`` override the top-level defaults for this
+    source when set; ``None`` means "inherit from the top-level config".
+    ``generation.includes`` is additive: per-source includes are collected on
+    top of any top-level includes.
+    """
     source: SourceConfig
+    filters: Optional[FilterConfig] = None
+    transforms: Optional[List[TransformSpec]] = None
+    generation: Optional[GenerationConfig] = None
+
+
+@dataclass
+class FormatOverrideConfig:
+    """Per-format configuration overrides.
+
+    Specified under ``format_overrides.<format_name>`` in the input YAML.
+
+    - ``templates``: override individual template strings; support ``{super}``
+      placeholder which expands to the format's original rendered template.
+    - ``unsupported_types``: additional types to treat as unsupported.
+    - ``filters``: if set, *replaces* the effective per-source/top-level filters
+      when generating for this format (highest-priority filter override).
+    - ``transforms``: if set, these stages are *appended* to the effective
+      per-source/top-level transforms when generating for this format.
+    - ``generation``: if set, ``includes`` are appended to the collected
+      includes; ``prefix``/``postfix`` replace the top-level values when
+      non-empty.
+    """
+    templates: Dict[str, str] = field(default_factory=dict)
+    unsupported_types: List[str] = field(default_factory=list)
+    filters: Optional[FilterConfig] = None
+    transforms: Optional[List[TransformSpec]] = None
+    generation: Optional[GenerationConfig] = None
+
+
+@dataclass
+class InputConfig:
+    # Backward-compat single source (mutually exclusive with ``sources``).
+    source: Optional[SourceConfig] = None
+    # New multi-source list; takes precedence over ``source`` when non-empty.
+    sources: List[SourceEntry] = field(default_factory=list)
     filters: FilterConfig = field(default_factory=FilterConfig)
     transforms: List[TransformSpec] = field(default_factory=list)
     tweaks: Dict[str, ClassTweak] = field(default_factory=dict)
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
+    # Per-format template/type overrides (keyed by format name, e.g. "luabridge3").
+    format_overrides: Dict[str, FormatOverrideConfig] = field(default_factory=dict)
+
+    def get_source_entries(self) -> List[SourceEntry]:
+        """Return all source entries, normalising a bare ``source:`` key into the list."""
+        if self.sources:
+            return self.sources
+        if self.source:
+            return [SourceEntry(source=self.source)]
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +181,7 @@ class TemplateSet:
     prologue: str = ""
     epilogue: str = ""
     module_name: str = ""
+    include_directive: str = ""
     # class
     class_begin: str = ""
     class_derived_begin: str = ""
@@ -129,19 +191,30 @@ class TemplateSet:
     # methods
     class_method_begin: str = ""
     class_method_end: str = ""
+    class_overloaded_method_group_begin: str = ""
+    class_overloaded_method_group_end: str = ""
     class_overloaded_method_begin: str = ""
     class_overloaded_method_end: str = ""
     class_static_method_begin: str = ""
     class_static_method_end: str = ""
+    class_overloaded_static_method_group_begin: str = ""
+    class_overloaded_static_method_group_end: str = ""
     class_overloaded_static_method_begin: str = ""
     class_overloaded_static_method_end: str = ""
     class_overload_const_definition: str = ""
+    class_overload_cast: str = ""
+    class_const_overload_cast: str = ""
+    class_nonconst_overload_cast: str = ""
+    function_overload_cast: str = ""
     # constructors
+    class_constructor_group_begin: str = ""
+    class_constructor_group_end: str = ""
     class_constructor_begin: str = ""
     class_constructor_end: str = ""
     class_overloaded_constructor_begin: str = ""
     class_overloaded_constructor_end: str = ""
     # fields / properties
+    class_field_annotation: str = ""
     class_field_begin: str = ""
     class_field_end: str = ""
     class_readonly_field_begin: str = ""
@@ -149,6 +222,8 @@ class TemplateSet:
     # free functions
     function_begin: str = ""
     function_end: str = ""
+    function_overloaded_group_begin: str = ""
+    function_overloaded_group_end: str = ""
     function_overloaded_begin: str = ""
     function_overloaded_end: str = ""
     # enums
@@ -197,18 +272,7 @@ def _parse_transform_spec(raw: Dict[str, Any]) -> TransformSpec:
     return TransformSpec(stage=stage, kwargs=raw)
 
 
-def load_input_config(config_file: Path) -> InputConfig:
-    with open(config_file, "r") as f:
-        data = yaml.safe_load(f) or {}
-
-    src = data.get("source", {})
-    source = SourceConfig(
-        path=src.get("path", ""),
-        parse_args=src.get("parse_args", []),
-        include_paths=src.get("include_paths", []),
-    )
-
-    filt_raw = data.get("filters", {})
+def _parse_filter_config(filt_raw: Dict[str, Any]) -> FilterConfig:
     src_filt_raw = filt_raw.get("sources", {})
     cls_raw = filt_raw.get("classes", {})
     meth_raw = filt_raw.get("methods", {})
@@ -217,7 +281,7 @@ def load_input_config(config_file: Path) -> InputConfig:
     enum_raw = filt_raw.get("enums", {})
     ctor_raw = filt_raw.get("constructors", {})
 
-    filters = FilterConfig(
+    return FilterConfig(
         namespaces=filt_raw.get("namespaces", []),
         sources=SourceFilter(
             exclude_patterns=src_filt_raw.get("exclude_patterns", []),
@@ -249,9 +313,75 @@ def load_input_config(config_file: Path) -> InputConfig:
         ),
     )
 
-    transforms_raw = data.get("transforms", [])
-    transforms = [_parse_transform_spec(dict(t)) for t in transforms_raw]
 
+def _parse_generation_config(gen_raw: Dict[str, Any]) -> GenerationConfig:
+    return GenerationConfig(
+        includes=gen_raw.get("includes", []),
+        prefix=gen_raw.get("prefix", "") or "",
+        postfix=gen_raw.get("postfix", "") or "",
+    )
+
+
+def _parse_transforms_list(transforms_raw: List[Any]) -> List[TransformSpec]:
+    return [_parse_transform_spec(dict(t)) for t in transforms_raw]
+
+
+def _parse_optional_overrides(
+    raw: Dict[str, Any],
+) -> tuple[Optional[FilterConfig], Optional[List[TransformSpec]], Optional[GenerationConfig]]:
+    """Parse the optional filters/transforms/generation keys shared by SourceEntry and FormatOverrideConfig."""
+    filters = _parse_filter_config(raw["filters"]) if "filters" in raw else None
+    transforms = _parse_transforms_list(raw["transforms"]) if "transforms" in raw else None
+    generation = _parse_generation_config(raw["generation"]) if "generation" in raw else None
+    return filters, transforms, generation
+
+
+def _parse_source_entry(entry_raw: Dict[str, Any], config_dir: Path) -> SourceEntry:
+    src_path = entry_raw.get("path", "")
+    if src_path and not Path(src_path).is_absolute():
+        src_path = str((config_dir / src_path).resolve())
+
+    source = SourceConfig(
+        path=src_path,
+        parse_args=entry_raw.get("parse_args", []),
+        include_paths=entry_raw.get("include_paths", []),
+    )
+
+    filters, transforms, generation = _parse_optional_overrides(entry_raw)
+    return SourceEntry(source=source, filters=filters, transforms=transforms, generation=generation)
+
+
+def load_input_config(config_file: Path) -> InputConfig:
+    with open(config_file, "r") as f:
+        data = yaml.safe_load(f) or {}
+
+    config_dir = config_file.parent
+
+    # --- Single source (backward compat) ---
+    source: Optional[SourceConfig] = None
+    if "source" in data:
+        src = data["source"]
+        src_path = src.get("path", "")
+        if src_path and not Path(src_path).is_absolute():
+            src_path = str((config_dir / src_path).resolve())
+        source = SourceConfig(
+            path=src_path,
+            parse_args=src.get("parse_args", []),
+            include_paths=src.get("include_paths", []),
+        )
+
+    # --- Multiple sources ---
+    sources: List[SourceEntry] = [
+        _parse_source_entry(entry_raw, config_dir)
+        for entry_raw in data.get("sources", [])
+    ]
+
+    # --- Filters / transforms / generation (top-level defaults) ---
+    filters = _parse_filter_config(data.get("filters", {}))
+    transforms = _parse_transforms_list(data.get("transforms", []))
+    generation = _parse_generation_config(data.get("generation", {}))
+
+    # --- Tweaks ---
     tweaks_raw = data.get("tweaks", {})
     tweaks = {
         cls: ClassTweak(
@@ -261,7 +391,29 @@ def load_input_config(config_file: Path) -> InputConfig:
         for cls, tw in tweaks_raw.items()
     }
 
-    return InputConfig(source=source, filters=filters, transforms=transforms, tweaks=tweaks)
+    # --- Format overrides ---
+    fmt_overrides_raw = data.get("format_overrides", {})
+    format_overrides: Dict[str, FormatOverrideConfig] = {
+        fmt_name: FormatOverrideConfig(
+            templates=override_raw.get("templates", {}),
+            unsupported_types=override_raw.get("unsupported_types", []),
+            filters=filters,
+            transforms=transforms,
+            generation=generation,
+        )
+        for fmt_name, override_raw in fmt_overrides_raw.items()
+        for filters, transforms, generation in [_parse_optional_overrides(override_raw)]
+    }
+
+    return InputConfig(
+        source=source,
+        sources=sources,
+        filters=filters,
+        transforms=transforms,
+        tweaks=tweaks,
+        generation=generation,
+        format_overrides=format_overrides,
+    )
 
 
 def _parse_template_set(raw: Dict[str, Any]) -> TemplateSet:

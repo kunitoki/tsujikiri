@@ -85,7 +85,7 @@ class TestCircleClass:
 
     def test_inherits_from_shape(self, parsed_module):
         circle = self._circle(parsed_module)
-        assert "Shape" in circle.bases
+        assert "mylib::Shape" in circle.bases
 
     def test_overloaded_resize(self, parsed_module):
         circle = self._circle(parsed_module)

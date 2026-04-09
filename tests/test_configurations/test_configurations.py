@@ -8,9 +8,11 @@ import pytest
 
 from tsujikiri.configurations import (
     FilterPattern,
+    FormatOverrideConfig,
     InputConfig,
     OutputConfig,
     SourceConfig,
+    SourceEntry,
     TemplateSet,
     load_input_config,
     load_output_config,
@@ -82,7 +84,7 @@ class TestInputConfigLoading:
 
 
 class TestOutputConfigLoading:
-    @pytest.mark.parametrize("fmt", ["luabridge3", "pybind11", "c_api"])
+    @pytest.mark.parametrize("fmt", ["luabridge3"])
     def test_loads_without_error(self, fmt):
         cfg = load_output_config(resolve_format_path(fmt))
         assert isinstance(cfg, OutputConfig)
@@ -97,13 +99,9 @@ class TestOutputConfigLoading:
         cfg = load_output_config(resolve_format_path("luabridge3"))
         assert cfg.templates.prologue.strip() != ""
 
-    def test_pybind11_class_begin(self):
-        cfg = load_output_config(resolve_format_path("pybind11"))
-        assert "py::class_" in cfg.templates.class_begin
-
-    def test_c_api_class_begin(self):
-        cfg = load_output_config(resolve_format_path("c_api"))
-        assert "typedef struct" in cfg.templates.class_begin
+    def test_luabridge3_class_begin(self):
+        cfg = load_output_config(resolve_format_path("luabridge3"))
+        assert "beginClass" in cfg.templates.class_begin
 
     def test_template_set_defaults(self):
         ts = TemplateSet()
@@ -122,3 +120,112 @@ class TestOutputConfigLoading:
     def test_filter_pattern_regex(self):
         fp = FilterPattern(pattern=".*Impl$", is_regex=True)
         assert fp.is_regex
+
+
+class TestMultiSourceLoading:
+    @pytest.fixture(scope="class")
+    def cfg(self):
+        return load_input_config(HERE / "multi.input.yml")
+
+    def test_sources_list_populated(self, cfg):
+        assert len(cfg.sources) == 2
+
+    def test_no_single_source_field(self, cfg):
+        assert cfg.source is None
+
+    def test_get_source_entries_returns_sources(self, cfg):
+        entries = cfg.get_source_entries()
+        assert len(entries) == 2
+
+    def test_first_source_parse_args(self, cfg):
+        assert "-std=c++17" in cfg.sources[0].source.parse_args
+
+    def test_second_source_parse_args(self, cfg):
+        assert "-std=c++20" in cfg.sources[1].source.parse_args
+
+    def test_first_source_has_per_source_filters(self, cfg):
+        assert cfg.sources[0].filters is not None
+        assert cfg.sources[0].filters.namespaces == ["myns"]
+
+    def test_second_source_has_no_per_source_filters(self, cfg):
+        assert cfg.sources[1].filters is None
+
+    def test_second_source_has_per_source_transforms(self, cfg):
+        assert cfg.sources[1].transforms is not None
+        assert cfg.sources[1].transforms[0].stage == "suppress_class"
+
+    def test_first_source_has_per_source_generation_includes(self, cfg):
+        assert cfg.sources[0].generation is not None
+        assert "<myns_extra.h>" in cfg.sources[0].generation.includes
+
+    def test_top_level_filters_still_present(self, cfg):
+        assert cfg.filters.namespaces == ["default_ns"]
+
+    def test_top_level_generation(self, cfg):
+        assert "<top_level.h>" in cfg.generation.includes
+        assert cfg.generation.prefix == "// top prefix\n"
+
+    def test_format_overrides_parsed(self, cfg):
+        assert "luabridge3" in cfg.format_overrides
+
+    def test_format_override_templates(self, cfg):
+        override = cfg.format_overrides["luabridge3"]
+        assert "class_begin" in override.templates
+        assert "custom" in override.templates["class_begin"]
+
+    def test_format_override_super_in_template(self, cfg):
+        override = cfg.format_overrides["luabridge3"]
+        assert "{super}" in override.templates["prologue"]
+
+    def test_format_override_extra_unsupported_types(self, cfg):
+        override = cfg.format_overrides["luabridge3"]
+        assert "MyOpaqueType" in override.unsupported_types
+
+    def test_format_override_filters_parsed(self, cfg):
+        override = cfg.format_overrides["luabridge3"]
+        assert override.filters is not None
+        assert override.filters.namespaces == ["luans"]
+
+    def test_format_override_filters_class_blacklist(self, cfg):
+        override = cfg.format_overrides["luabridge3"]
+        assert override.filters is not None
+        names = [p.pattern for p in override.filters.classes.blacklist]
+        assert "LuaInternal" in names
+
+    def test_format_override_transforms_parsed(self, cfg):
+        override = cfg.format_overrides["luabridge3"]
+        assert override.transforms is not None
+        assert len(override.transforms) == 1
+        assert override.transforms[0].stage == "suppress_class"
+        assert override.transforms[0].kwargs["pattern"] == "LuaUnused"
+
+    def test_format_override_generation_parsed(self, cfg):
+        override = cfg.format_overrides["luabridge3"]
+        assert override.generation is not None
+        assert "<luabridge3_extra.h>" in override.generation.includes
+        assert override.generation.prefix == "// lua prefix\n"
+        assert override.generation.postfix == "// lua postfix\n"
+
+    def test_format_override_no_filters_when_absent(self, cfg):
+        # Only luabridge3 is defined; a missing key returns None filters
+        override = cfg.format_overrides.get("luals")
+        assert override is None
+
+
+class TestGetSourceEntries:
+    def test_single_source_normalised_to_list(self):
+        cfg = InputConfig(source=SourceConfig(path="foo.hpp"))
+        entries = cfg.get_source_entries()
+        assert len(entries) == 1
+        assert entries[0].source.path == "foo.hpp"
+
+    def test_sources_list_takes_precedence(self):
+        entry = SourceEntry(source=SourceConfig(path="bar.hpp"))
+        cfg = InputConfig(sources=[entry])
+        entries = cfg.get_source_entries()
+        assert len(entries) == 1
+        assert entries[0].source.path == "bar.hpp"
+
+    def test_empty_config_returns_empty(self):
+        cfg = InputConfig()
+        assert cfg.get_source_entries() == []

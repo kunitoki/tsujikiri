@@ -105,3 +105,21 @@ class IRModule:
     functions: List[IRFunction] = field(default_factory=list)
     enums: List[IREnum] = field(default_factory=list)
     class_by_name: Dict[str, IRClass] = field(default_factory=dict)  # for topo-sort
+
+
+def merge_modules(modules: List[IRModule]) -> IRModule:
+    """Merge multiple IRModules into one, preserving insertion order."""
+    if not modules:
+        raise ValueError("merge_modules requires at least one module")
+    if len(modules) == 1:
+        return modules[0]
+    merged = IRModule(name=modules[0].name)
+    for m in modules:
+        for ns in m.namespaces:
+            if ns not in merged.namespaces:
+                merged.namespaces.append(ns)
+        merged.classes.extend(m.classes)
+        merged.functions.extend(m.functions)
+        merged.enums.extend(m.enums)
+        merged.class_by_name.update(m.class_by_name)
+    return merged

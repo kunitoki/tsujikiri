@@ -17,7 +17,7 @@ def _generate(module: IRModule, output_config) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Basic generation smoke tests (all three formats)
+# Prologue / epilogue
 # ---------------------------------------------------------------------------
 
 class TestPrologueEpilogue:
@@ -26,18 +26,8 @@ class TestPrologueEpilogue:
         assert "register_testmod" in out
         assert "getGlobalNamespace" in out
 
-    def test_pybind11_prologue(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
-        assert "PYBIND11_MODULE" in out
-        assert "testmod" in out
-
-    def test_c_api_prologue(self, make_ir_module, c_api_output_config):
-        out = _generate(make_ir_module(), c_api_output_config)
-        assert "extern" in out
-        assert "pragma once" in out
-
-    def test_pybind11_epilogue_closes_module(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
+    def test_luabridge3_epilogue(self, make_ir_module, luabridge3_output_config):
+        out = _generate(make_ir_module(), luabridge3_output_config)
         assert out.rstrip().endswith("}")
 
 
@@ -46,31 +36,33 @@ class TestPrologueEpilogue:
 # ---------------------------------------------------------------------------
 
 class TestClassTemplates:
-    def test_base_class_uses_class_begin(self, make_ir_module, pybind11_output_config):
+    def test_base_class_uses_class_begin(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
-        out = _generate(mod, pybind11_output_config)
-        assert "py::class_<mylib::MyClass>" in out
+        out = _generate(mod, luabridge3_output_config)
+        assert '.beginClass<mylib::MyClass>("MyClass")' in out
 
-    def test_derived_class_uses_derived_begin(self, pybind11_output_config):
+    def test_derived_class_uses_derived_begin(self, luabridge3_output_config):
         base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        variable_name="classBase")
         derived = IRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
-                          bases=["Base"], variable_name="classDerived")
+                          bases=["ns::Base"], variable_name="classDerived")
         mod = IRModule(name="m", classes=[base, derived],
                        class_by_name={"Base": base, "Derived": derived})
-        out = _generate(mod, pybind11_output_config)
-        assert "py::class_<ns::Derived, Base>" in out
+        out = _generate(mod, luabridge3_output_config)
+        assert '.deriveClass<ns::Derived, ns::Base>("Derived")' in out
 
-    def test_topo_sort_emits_base_before_derived(self, pybind11_output_config):
+    def test_topo_sort_emits_base_before_derived(self, luabridge3_output_config):
+        from tsujikiri.generator import Generator
         base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        variable_name="classBase")
         derived = IRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
-                          bases=["Base"], variable_name="classDerived")
-        # Deliberately put derived first in list
+                          bases=["ns::Base"], variable_name="classDerived")
+        # Deliberately put derived first in list; topo sort should fix ordering
         mod = IRModule(name="m", classes=[derived, base],
                        class_by_name={"Base": base, "Derived": derived})
-        out = _generate(mod, pybind11_output_config)
-        assert out.index("Base") < out.index("Derived")
+        gen = Generator(luabridge3_output_config)
+        sorted_names = [c.name for c in gen._topo_sort(mod.classes, mod.class_by_name)]
+        assert sorted_names == ["Base", "Derived"]
 
 
 # ---------------------------------------------------------------------------
@@ -78,35 +70,24 @@ class TestClassTemplates:
 # ---------------------------------------------------------------------------
 
 class TestMethodTemplates:
-    def test_regular_method_luabridge3(self, make_ir_module, luabridge3_output_config):
+    def test_regular_method(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
         assert '.addFunction("getValue"' in out
 
-    def test_regular_method_pybind11(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
-        assert '.def("getValue"' in out
+    def test_overloaded_method_uses_overload_cast(self, make_ir_module, luabridge3_output_config):
+        out = _generate(make_ir_module(), luabridge3_output_config)
+        assert "luabridge::overload<int, int>(&mylib::MyClass::add)" in out
+        assert "luabridge::overload<double, double>(&mylib::MyClass::add)" in out
 
-    def test_overloaded_method_has_static_cast(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
-        assert "static_cast<int (mylib::MyClass::*)(int, int)>" in out
-        assert "static_cast<double (mylib::MyClass::*)(double, double)>" in out
+    def test_static_method(self, make_ir_module, luabridge3_output_config):
+        out = _generate(make_ir_module(), luabridge3_output_config)
+        assert '.addStaticFunction("create"' in out
 
-    def test_const_method_adds_const_qualifier(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
-        # getValue is const and overloaded=False — still uses addFunction, not static_cast
-        # check const qualifier appears somewhere (for overloaded const methods)
-        # In our module getValue is NOT overloaded, so no static_cast is emitted.
-        assert "getValue" in out
-
-    def test_static_method_pybind11(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
-        assert '.def_static("create"' in out
-
-    def test_emit_false_method_skipped(self, make_ir_module, pybind11_output_config):
+    def test_emit_false_method_skipped(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
         mod.classes[0].methods[0].emit = False  # suppress getValue
-        out = _generate(mod, pybind11_output_config)
-        assert 'def("getValue"' not in out
+        out = _generate(mod, luabridge3_output_config)
+        assert 'addFunction("getValue"' not in out
 
 
 # ---------------------------------------------------------------------------
@@ -114,22 +95,17 @@ class TestMethodTemplates:
 # ---------------------------------------------------------------------------
 
 class TestConstructorTemplates:
-    def test_luabridge3_constructors(self, make_ir_module, luabridge3_output_config):
+    def test_constructors(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
-        assert "addConstructor<void (*)()" in out     # default ctor
-        assert "addConstructor<void (*)(int)" in out  # int ctor
+        assert "addConstructor<void (*)()" in out
+        assert "addConstructor<void (*)(int)" in out
 
-    def test_pybind11_constructors(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
-        assert ".def(py::init<>()" in out
-        assert ".def(py::init<int>()" in out
-
-    def test_suppressed_constructor_skipped(self, make_ir_module, pybind11_output_config):
+    def test_suppressed_constructor_skipped(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
         for c in mod.classes[0].constructors:
             c.emit = False
-        out = _generate(mod, pybind11_output_config)
-        assert "py::init" not in out
+        out = _generate(mod, luabridge3_output_config)
+        assert "addConstructor" not in out
 
 
 # ---------------------------------------------------------------------------
@@ -137,23 +113,15 @@ class TestConstructorTemplates:
 # ---------------------------------------------------------------------------
 
 class TestFieldTemplates:
-    def test_readwrite_field_pybind11(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
-        assert '.def_readwrite("value_"' in out
+    def test_readwrite_field(self, make_ir_module, luabridge3_output_config):
+        out = _generate(make_ir_module(), luabridge3_output_config)
+        assert '.addProperty("value_"' in out
 
-    def test_readonly_field_pybind11(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
-        assert '.def_readonly("max_"' in out
-
-    def test_c_api_field_getter_setter(self, make_ir_module, c_api_output_config):
-        out = _generate(make_ir_module(), c_api_output_config)
-        assert "MyClass_get_value_" in out
-        assert "MyClass_set_value_" in out
-
-    def test_c_api_readonly_no_setter(self, make_ir_module, c_api_output_config):
-        out = _generate(make_ir_module(), c_api_output_config)
-        assert "MyClass_get_max_" in out
-        assert "MyClass_set_max_" not in out
+    def test_readonly_field_has_nullptr(self, make_ir_module, luabridge3_output_config):
+        out = _generate(make_ir_module(), luabridge3_output_config)
+        assert '.addProperty("max_"' in out
+        # readonly property uses nullptr as setter
+        assert "nullptr" in out
 
 
 # ---------------------------------------------------------------------------
@@ -161,30 +129,17 @@ class TestFieldTemplates:
 # ---------------------------------------------------------------------------
 
 class TestEnumTemplates:
-    def test_pybind11_enum(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
-        assert 'py::enum_<mylib::Color>' in out
-        assert '.value("Red"' in out
-        assert '.value("Green"' in out
-        assert ".export_values();" in out
-
     def test_luabridge3_enum_namespace(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
         assert '.beginNamespace("Color")' in out
         assert ".endNamespace()" in out
 
-    def test_c_api_enum(self, make_ir_module, c_api_output_config):
-        out = _generate(make_ir_module(), c_api_output_config)
-        assert "typedef enum {" in out
-        assert "Red," in out
-        assert "} Color;" in out
-
-    def test_suppressed_enum_value_skipped(self, make_ir_module, pybind11_output_config):
+    def test_suppressed_enum_value_skipped(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
         mod.enums[0].values[0].emit = False   # suppress Red
-        out = _generate(mod, pybind11_output_config)
-        assert '.value("Red"' not in out
-        assert '.value("Green"' in out
+        out = _generate(mod, luabridge3_output_config)
+        assert '"Red"' not in out
+        assert '"Green"' in out
 
 
 # ---------------------------------------------------------------------------
@@ -192,17 +147,9 @@ class TestEnumTemplates:
 # ---------------------------------------------------------------------------
 
 class TestFunctionTemplates:
-    def test_pybind11_free_function(self, make_ir_module, pybind11_output_config):
-        out = _generate(make_ir_module(), pybind11_output_config)
-        assert 'm.def("compute"' in out
-
-    def test_luabridge3_free_function(self, make_ir_module, luabridge3_output_config):
+    def test_free_function(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
         assert '.addFunction("compute"' in out
-
-    def test_c_api_free_function(self, make_ir_module, c_api_output_config):
-        out = _generate(make_ir_module(), c_api_output_config)
-        assert "double compute(" in out
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +157,7 @@ class TestFunctionTemplates:
 # ---------------------------------------------------------------------------
 
 class TestUnsupportedTypes:
-    def test_unsupported_return_type_commented_out(self, make_ir_module, pybind11_output_config):
+    def test_unsupported_return_type_commented_out(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
         bad_method = IRMethod(
             name="bad", spelling="bad",
@@ -218,56 +165,108 @@ class TestUnsupportedTypes:
             return_type="CFStringRef",
         )
         mod.classes[0].methods.append(bad_method)
-        out = _generate(mod, pybind11_output_config)
-        assert '// .def("bad"' in out
+        out = _generate(mod, luabridge3_output_config)
+        assert '// .addFunction("bad"' in out
 
 
 # ---------------------------------------------------------------------------
 # Renamed entities
 # ---------------------------------------------------------------------------
 
+class TestTemplateOverrides:
+    def test_override_replaces_template(self, make_ir_module, luabridge3_output_config):
+        overrides = {"class_begin": ".custom(\"{{ qualified_class_name }}\")\n"}
+        buf = io.StringIO()
+        Generator(luabridge3_output_config, template_overrides=overrides).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        assert '.custom("mylib::MyClass")' in out
+        assert ".beginClass" not in out
+
+    def test_override_super_wraps_base(self, make_ir_module, luabridge3_output_config):
+        overrides = {"prologue": "// PRE\n{{ super }}// POST\n"}
+        buf = io.StringIO()
+        Generator(luabridge3_output_config, template_overrides=overrides).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        assert out.startswith("// PRE\n")
+        assert "getGlobalNamespace" in out  # base prologue content
+        assert "// POST\n" in out
+
+    def test_extra_unsupported_types_comment_out(self, make_ir_module, luabridge3_output_config):
+        mod = make_ir_module()
+        bad = IRMethod(
+            name="doThing", spelling="doThing",
+            qualified_name="mylib::MyClass::doThing",
+            return_type="MyOpaqueType",
+        )
+        mod.classes[0].methods.append(bad)
+        buf = io.StringIO()
+        Generator(
+            luabridge3_output_config,
+            extra_unsupported_types=["MyOpaqueType"],
+        ).generate(mod, buf)
+        out = buf.getvalue()
+        assert '// .addFunction("doThing"' in out
+
+    def test_override_empty_string_suppresses_template(self, make_ir_module, luabridge3_output_config):
+        overrides = {"class_end": ""}
+        buf = io.StringIO()
+        Generator(luabridge3_output_config, template_overrides=overrides).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        assert ".endClass()" not in out
+
+    def test_include_directive_override(self, make_ir_module, luabridge3_output_config):
+        from tsujikiri.configurations import GenerationConfig
+        overrides = {"include_directive": "import {{ include }};\n"}
+        gen_cfg = GenerationConfig(includes=["<foo.h>"])
+        buf = io.StringIO()
+        Generator(
+            luabridge3_output_config,
+            generation=gen_cfg,
+            template_overrides=overrides,
+        ).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        # custom directive is used for generation.includes entries
+        assert "import <foo.h>;" in out
+        # the custom include appears before the prologue (which has its own #include lines)
+        assert out.index("import <foo.h>;") < out.index("getGlobalNamespace")
+
+
+class TestTypeMappings:
+    def test_luals_return_types_mapped(self, make_ir_module, luals_output_config):
+        out = _generate(make_ir_module(), luals_output_config)
+        # C++ types must be converted to Lua types; check whole-word by including newline
+        assert "---@return number\n" in out   # double → number
+        assert "---@return integer\n" in out  # int → integer
+        assert "---@return double\n" not in out
+        assert "---@return int\n" not in out  # "integer" ends differently
+
+    def test_luals_param_types_mapped(self, make_ir_module, luals_output_config):
+        out = _generate(make_ir_module(), luals_output_config)
+        # overload fun args use name: type format; double → number
+        assert "fun(self: MyClass, a: number, b: number): number" in out
+        # non-overloaded static method param: int → integer
+        assert "---@param v integer\n" in out
+
+    def test_luals_field_types_mapped(self, make_ir_module, luals_output_config):
+        out = _generate(make_ir_module(), luals_output_config)
+        assert "---@field value_ integer\n" in out  # int field → integer via ---@field
+        assert "---@type int\n" not in out           # no bare "int" type annotation
+
+
 class TestRenaming:
-    def test_renamed_class_uses_new_name_in_template(self, pybind11_output_config):
+    def test_renamed_class_uses_new_name_in_template(self, luabridge3_output_config):
         cls = IRClass(name="Ugly", qualified_name="ns::Ugly", namespace="ns",
                       variable_name="classUgly", rename="Pretty")
         mod = IRModule(name="m", classes=[cls], class_by_name={"Ugly": cls})
-        out = _generate(mod, pybind11_output_config)
+        out = _generate(mod, luabridge3_output_config)
         assert '"Pretty"' in out
 
-    def test_renamed_method_uses_new_name(self, pybind11_output_config):
+    def test_renamed_method_uses_new_name(self, luabridge3_output_config):
         m = IRMethod(name="getValueLong", spelling="getValueLong",
                      qualified_name="Cls::getValueLong", return_type="int", rename="get")
         cls = IRClass(name="Cls", qualified_name="ns::Cls", namespace="ns",
                       variable_name="classCls", methods=[m])
         mod = IRModule(name="m", classes=[cls], class_by_name={"Cls": cls})
-        out = _generate(mod, pybind11_output_config)
-        assert '.def("get"' in out
+        out = _generate(mod, luabridge3_output_config)
+        assert '.addFunction("get"' in out
         assert "getValueLong" in out  # spelling still used for the pointer
-
-
-# ---------------------------------------------------------------------------
-# method_args_sep for C API instance methods
-# ---------------------------------------------------------------------------
-
-class TestCApiMethodArgs:
-    def test_no_args_method(self, c_api_output_config):
-        m = IRMethod(name="area", spelling="area",
-                     qualified_name="Shape::area", return_type="double",
-                     is_const=True)
-        cls = IRClass(name="Shape", qualified_name="ns::Shape", namespace="ns",
-                      variable_name="classShape", methods=[m])
-        mod = IRModule(name="m", classes=[cls], class_by_name={"Shape": cls})
-        out = _generate(mod, c_api_output_config)
-        # Should produce: double Shape_area(Shape_t self);  (no trailing comma)
-        assert "Shape_area(Shape_t self);" in out
-
-    def test_one_arg_method(self, c_api_output_config):
-        m = IRMethod(name="setName", spelling="setName",
-                     qualified_name="Shape::setName", return_type="void",
-                     parameters=[IRParameter("name", "const char *")])
-        cls = IRClass(name="Shape", qualified_name="ns::Shape", namespace="ns",
-                      variable_name="classShape", methods=[m])
-        mod = IRModule(name="m", classes=[cls], class_by_name={"Shape": cls})
-        out = _generate(mod, c_api_output_config)
-        # Should produce: void Shape_setName(Shape_t self, const char *);
-        assert "Shape_setName(Shape_t self, const char *);" in out

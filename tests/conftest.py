@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 TESTS_DIR = Path(__file__).parent
-STUBS_DIR = TESTS_DIR / "stubs"
 
 
 # ---------------------------------------------------------------------------
@@ -23,17 +22,11 @@ def luabridge3_output_config():
 
 
 @pytest.fixture(scope="session")
-def pybind11_output_config():
+def luals_output_config():
     from tsujikiri.configurations import load_output_config
     from tsujikiri.formats import resolve_format_path
-    return load_output_config(resolve_format_path("pybind11"))
+    return load_output_config(resolve_format_path("luals"))
 
-
-@pytest.fixture(scope="session")
-def c_api_output_config():
-    from tsujikiri.configurations import load_output_config
-    from tsujikiri.formats import resolve_format_path
-    return load_output_config(resolve_format_path("c_api"))
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,41 @@
+sources:
+  - path: "simple.hpp"
+    parse_args: ["-std=c++17"]
+    filters:
+      namespaces: ["myns"]
+    generation:
+      includes: ["<myns_extra.h>"]
+
+  - path: "simple.hpp"
+    parse_args: ["-std=c++20"]
+    transforms:
+      - stage: suppress_class
+        pattern: "Unused"
+
+filters:
+  namespaces: ["default_ns"]
+
+generation:
+  includes: ["<top_level.h>"]
+  prefix: "// top prefix\n"
+  postfix: "// top postfix\n"
+
+format_overrides:
+  luabridge3:
+    templates:
+      class_begin: ".custom(\"{qualified_class_name}\")\n"
+      prologue: "// pre\n{super}// post\n"
+    unsupported_types:
+      - MyOpaqueType
+    filters:
+      namespaces: ["luans"]
+      classes:
+        blacklist:
+          - pattern: "LuaInternal"
+    transforms:
+      - stage: suppress_class
+        pattern: "LuaUnused"
+    generation:
+      includes: ["<luabridge3_extra.h>"]
+      prefix: "// lua prefix\n"
+      postfix: "// lua postfix\n"

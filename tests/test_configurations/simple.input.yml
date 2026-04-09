@@ -1,5 +1,5 @@
 source:
-  path: "tests/test_configurations/simple.hpp"
+  path: "simple.hpp"
   parse_args: ["-std=c++17"]
   include_paths: []
 

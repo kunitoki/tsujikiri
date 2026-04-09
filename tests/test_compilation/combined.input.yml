@@ -1,8 +1,13 @@
 source:
-  path: ""   # patched to absolute path in conftest
+  path: "combined.hpp"
   parse_args: ["-std=c++17"]
 
 filters:
   namespaces: ["mylib"]
   constructors:
     include: true
+
+format_overrides:
+  luabridge3:
+    generation:
+      includes: ['"combined.hpp"']

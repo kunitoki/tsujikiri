@@ -17,8 +17,6 @@ class TestListBuiltinFormats:
     def test_contains_expected_formats(self):
         result = list_builtin_formats()
         assert "luabridge3" in result
-        assert "pybind11" in result
-        assert "c_api" in result
 
     def test_sorted(self):
         result = list_builtin_formats()
@@ -31,7 +29,7 @@ class TestListBuiltinFormats:
 
 
 class TestResolveFormatPath:
-    @pytest.mark.parametrize("fmt", ["luabridge3", "pybind11", "c_api"])
+    @pytest.mark.parametrize("fmt", ["luabridge3"])
     def test_builtin_resolves_to_existing_file(self, fmt):
         path = resolve_format_path(fmt)
         assert isinstance(path, Path)

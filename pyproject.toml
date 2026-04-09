@@ -6,13 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "tsujikiri"
 description = "辻斬り Generic C++ Bindings Generator"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [
   { name = "kunitoki", email = "kunitoki@gmail.com" },
 ]
 dependencies = [
   "libclang==16.0.6",
   "pyyaml>=6.0",
+  "jinja2>=3.1",
 ]
 license = "MIT"
 classifiers = [
