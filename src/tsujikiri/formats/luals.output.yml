@@ -1,0 +1,131 @@
+format_name: luals
+format_version: "1.0"
+description: "Lua Language Server (LuaLS) type annotation stubs — use alongside LuaBridge3 bindings"
+
+# Types that force a method/function/field to be commented out
+unsupported_types:
+  - CFStringRef
+  - OSType
+
+# C++ → Lua type name mappings (informational; apply via add_type_mapping transform before generating)
+type_mappings:
+  "int": "integer"
+  "unsigned int": "integer"
+  "long": "integer"
+  "unsigned long": "integer"
+  "short": "integer"
+  "unsigned short": "integer"
+  "int8_t": "integer"
+  "int16_t": "integer"
+  "int32_t": "integer"
+  "int64_t": "integer"
+  "uint8_t": "integer"
+  "uint16_t": "integer"
+  "uint32_t": "integer"
+  "uint64_t": "integer"
+  "size_t": "integer"
+  "float": "number"
+  "double": "number"
+  "bool": "boolean"
+  "std::string": "string"
+  "const char *": "string"
+  "char *": "string"
+  "std::string_view": "string"
+  "void": "nil"
+
+templates:
+  line_comment: "--"
+  module_name: "{{ module_name }}"
+
+  # ---- Globals ----
+  prologue: |
+    -- DO NOT EDIT - Auto-generated LuaLS annotations for {{ module_name }} by tsujikiri
+
+  # ---- Class ----
+  class_begin: |
+    ---@class {{ class_name }}
+    {{ class_fields_block }}local {{ class_name }} = {}{{ '\n' }}
+
+  class_derived_begin: |
+    ---@class {{ class_name }} : {{ class_base_short_name }}
+    {{ class_fields_block }}local {{ class_name }} = {}{{ '\n' }}
+
+  class_overload_const_definition: " const"
+
+  # ---- Regular instance methods ----
+  class_method_begin: |
+    {% for p in method_params %}{{ method_comment }}---@param {{ p.name }} {{ p.type }}
+    {% endfor %}{{ method_comment }}---@return {{ method_return }}
+    {{ method_comment }}function {{ class_name }}:{{ method_name }}({% if method_params %}{{ method_params | map(attribute='name') | join(', ') }}{% endif %}) end
+
+  class_method_end: "\n"
+
+  class_overloaded_method_group_begin: |
+    {% set first = overloads[0] %}{% for p in first.method_params %}{{ method_comment }}---@param {{ p.name }} {{ p.type }}
+    {% endfor %}{{ method_comment }}---@return {{ first.method_return }}
+    {% for ov in overloads[1:] %}{{ method_comment }}---@overload fun(self: {{ class_name }}{% if ov.method_params %}, {{ ov.method_params | param_pairs }}{% endif %}): {{ ov.method_return }}
+    {% endfor %}{{ method_comment }}function {{ class_name }}:{{ method_name }}({% if first.method_params %}{{ first.method_params | map(attribute='name') | join(', ') }}{% endif %}) end
+
+  class_overloaded_method_group_end: "\n"
+
+  # ---- Static methods ----
+  class_static_method_begin: |
+    {% for p in method_params %}{{ method_comment }}---@param {{ p.name }} {{ p.type }}
+    {% endfor %}{{ method_comment }}---@return {{ method_return }}
+    {{ method_comment }}function {{ class_name }}.{{ method_name }}({% if method_params %}{{ method_params | map(attribute='name') | join(', ') }}{% endif %}) end
+
+  class_static_method_end: "\n"
+
+  class_overloaded_static_method_group_begin: |
+    {% set first = overloads[0] %}{% for p in first.method_params %}{{ method_comment }}---@param {{ p.name }} {{ p.type }}
+    {% endfor %}{{ method_comment }}---@return {{ first.method_return }}
+    {% for ov in overloads[1:] %}{{ method_comment }}---@overload fun({% if ov.method_params %}{{ ov.method_params | param_pairs }}{% endif %}): {{ ov.method_return }}
+    {% endfor %}{{ method_comment }}function {{ class_name }}.{{ method_name }}({% if first.method_params %}{{ first.method_params | map(attribute='name') | join(', ') }}{% endif %}) end
+
+  class_overloaded_static_method_group_end: "\n"
+
+  # ---- Constructors ----
+  class_constructor_group_begin: |
+    {% set first = overloads[0] %}{% for p in first.constructor_params %}---@param {{ p.name }} {{ p.type }}
+    {% endfor %}---@return {{ class_name }}
+    {% for ov in overloads[1:] %}---@overload fun({% if ov.constructor_params %}{{ ov.constructor_params | param_pairs }}{% endif %}): {{ class_name }}
+    {% endfor %}function {{ class_name }}.new({% if first.constructor_params %}{{ first.constructor_params | map(attribute='name') | join(', ') }}{% endif %}) end
+
+  class_constructor_group_end: "\n"
+
+  class_constructor_begin: |
+    {% for p in constructor_params %}---@param {{ p.name }} {{ p.type }}
+    {% endfor %}---@return {{ class_name }}
+    function {{ class_name }}.new({% if constructor_params %}{{ constructor_params | map(attribute='name') | join(', ') }}{% endif %}) end
+
+  class_constructor_end: "\n"
+
+  # ---- Fields / Properties ----
+  class_field_annotation: |
+    {{ field_comment }}---@field {{ field_name }} {{ field_type }}
+
+  # ---- Free functions ----
+  function_begin: |
+    {% for p in function_params %}{{ function_comment }}---@param {{ p.name }} {{ p.type }}
+    {% endfor %}{{ function_comment }}---@return {{ function_return }}
+    {{ function_comment }}function {{ function_name }}({% if function_params %}{{ function_params | map(attribute='name') | join(', ') }}{% endif %}) end
+
+  function_end: "\n"
+
+  function_overloaded_group_begin: |
+    {% set first = overloads[0] %}{% for p in first.function_params %}{{ function_comment }}---@param {{ p.name }} {{ p.type }}
+    {% endfor %}{{ function_comment }}---@return {{ first.function_return }}
+    {% for ov in overloads[1:] %}{{ function_comment }}---@overload fun({% if ov.function_params %}{{ ov.function_params | param_pairs }}{% endif %}): {{ ov.function_return }}
+    {% endfor %}{{ function_comment }}function {{ function_name }}({% if first.function_params %}{{ first.function_params | map(attribute='name') | join(', ') }}{% endif %}) end
+
+  function_overloaded_group_end: "\n"
+
+  # ---- Enums ----
+  enum_begin: |
+    ---@enum {{ enum_name }}
+    local {{ enum_name }} = {
+
+  enum_value: |
+    {{ value_name }} = {{ value_number }},
+
+  enum_end: "}\n\n"

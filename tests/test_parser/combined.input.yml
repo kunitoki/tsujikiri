@@ -1,0 +1,8 @@
+source:
+  path: "combined.hpp"
+  parse_args: ["-std=c++17"]
+
+filters:
+  namespaces: ["mylib"]
+  constructors:
+    include: true
