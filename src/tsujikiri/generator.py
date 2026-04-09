@@ -7,17 +7,11 @@ using the line_comment prefix.
 
 Template overrides (from the input YAML ``format_overrides`` section) can
 replace any template by name. An override may contain ``{{ super }}`` which
-expands to the base format's rendered template for that key, allowing
-"wrap" patterns such as::
-
-    prologue: "// pre-amble\\n{{ super }}// post-amble\\n"
+expands to the base format's rendered template for that key.
 
 Parameters are passed to templates as structured lists (``method_params``,
 ``function_params``, ``constructor_params``), each element being a dict with
 keys ``name``, ``type`` (mapped), and ``raw_type`` (original C++ spelling).
-Templates can join them however the target language requires, for example::
-
-    {{ method_params | map(attribute='type') | join(', ') }}
 """
 
 from __future__ import annotations
@@ -56,7 +50,7 @@ class Generator:
             keep_trailing_newline=True,
         )
         env.filters["map_type"] = self._map_type
-        env.filters["param_pairs"] = lambda params: ", ".join(f"{p['name']}: {p['type']}" for p in params)
+        env.filters["param_pairs"] = lambda params, name_key, sep, type_key, joiner: joiner.join(f"{p[name_key]}{sep}{p[type_key]}" for p in params)
         self.jinja_env = env
 
     # ------------------------------------------------------------------
@@ -196,10 +190,12 @@ class Generator:
         )
 
         any_unsupported = any(self._is_unsupported(m.return_type) for m in methods)
+        if any_unsupported:
+            return
+
         group_ctx = dict(class_ctx)
         group_ctx.update({
             "method_name": method_name,
-            "method_comment": f"{self._get_template('line_comment')} " if any_unsupported else "",
             "overloads": [
                 {
                     "method_params": [
@@ -216,11 +212,12 @@ class Generator:
 
         for i, method in enumerate(methods):
             is_last = i == len(methods) - 1
-            comment = f"{self._get_template('line_comment')} " if self._is_unsupported(method.return_type) else ""
+
+            if self._is_unsupported(method.return_type):
+                continue
 
             ctx = dict(class_ctx)
             ctx.update({
-                "method_comment": comment,
                 "method_name": method_name,
                 "method_spelling": method.spelling,
                 "method_params": [
@@ -258,15 +255,13 @@ class Generator:
         return self._get_template("class_overload_cast")
 
     def _emit_method(self, method: IRMethod, class_ctx: Dict[str, Any], out: io.TextIOBase, overload_index: int = 0) -> None:
-        comment = ""
         if self._is_unsupported(method.return_type):
-            comment = f"{self._get_template('line_comment')} "
+            return
 
         method_name = method.rename or method.name
 
         ctx = dict(class_ctx)
         ctx.update({
-            "method_comment": comment,
             "method_name": method_name,
             "method_spelling": method.spelling,
             "method_params": [
@@ -320,7 +315,6 @@ class Generator:
                 {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
                 for p in ctor.parameters
             ]
-            ctx["method_comment"] = ""
             ctx["overload_index"] = str(i)
 
             begin_name = "class_overloaded_constructor_begin" if ctor.is_overload else "class_constructor_begin"
@@ -341,13 +335,11 @@ class Generator:
 
         parts = []
         for field in ir_class.fields:
-            if not field.emit:
+            if not field.emit or self._is_unsupported(field.type_spelling):
                 continue
-            comment = f"{self._get_template('line_comment')} " if self._is_unsupported(field.type_spelling) else ""
             field_name = field.rename or field.name
             ctx = dict(class_ctx)
             ctx.update({
-                "field_comment": comment,
                 "field_name": field_name,
                 "field_type": self._map_type(field.type_spelling),
                 "field_is_const": "true" if field.is_const else "false",
@@ -357,16 +349,12 @@ class Generator:
 
     def _emit_fields(self, ir_class: IRClass, class_ctx: Dict[str, Any], out: io.TextIOBase) -> None:
         for field in ir_class.fields:
-            if not field.emit:
+            if not field.emit or self._is_unsupported(field.type_spelling):
                 continue
-            comment = ""
-            if self._is_unsupported(field.type_spelling):
-                comment = f"{self._get_template('line_comment')} "
 
             field_name = field.rename or field.name
             ctx = dict(class_ctx)
             ctx.update({
-                "field_comment": comment,
                 "field_name": field_name,
                 "field_type": self._map_type(field.type_spelling),
                 "field_is_const": "true" if field.is_const else "false",
@@ -389,7 +377,9 @@ class Generator:
             "enum_name": enum.name,
             "qualified_enum_name": enum.qualified_name,
         })
+
         self._write("enum_begin", ctx, out)
+
         for val in enum.values:
             if val.emit:
                 vctx = dict(ctx)
@@ -398,6 +388,7 @@ class Generator:
                     "value_number": str(val.value),
                 })
                 self._write("enum_value", vctx, out)
+
         self._write("enum_end", ctx, out)
 
     # ------------------------------------------------------------------
@@ -431,10 +422,12 @@ class Generator:
         fn_name = functions[0].rename or functions[0].name
 
         any_unsupported = any(self._is_unsupported(fn.return_type) for fn in functions)
+        if any_unsupported:
+            return
+
         group_ctx = dict(parent_ctx)
         group_ctx.update({
             "function_name": fn_name,
-            "function_comment": f"{self._get_template('line_comment')} " if any_unsupported else "",
             "overloads": [
                 {
                     "function_params": [
@@ -451,11 +444,9 @@ class Generator:
 
         for i, fn in enumerate(functions):
             is_last = i == len(functions) - 1
-            comment = f"{self._get_template('line_comment')} " if self._is_unsupported(fn.return_type) else ""
 
             ctx = dict(parent_ctx)
             ctx.update({
-                "function_comment": comment,
                 "function_name": fn_name,
                 "function_spelling": fn.qualified_name,
                 "function_params": [
@@ -473,14 +464,12 @@ class Generator:
         self._write("function_overloaded_group_end", group_ctx, out)
 
     def _emit_function(self, fn: IRFunction, parent_ctx: Dict[str, Any], out: io.TextIOBase, overload_index: int = 0) -> None:
-        comment = ""
         if self._is_unsupported(fn.return_type):
-            comment = f"{self._get_template('line_comment')} "
+            return
 
         fn_name = fn.rename or fn.name
         ctx = dict(parent_ctx)
         ctx.update({
-            "function_comment": comment,
             "function_name": fn_name,
             "function_spelling": fn.qualified_name,
             "function_params": [
@@ -508,6 +497,7 @@ class Generator:
         return self.cfg.type_mappings.get(type_spelling, type_spelling)
 
     def _is_unsupported(self, type_spelling: str) -> bool:
+        """Return True if the type spelling matches any unsupported type (base or extra)."""
         all_unsupported = self.cfg.unsupported_types + self.extra_unsupported
         return any(t in type_spelling for t in all_unsupported)
 

@@ -166,7 +166,7 @@ class TestUnsupportedTypes:
         )
         mod.classes[0].methods.append(bad_method)
         out = _generate(mod, luabridge3_output_config)
-        assert '// .addFunction("bad"' in out
+        assert '.addFunction("bad"' not in out
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +191,7 @@ class TestTemplateOverrides:
         assert "getGlobalNamespace" in out  # base prologue content
         assert "// POST\n" in out
 
-    def test_extra_unsupported_types_comment_out(self, make_ir_module, luabridge3_output_config):
+    def test_extra_unsupported_types_not_present(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
         bad = IRMethod(
             name="doThing", spelling="doThing",
@@ -205,7 +205,7 @@ class TestTemplateOverrides:
             extra_unsupported_types=["MyOpaqueType"],
         ).generate(mod, buf)
         out = buf.getvalue()
-        assert '// .addFunction("doThing"' in out
+        assert '.addFunction("doThing"' not in out
 
     def test_override_empty_string_suppresses_template(self, make_ir_module, luabridge3_output_config):
         overrides = {"class_end": ""}

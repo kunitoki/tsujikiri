@@ -24,7 +24,8 @@ templates:
     #include <lua.h>
     #include <lualib.h>
     #include <lauxlib.h>
-    }
+    } // extern "C"
+
     #include <LuaBridge/LuaBridge.h>
 
     #include <utility>
@@ -32,9 +33,10 @@ templates:
     void register_{{ module_name }}(lua_State* L)
     {
       luabridge::getGlobalNamespace(L)
+        .beginNamespace("{{ module_name }}")
 
-  epilogue: |
-    ;
+  epilogue: |2
+        .endNamespace();
     }
 
   footer: ""
@@ -47,68 +49,60 @@ templates:
   function_overload_cast: "luabridge::overload"
 
   # ---- Class ----
-  class_begin: |
-    .beginClass<{{ qualified_class_name }}>("{{ class_name }}")
-  class_derived_begin: |
-    .deriveClass<{{ qualified_class_name }}, {{ class_base_name }}>("{{ class_name }}")
-  class_end: |
-    .endClass()
-  class_methods_begin: ""
-  class_methods_end: ""
+  class_begin: |2
+          .beginClass<{{ qualified_class_name }}>("{{ class_name }}")
+  class_derived_begin: |2
+          .deriveClass<{{ qualified_class_name }}, {{ class_base_name }}>("{{ class_name }}")
+  class_end: |2
+          .endClass()
 
   # ---- Regular methods ----
-  class_method_begin: |
-    {{ method_comment }}.addFunction("{{ method_name }}", &{{ qualified_class_name }}::{{ method_spelling }})
+  class_method_begin: |2
+            .addFunction("{{ method_name }}", &{{ qualified_class_name }}::{{ method_spelling }})
   class_method_end: ""
-  class_overloaded_method_group_begin: |
-    {{ method_comment }}.addFunction("{{ method_name }}",
-  class_overloaded_method_group_end: ")"
-  class_overloaded_method_begin: |
-    {{ method_comment }}{{ method_overload_cast }}<{{ method_params | map(attribute='type') | join(', ') }}>(&{{ qualified_class_name }}::{{ method_spelling }}){{ method_overload_separator }}
-  class_overloaded_method_end: ""
+  class_overloaded_method_group_begin: |2
+            .addFunction("{{ method_name }}",
+  class_overloaded_method_begin: |2
+              {{ method_overload_cast }}<{{ method_params | map(attribute='type') | join(', ') }}>(&{{ qualified_class_name }}::{{ method_spelling }}){{ method_overload_separator }}
+  class_overloaded_method_group_end: |2
+            )
 
   # ---- Static methods ----
-  class_static_method_begin: |
-    {{ method_comment }}.addStaticFunction("{{ method_name }}", &{{ qualified_class_name }}::{{ method_spelling }})
-  class_static_method_end: ""
-  class_overloaded_static_method_group_begin: |
-    {{ method_comment }}.addStaticFunction("{{ method_name }}",
-  class_overloaded_static_method_group_end: ")"
-  class_overloaded_static_method_begin: |
-    {{ method_comment }}{{ method_overload_cast }}<{{ method_params | map(attribute='type') | join(', ') }}>(&{{ qualified_class_name }}::{{ method_spelling }}){{ method_overload_separator }}
-  class_overloaded_static_method_end: ""
+  class_static_method_begin: |2
+            .addStaticFunction("{{ method_name }}", &{{ qualified_class_name }}::{{ method_spelling }})
+  class_overloaded_static_method_group_begin: |2
+            .addStaticFunction("{{ method_name }}",
+  class_overloaded_static_method_begin: |2
+              {{ method_overload_cast }}<{{ method_params | map(attribute='type') | join(', ') }}>(&{{ qualified_class_name }}::{{ method_spelling }}){{ method_overload_separator }}
+  class_overloaded_static_method_group_end: |2
+            )
 
   # ---- Constructors ----
-  class_constructor_begin: |
-    {{ method_comment }}.addConstructor<void (*)({{ constructor_params | map(attribute='raw_type') | join(', ') }})>()
-  class_constructor_end: ""
-  class_overloaded_constructor_begin: |
-    {{ method_comment }}.addConstructor<void (*)({{ constructor_params | map(attribute='raw_type') | join(', ') }})>()
-  class_overloaded_constructor_end: ""
+  class_constructor_begin: |2
+            .addConstructor<void (*)({{ constructor_params | map(attribute='raw_type') | join(', ') }})>()
+  class_overloaded_constructor_begin: |2
+            .addConstructor<void (*)({{ constructor_params | map(attribute='raw_type') | join(', ') }})>()
 
   # ---- Fields / Properties ----
-  class_field_begin: |
-    {{ field_comment }}.addProperty("{{ field_name }}", &{{ qualified_class_name }}::{{ field_name }})
-  class_field_end: ""
-  class_readonly_field_begin: |
-    {{ field_comment }}.addProperty("{{ field_name }}", &{{ qualified_class_name }}::{{ field_name }}, nullptr)
-  class_readonly_field_end: ""
+  class_field_begin: |2
+            .addProperty("{{ field_name }}", &{{ qualified_class_name }}::{{ field_name }})
+  class_readonly_field_begin: |2
+            .addProperty("{{ field_name }}", &{{ qualified_class_name }}::{{ field_name }}, nullptr)
 
   # ---- Free functions ----
-  function_begin: |
-    {{ function_comment }}.addFunction("{{ function_name }}", &{{ function_spelling }})
-  function_end: ""
-  function_overloaded_group_begin: |
-    {{ function_comment }}.addFunction("{{ function_name }}",
-  function_overloaded_group_end: ")"
-  function_overloaded_begin: |
-    {{ function_comment }}{{ function_overload_cast }}<{{ function_params | map(attribute='type') | join(', ') }}>(&{{ function_spelling }}){{ function_overload_separator }}
-  function_overloaded_end: ""
+  function_begin: |2
+        .addFunction("{{ function_name }}", &{{ function_spelling }})
+  function_overloaded_group_begin: |2
+        .addFunction("{{ function_name }}",
+  function_overloaded_begin: |2
+          {{ function_overload_cast }}<{{ function_params | map(attribute='type') | join(', ') }}>(&{{ function_spelling }}){{ function_overload_separator }}
+  function_overloaded_group_end: |2
+        )
 
   # ---- Enums ----
-  enum_begin: |
-    .beginNamespace("{{ enum_name }}")
-  enum_end: |
-    .endNamespace()
-  enum_value: |
-    .addProperty("{{ value_name }}", +[] { return static_cast<std::underlying_type_t<{{ qualified_enum_name }}>>({{ qualified_enum_name }}::{{ value_name }}); })
+  enum_begin: |2
+        .beginNamespace("{{ enum_name }}")
+  enum_value: |2
+          .addProperty("{{ value_name }}", +[] { return static_cast<std::underlying_type_t<{{ qualified_enum_name }}>>({{ qualified_enum_name }}::{{ value_name }}); })
+  enum_end: |2
+        .endNamespace()

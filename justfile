@@ -23,7 +23,7 @@ test *args:
 
 # Run tests with coverage report.
 coverage:
-    uv run pytest --cov=tsujikiri --cov-report=term-missing
+    uv run pytest --cov=tsujikiri --cov-report=term-missing -vv
 
 # Remove build artifacts.
 clean:
