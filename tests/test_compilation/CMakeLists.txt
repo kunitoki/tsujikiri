@@ -75,6 +75,6 @@ add_custom_command(
     COMMENT "Generating LuaLS bindings with tsujikiri..."
     VERBATIM)
 
-add_library(test_luabridge3_bindings STATIC ${GENERATED_SOURCE} ${GENERATED_LUALS})
+add_executable(test_luabridge3_bindings ${GENERATED_SOURCE} ${GENERATED_LUALS} main.cpp)
 target_include_directories(test_luabridge3_bindings PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_luabridge3_bindings PRIVATE LuaBridge3::LuaBridge3)
