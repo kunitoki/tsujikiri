@@ -5,9 +5,23 @@ on:
     branches:
       - main
       - "dev/**"
+    paths:
+      - ".github/workflows/tests.yml"
+      - "src/**"
+      - "tests/**"
+      - "requirements-dev.txt"
+      - "pyproject.toml"
+      - "uv.lock"
   pull_request:
     branches:
       - "dev/**"
+    paths:
+      - ".github/workflows/tests.yml"
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "requirements-dev.txt"
+      - "uv.lock"
 
 jobs:
   test:
