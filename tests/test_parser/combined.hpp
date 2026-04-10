@@ -18,9 +18,10 @@ public:
     virtual double area() const noexcept = 0;
     virtual double perimeter() const = 0;
 
-    const char* getName() const;
-    void        setName(const char* name);
-    double      getScale() const;
+    const char* getName() const [[tsujikiri::skip]];
+    void        setName(const char* name) [[tsujikiri::rename("name")]];
+    double      getScale() const [[mygame::no_export]];
+    [[mygame::no_export]]
     void        setScale(double scale);
 
 protected:

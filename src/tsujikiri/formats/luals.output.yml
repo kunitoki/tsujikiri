@@ -36,6 +36,13 @@ template: |
   {%- block prologue -%}
   -- DO NOT EDIT - Auto-generated LuaLS annotations for {{ module_name }} by tsujikiri
   {%- endblock %}
+  {%- block api_version %}
+  {%- if api_version %}
+
+  ---@return string
+  function {{ module_name }}.get_api_version() end
+  {%- endif %}
+  {%- endblock %}
   {%- for cls in classes %}
   {%- block class scoped %}
 

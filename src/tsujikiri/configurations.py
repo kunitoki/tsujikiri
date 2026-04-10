@@ -103,11 +103,18 @@ class ClassTweak:
 
 
 @dataclass
+class AttributeHandlerConfig:
+    """Maps custom attribute names to actions: 'skip', 'keep', or 'rename'."""
+    handlers: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class GenerationConfig:
     """Per-project generation settings: headers to include, prefix/postfix code."""
     includes: List[str] = field(default_factory=list)
     prefix: str = ""
     postfix: str = ""
+    embed_version: bool = False
 
 
 @dataclass
@@ -159,6 +166,8 @@ class InputConfig:
     transforms: List[TransformSpec] = field(default_factory=list)
     tweaks: Dict[str, ClassTweak] = field(default_factory=dict)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
+    # Attribute-based annotation handlers (applied after filtering, before transforms).
+    attributes: AttributeHandlerConfig = field(default_factory=AttributeHandlerConfig)
     # Per-format template/type overrides (keyed by format name, e.g. "luabridge3").
     format_overrides: Dict[str, FormatOverrideConfig] = field(default_factory=dict)
 
@@ -262,6 +271,7 @@ def _parse_generation_config(gen_raw: Dict[str, Any]) -> GenerationConfig:
         includes=gen_raw.get("includes", []),
         prefix=gen_raw.get("prefix", "") or "",
         postfix=gen_raw.get("postfix", "") or "",
+        embed_version=gen_raw.get("embed_version", False),
     )
 
 
@@ -324,6 +334,12 @@ def load_input_config(config_file: Path) -> InputConfig:
     transforms = _parse_transforms_list(data.get("transforms", []))
     generation = _parse_generation_config(data.get("generation", {}))
 
+    # --- Attribute handlers ---
+    attr_raw = data.get("attributes", {})
+    attributes = AttributeHandlerConfig(
+        handlers=attr_raw.get("handlers", {}),
+    )
+
     # --- Tweaks ---
     tweaks_raw = data.get("tweaks", {})
     tweaks = {
@@ -355,6 +371,7 @@ def load_input_config(config_file: Path) -> InputConfig:
         transforms=transforms,
         tweaks=tweaks,
         generation=generation,
+        attributes=attributes,
         format_overrides=format_overrides,
     )
 

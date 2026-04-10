@@ -68,19 +68,19 @@ class Generator:
     # Public entry point
     # ------------------------------------------------------------------
 
-    def generate(self, module: IRModule, out: io.TextIOBase) -> None:
-        self.generate_from_template(module, out)
+    def generate(self, module: IRModule, out: io.TextIOBase, api_version: str = "") -> None:
+        self.generate_from_template(module, out, api_version)
 
     # ------------------------------------------------------------------
     # Single-template rendering
     # ------------------------------------------------------------------
 
-    def generate_from_template(self, module: IRModule, out: io.TextIOBase) -> None:
+    def generate_from_template(self, module: IRModule, out: io.TextIOBase, api_version: str = "") -> None:
         """Render the format's single Jinja2 template with full IR context."""
         from tsujikiri.configurations import load_output_config
         from tsujikiri.formats import _FORMATS_DIR
 
-        ctx = self._build_ir_context(module)
+        ctx = self._build_ir_context(module, api_version)
 
         # Build a DictLoader with all available format templates so that
         # {% extends "luabridge3.tpl" %} (etc.) resolves correctly.
@@ -128,7 +128,7 @@ class Generator:
     # IR context building
     # ------------------------------------------------------------------
 
-    def _build_ir_context(self, module: IRModule) -> Dict[str, Any]:
+    def _build_ir_context(self, module: IRModule, api_version: str = "") -> Dict[str, Any]:
         """Build a plain-data context dict from the IR for template rendering."""
         topo = self._topo_sort(module.classes, module.class_by_name)
         flat_classes: List[Dict[str, Any]] = []
@@ -142,6 +142,7 @@ class Generator:
             "enums": [self._build_enum_ctx(e) for e in module.enums if e.emit],
             "function_groups": self._build_function_group_ctxs(module.functions),
             "classes": flat_classes,
+            "api_version": api_version,
         }
 
     def _flatten_class_ctx(self, ir_class: IRClass) -> List[Dict[str, Any]]:
@@ -156,8 +157,9 @@ class Generator:
         return {
             "name": enum.name,
             "qualified_name": enum.qualified_name,
+            "attributes": list(enum.attributes),
             "values": [
-                {"name": v.name, "number": str(v.value)}
+                {"name": v.name, "number": str(v.value), "attributes": list(v.attributes)}
                 for v in enum.values
                 if v.emit
             ],
@@ -194,6 +196,7 @@ class Generator:
                     "overload_separator": "" if is_last else ",",
                     "overload_index": i,
                     "is_noexcept": fn.is_noexcept,
+                    "attributes": list(fn.attributes),
                 })
             result.append({
                 "name": key,
@@ -258,6 +261,7 @@ class Generator:
                     "is_pure_virtual": m.is_pure_virtual,
                     "is_noexcept": m.is_noexcept,
                     "overload_index": i,
+                    "attributes": list(m.attributes),
                 })
             method_groups.append({
                 "name": group_name,
@@ -281,6 +285,7 @@ class Generator:
         return {
             "name": name,
             "qualified_name": ir_class.qualified_name,
+            "attributes": list(ir_class.attributes),
             "bases": [{"qualified_name": b.qualified_name, "access": b.access} for b in ir_class.bases],
             "base_name": base_name,
             "base_short_name": base_name.split("::")[-1] if base_name else "",

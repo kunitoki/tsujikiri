@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from tsujikiri.cli import build_parser, main
 
@@ -223,3 +225,210 @@ class TestPerSourceGenerationIncludes:
             "--output", "luabridge3",
         )
         assert "<simple_extra.h>" in stdout
+
+
+# ---------------------------------------------------------------------------
+# --manifest-file / --check-compat / --embed-version
+# ---------------------------------------------------------------------------
+
+class TestManifestCompatibility:
+    """End-to-end tests simulating API changes detected at generation time."""
+
+    def _input_yml(self, tmp_path: Path, hpp_path: Path, name: str = "api") -> Path:
+        data = {
+            "source": {
+                "path": str(hpp_path),
+                "parse_args": ["-std=c++17"],
+            },
+            "filters": {"namespaces": ["api"]},
+        }
+        p = tmp_path / f"{name}.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+        return p
+
+    def test_manifest_created_on_first_run(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+        manifest = tmp_path / "api.json"
+
+        _run("--input", str(self._input_yml(tmp_path, hpp)),
+             "--output", "luabridge3",
+             "--manifest-file", str(manifest))
+
+        assert manifest.exists()
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        assert "version" in data
+        assert len(data["version"]) == 64  # SHA-256 hex digest
+
+    def test_no_change_exits_0_and_manifest_unchanged(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+        input_yml = self._input_yml(tmp_path, hpp)
+        manifest = tmp_path / "api.json"
+
+        _run("--input", str(input_yml), "--output", "luabridge3",
+             "--manifest-file", str(manifest))
+        v1_version = json.loads(manifest.read_text())["version"]
+
+        _, stderr = _run("--input", str(input_yml), "--output", "luabridge3",
+                         "--manifest-file", str(manifest), "--check-compat")
+
+        assert "Breaking" not in stderr
+        assert json.loads(manifest.read_text())["version"] == v1_version
+
+    def test_breaking_change_exits_1(self, tmp_path):
+        """Core scenario: adding a parameter to a function is a breaking change.
+
+        v1: compute(int) -> int
+        v2: compute(int, double) -> int   ← new required parameter breaks callers
+        """
+        v1_hpp = tmp_path / "v1.hpp"
+        v1_hpp.write_text("namespace api { int compute(int x); }\n")
+        manifest = tmp_path / "api.json"
+
+        _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
+             "--output", "luabridge3",
+             "--manifest-file", str(manifest))
+        v1_version = json.loads(manifest.read_text())["version"]
+
+        # v2: add a second parameter — breaking change
+        v2_hpp = tmp_path / "v2.hpp"
+        v2_hpp.write_text("namespace api { int compute(int x, double y); }\n")
+
+        stdout_io, stderr_io = StringIO(), StringIO()
+        with patch("sys.argv", ["tsujikiri",
+                                 "--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
+                                 "--output", "luabridge3",
+                                 "--manifest-file", str(manifest),
+                                 "--check-compat"]):
+            with patch("sys.stdout", stdout_io), patch("sys.stderr", stderr_io):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+
+        assert exc_info.value.code == 1
+        stderr = stderr_io.getvalue()
+        assert "Breaking" in stderr
+        assert "compute" in stderr
+        # Manifest must NOT be updated — baseline stays at v1 for the next check
+        assert json.loads(manifest.read_text())["version"] == v1_version
+
+    def test_breaking_change_method_on_class_exits_1(self, tmp_path):
+        """Class method parameter count change is a breaking change."""
+        v1_hpp = tmp_path / "v1.hpp"
+        v1_hpp.write_text(
+            "namespace api { class Calc { public: int add(int a, int b); }; }\n"
+        )
+        manifest = tmp_path / "api.json"
+
+        _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
+             "--output", "luabridge3",
+             "--manifest-file", str(manifest))
+        v1_version = json.loads(manifest.read_text())["version"]
+
+        v2_hpp = tmp_path / "v2.hpp"
+        v2_hpp.write_text(
+            "namespace api { class Calc { public: int add(int a, int b, int c); }; }\n"
+        )
+
+        stdout_io, stderr_io = StringIO(), StringIO()
+        with patch("sys.argv", ["tsujikiri",
+                                 "--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
+                                 "--output", "luabridge3",
+                                 "--manifest-file", str(manifest),
+                                 "--check-compat"]):
+            with patch("sys.stdout", stdout_io), patch("sys.stderr", stderr_io):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+
+        assert exc_info.value.code == 1
+        stderr = stderr_io.getvalue()
+        assert "Breaking" in stderr
+        assert "add" in stderr
+        assert json.loads(manifest.read_text())["version"] == v1_version
+
+    def test_additive_change_exits_0_with_warning(self, tmp_path):
+        """Adding a new function is additive — warns but does not fail."""
+        v1_hpp = tmp_path / "v1.hpp"
+        v1_hpp.write_text("namespace api { int compute(int x); }\n")
+        manifest = tmp_path / "api.json"
+
+        _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
+             "--output", "luabridge3",
+             "--manifest-file", str(manifest))
+
+        v2_hpp = tmp_path / "v2.hpp"
+        v2_hpp.write_text("namespace api { int compute(int x); int reset(); }\n")
+
+        _, stderr = _run("--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
+                         "--output", "luabridge3",
+                         "--manifest-file", str(manifest), "--check-compat")
+
+        assert "Breaking" not in stderr
+        assert "WARNING" in stderr
+        assert "reset" in stderr
+
+    def test_breaking_without_check_compat_exits_0(self, tmp_path):
+        """Without --check-compat, breaking changes are reported but do not fail."""
+        v1_hpp = tmp_path / "v1.hpp"
+        v1_hpp.write_text("namespace api { int compute(int x); }\n")
+        manifest = tmp_path / "api.json"
+
+        _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
+             "--output", "luabridge3",
+             "--manifest-file", str(manifest))
+
+        v2_hpp = tmp_path / "v2.hpp"
+        v2_hpp.write_text("namespace api { int compute(int x, double y); }\n")
+
+        _, stderr = _run("--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
+                         "--output", "luabridge3",
+                         "--manifest-file", str(manifest))  # no --check-compat
+
+        assert "Breaking" in stderr
+        # Manifest IS updated to v2 (no --check-compat to block it)
+        data = json.loads(manifest.read_text())
+        assert data["api"]["functions"][0]["params"] == ["int", "double"]
+
+    def test_embed_version_in_generated_code(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+        manifest = tmp_path / "api.json"
+        out = tmp_path / "bindings.cpp"
+
+        _run("--input", str(self._input_yml(tmp_path, hpp)),
+             "--output", "luabridge3",
+             "--manifest-file", str(manifest),
+             "--embed-version",
+             "--output-file", str(out))
+
+        version = json.loads(manifest.read_text())["version"]
+        content = out.read_text(encoding="utf-8")
+        assert version in content
+        assert "get_api_version" in content
+
+    def test_no_embed_version_by_default(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+        out = tmp_path / "bindings.cpp"
+
+        _run("--input", str(self._input_yml(tmp_path, hpp)),
+             "--output", "luabridge3",
+             "--output-file", str(out))
+
+        content = out.read_text(encoding="utf-8")
+        assert "api_version" not in content
+        assert "get_api_version" not in content
+
+    def test_dry_run_shows_version(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+
+        stdout, _ = _run("--input", str(self._input_yml(tmp_path, hpp)),
+                         "--output", "luabridge3", "--dry-run")
+
+        version_lines = [
+            line for line in stdout.splitlines()
+            if "Version" in line
+        ]
+        assert len(version_lines) == 1
+        assert len(version_lines[0].split(":")[-1].strip()) == 64

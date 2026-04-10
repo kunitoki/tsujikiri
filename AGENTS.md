@@ -1,3 +1,0 @@
-- always use python via "uv python"
-- use "just test" to test
-- use "just coverage" to coverage

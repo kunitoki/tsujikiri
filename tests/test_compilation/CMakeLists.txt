@@ -57,12 +57,13 @@ file(GLOB_RECURSE TSUJIKIRI_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/../../src/**/*.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../src/**/*.yml")
 set(INPUT_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/combined.input.yml)
+set(GENERATED_MANIFEST ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.manifest)
 set(GENERATED_SOURCE ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.cpp)
 set(GENERATED_LUALS ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.lua)
 
 add_custom_command(
     OUTPUT ${GENERATED_SOURCE}
-    COMMAND tsujikiri -i ${INPUT_SOURCE} -o luabridge3 -O ${GENERATED_SOURCE}
+    COMMAND tsujikiri -i ${INPUT_SOURCE} -o luabridge3 --manifest-file ${GENERATED_MANIFEST} -O ${GENERATED_SOURCE}
     DEPENDS ${INPUT_SOURCE}
     IMPLICIT_DEPENDS ${TSUJIKIRI_SOURCES}
     COMMENT "Generating LuaBridge3 bindings with tsujikiri..."

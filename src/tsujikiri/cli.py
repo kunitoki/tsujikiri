@@ -6,11 +6,13 @@ import argparse
 import sys
 from pathlib import Path
 
+from tsujikiri.attribute_processor import AttributeProcessor
 from tsujikiri.configurations import GenerationConfig, load_input_config, load_output_config
 from tsujikiri.filters import FilterEngine
 from tsujikiri.formats import resolve_format_path
 from tsujikiri.generator import Generator
 from tsujikiri.ir import merge_modules
+from tsujikiri.manifest import compare_manifests, compute_manifest, load_manifest, save_manifest
 from tsujikiri.parser import parse_translation_unit
 from tsujikiri.transforms import build_pipeline_from_config
 
@@ -60,6 +62,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Parse and filter but do not generate output; print a summary instead",
+    )
+    p.add_argument(
+        "--manifest-file", "-M",
+        default=None,
+        metavar="FILE",
+        help="Write API manifest JSON to FILE; if FILE already exists, compare with new manifest",
+    )
+    p.add_argument(
+        "--check-compat",
+        action="store_true",
+        help="Exit 1 if --manifest-file exists and breaking API changes are detected",
+    )
+    p.add_argument(
+        "--embed-version",
+        action="store_true",
+        help="Embed the API version hash in the generated code (template must support it)",
     )
     return p
 
@@ -138,6 +156,7 @@ def main() -> None:
                     ir_class.emit = False
 
         FilterEngine(effective_filters).apply(module)
+        AttributeProcessor(input_config.attributes).apply(module)
         build_pipeline_from_config(effective_transforms).run(module)
 
         all_modules.append(module)
@@ -154,10 +173,39 @@ def main() -> None:
         all_includes.extend(fmt_generation.includes)
         prefix = fmt_generation.prefix or base_gen.prefix
         postfix = fmt_generation.postfix or base_gen.postfix
+        embed_version = fmt_generation.embed_version or base_gen.embed_version
     else:
         prefix = base_gen.prefix
         postfix = base_gen.postfix
-    effective_generation = GenerationConfig(includes=all_includes, prefix=prefix, postfix=postfix)
+        embed_version = base_gen.embed_version
+    effective_generation = GenerationConfig(
+        includes=all_includes, prefix=prefix, postfix=postfix, embed_version=embed_version,
+    )
+
+    # --- Manifest: compute, compare, and optionally embed version ---
+    manifest = compute_manifest(merged)
+    api_version = ""
+    has_breaking = False
+
+    if args.manifest_file:
+        manifest_path = Path(args.manifest_file)
+        if manifest_path.exists():
+            old_manifest = load_manifest(manifest_path)
+            if old_manifest["version"] != manifest["version"]:
+                report = compare_manifests(old_manifest, manifest)
+                if report.additive_changes:
+                    print("WARNING: Additive API changes:", file=sys.stderr)
+                    for ch in report.additive_changes:
+                        print(f"  + {ch}", file=sys.stderr)
+                if report.breaking_changes:
+                    print("ERROR: Breaking API changes detected:", file=sys.stderr)
+                    for ch in report.breaking_changes:
+                        print(f"  ! {ch}", file=sys.stderr)
+                    if args.check_compat:
+                        has_breaking = True
+
+    if args.embed_version or effective_generation.embed_version:
+        api_version = manifest["version"]
 
     if args.dry_run:
         emitted_classes = [c.name for c in merged.classes if c.emit]
@@ -168,6 +216,7 @@ def main() -> None:
         print(f"Classes : {len(emitted_classes)} — {', '.join(emitted_classes) or '(none)'}")
         print(f"Functions: {len(emitted_functions)} — {', '.join(emitted_functions) or '(none)'}")
         print(f"Enums   : {len(emitted_enums)} — {', '.join(emitted_enums) or '(none)'}")
+        print(f"Version : {manifest['version']}")
         return
 
     gen = Generator(
@@ -180,7 +229,14 @@ def main() -> None:
     if args.output_file:
         out_path = Path(args.output_file)
         with open(out_path, "w", encoding="utf-8") as out:
-            gen.generate(merged, out)
+            gen.generate(merged, out, api_version=api_version)
         print(f"Written to {out_path}", file=sys.stderr)
     else:
-        gen.generate(merged, sys.stdout)
+        gen.generate(merged, sys.stdout, api_version=api_version)
+
+    # Write manifest only when there are no breaking changes (or compat check is off).
+    if args.manifest_file and not has_breaking:
+        save_manifest(manifest, Path(args.manifest_file))
+
+    if has_breaking:
+        sys.exit(1)

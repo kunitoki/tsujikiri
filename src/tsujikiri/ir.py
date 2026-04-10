@@ -39,6 +39,7 @@ class IRMethod:
     source_file: Optional[str] = None
     emit: bool = True
     rename: Optional[str] = None    # set by transforms to change the binding name
+    attributes: List[str] = field(default_factory=list)   # raw [[...]] attribute contents
 
 
 @dataclass
@@ -48,6 +49,7 @@ class IRConstructor:
     is_noexcept: bool = False
     is_explicit: bool = False
     emit: bool = True
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -58,6 +60,7 @@ class IRField:
     is_static: bool = False
     emit: bool = True
     rename: Optional[str] = None
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -65,6 +68,7 @@ class IREnumValue:
     name: str
     value: int
     emit: bool = True
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -73,6 +77,7 @@ class IREnum:
     qualified_name: str
     values: List[IREnumValue] = field(default_factory=list)
     emit: bool = True
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -93,6 +98,7 @@ class IRClass:
     variable_name: str = ""         # camelCase binding variable name
     parent_class: Optional[str] = None   # for inner classes
     source_file: Optional[str] = None
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -106,6 +112,7 @@ class IRFunction:
     is_noexcept: bool = False
     emit: bool = True
     rename: Optional[str] = None
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
