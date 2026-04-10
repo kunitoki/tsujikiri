@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tsujikiri.ir import (
+    IRBase,
     IRClass,
     IRConstructor,
     IREnum,
@@ -125,8 +126,19 @@ class TestIRClass:
 
     def test_with_base(self):
         c = IRClass(name="Circle", qualified_name="ns::Circle", namespace="ns",
-                    bases=["Shape"])
-        assert c.bases == ["Shape"]
+                    bases=[IRBase("Shape")])
+        assert len(c.bases) == 1
+        assert c.bases[0].qualified_name == "Shape"
+        assert c.bases[0].access == "public"
+
+    def test_base_access_specifiers(self):
+        c = IRClass(name="D", qualified_name="ns::D", namespace="ns", bases=[
+            IRBase("ns::A", "public"),
+            IRBase("ns::B", "protected"),
+            IRBase("ns::C", "private"),
+        ])
+        accesses = [b.access for b in c.bases]
+        assert accesses == ["public", "protected", "private"]
 
     def test_emit_suppression(self):
         c = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns")

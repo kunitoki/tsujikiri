@@ -7,29 +7,38 @@ namespace mylib {
 
 enum class Color { Red = 0, Green = 1, Blue = 2 };
 
+struct Protected {};
+struct Private {};
+
 class Shape {
 public:
-    Shape();
+    Shape() noexcept;
     explicit Shape(const char* name);
 
-    virtual double area() const;
-    virtual double perimeter() const;
+    virtual double area() const noexcept = 0;
+    virtual double perimeter() const = 0;
 
     const char* getName() const;
     void        setName(const char* name);
     double      getScale() const;
     void        setScale(double scale);
 
+protected:
+    void protectedMethod() const;
+
+private:
+    void privateMethod() const noexcept;
+
 public:
     double scale_;
 };
 
-class Circle : public Shape {
+class Circle : public Shape, protected Protected, private Private {
 public:
-    Circle();
+    Circle() noexcept;
     explicit Circle(double radius);
 
-    double area() const;
+    double area() const noexcept;
     double perimeter() const;
 
     double getRadius() const;
@@ -59,7 +68,7 @@ public:
     int value_;
 };
 
-double computeArea(double radius);
+double computeArea(double radius) noexcept;
 double computeArea(double width, double height);
 
 } // namespace mylib

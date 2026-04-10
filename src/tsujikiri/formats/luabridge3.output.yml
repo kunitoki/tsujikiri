@@ -34,41 +34,40 @@ template: |
   {%- endblock %}
   {%- for enum in enums %}
   {%- block enum scoped %}
-          .beginNamespace("{{ enum.name }}")
+        .beginNamespace("{{ enum.name }}")
   {%- for value in enum.values %}
   {%- block enum_value scoped %}
-            .addProperty("{{ value.name }}", +[] { return static_cast<std::underlying_type_t<{{ enum.qualified_name }}>>({{ enum.qualified_name }}::{{ value.name }}); })
+          .addProperty("{{ value.name }}", +[] { return static_cast<std::underlying_type_t<{{ enum.qualified_name }}>>({{ enum.qualified_name }}::{{ value.name }}); })
   {%- endblock %}
   {%- endfor %}
-          .endNamespace()
+        .endNamespace()
   {%- endblock %}
   {%- endfor %}
   {%- for group in function_groups %}
   {%- block function_group scoped %}
   {%- if group.is_overloaded %}
-          .addFunction("{{ group.name | camel_to_snake }}",
+        .addFunction("{{ group.name | camel_to_snake }}",
   {%- for fn in group.functions %}
-  {%- block function_overloaded scoped %}
-            luabridge::overload<{{ fn.params | map(attribute='type') | join(', ') }}>(&{{ fn.spelling }}){{ fn.overload_separator }}
+  {% block function_overloaded scoped %}        luabridge::overload<{{ fn.params | map(attribute='type') | join(', ') }}>(&{{ fn.spelling }}){{ fn.overload_separator }}
   {%- endblock %}
   {%- endfor %}
-          )
+        )
   {%- else %}
-          .addFunction("{{ group.functions[0].name | camel_to_snake }}", &{{ group.functions[0].spelling }})
+        .addFunction("{{ group.functions[0].name | camel_to_snake }}", &{{ group.functions[0].spelling }})
   {%- endif %}
   {%- endblock %}
   {%- endfor %}
   {%- for cls in classes %}
   {%- block class scoped %}
   {%- if cls.base_name %}
-          .deriveClass<{{ cls.qualified_name }}, {{ cls.base_name }}>("{{ cls.name }}")
+        .deriveClass<{{ cls.qualified_name }}, {{ cls.base_name }}>("{{ cls.name }}")
   {%- else %}
-          .beginClass<{{ cls.qualified_name }}>("{{ cls.name }}")
+        .beginClass<{{ cls.qualified_name }}>("{{ cls.name }}")
   {%- endif %}
   {%- block class_constructors scoped %}
   {%- for ctor in cls.constructor_group.constructors %}
   {%- block class_constructor_group scoped %}
-            .addConstructor<void (*)({{ ctor.params | map(attribute='raw_type') | join(', ') }})>()
+          .addConstructor<void (*)({{ ctor.params | map(attribute='raw_type') | join(', ') }})>()
   {%- endblock %}
   {%- endfor %}
   {%- endblock %}
@@ -77,29 +76,27 @@ template: |
   {%- if group.is_static %}
   {%- block class_static_method_group scoped %}
   {%- if group.is_overloaded %}
-            .addStaticFunction("{{ group.name | camel_to_snake }}",
+          .addStaticFunction("{{ group.name | camel_to_snake }}",
   {%- for method in group.methods %}
-  {%- block class_overloaded_static_method scoped %}
-              {%- if method.overload_kind == "const" %}luabridge::constOverload{%- elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{%- else %}luabridge::overload{%- endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
+  {% block class_overloaded_static_method scoped %}          {% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
   {%- endblock %}
   {%- endfor %}
-            )
+          )
   {%- else %}
-            .addStaticFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ group.methods[0].spelling }})
+          .addStaticFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ group.methods[0].spelling }})
   {%- endif %}
   {%- endblock %}
   {%- else %}
   {%- block class_method_group scoped %}
   {%- if group.is_overloaded %}
-            .addFunction("{{ group.name | camel_to_snake }}",
+          .addFunction("{{ group.name | camel_to_snake }}",
   {%- for method in group.methods %}
-  {%- block class_overloaded_method scoped %}
-              {%- if method.overload_kind == "const" %}luabridge::constOverload{%- elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{%- else %}luabridge::overload{%- endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
+  {% block class_overloaded_method scoped %}          {% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
   {%- endblock %}
   {%- endfor %}
-            )
+          )
   {%- else %}
-            .addFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ group.methods[0].spelling }})
+          .addFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ group.methods[0].spelling }})
   {%- endif %}
   {%- endblock %}
   {%- endif %}
@@ -109,9 +106,9 @@ template: |
   {%- for field in cls.fields %}
   {%- block class_field scoped %}
   {%- if field.is_const %}
-            .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}, nullptr)
+          .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}, nullptr)
   {%- else %}
-            .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }})
+          .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }})
   {%- endif %}
   {%- endblock %}
   {%- endfor %}
@@ -129,10 +126,10 @@ template: |
   {%- endblock %}
   {%- endfor %}
   {%- endblock %}
-          .endClass()
+        .endClass()
   {%- endblock %}
   {%- endfor %}
   {%- block epilogue %}
-        .endNamespace();
+      .endNamespace();
   }
   {%- endblock %}

@@ -5,9 +5,11 @@ from __future__ import annotations
 import io
 
 import pytest
+import jinja2
+from unittest.mock import patch
 
-from tsujikiri.generator import Generator
-from tsujikiri.ir import IRClass, IRConstructor, IREnumValue, IRField, IRFunction, IRMethod, IRModule, IRParameter
+from tsujikiri.generator import Generator, ItemFirstEnvironment
+from tsujikiri.ir import IRBase, IRClass, IRConstructor, IREnumValue, IRField, IRFunction, IRMethod, IRModule, IRParameter
 
 
 def _generate(module: IRModule, output_config) -> str:
@@ -45,7 +47,7 @@ class TestClassTemplates:
         base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        variable_name="classBase")
         derived = IRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
-                          bases=["ns::Base"], variable_name="classDerived")
+                          bases=[IRBase("ns::Base")], variable_name="classDerived")
         mod = IRModule(name="m", classes=[base, derived],
                        class_by_name={"Base": base, "Derived": derived})
         out = _generate(mod, luabridge3_output_config)
@@ -55,7 +57,7 @@ class TestClassTemplates:
         base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        variable_name="classBase")
         derived = IRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
-                          bases=["ns::Base"], variable_name="classDerived")
+                          bases=[IRBase("ns::Base")], variable_name="classDerived")
         # Deliberately put derived first in list; topo sort should fix ordering
         mod = IRModule(name="m", classes=[derived, base],
                        class_by_name={"Base": base, "Derived": derived})
@@ -353,9 +355,9 @@ class TestFunctionUnsupportedType:
 class TestTopoSortCycle:
     def test_cycle_classes_still_emitted(self, luabridge3_output_config):
         cls_a = IRClass(name="A", qualified_name="ns::A", namespace="ns",
-                        variable_name="classA", bases=["ns::B"])
+                        variable_name="classA", bases=[IRBase("ns::B")])
         cls_b = IRClass(name="B", qualified_name="ns::B", namespace="ns",
-                        variable_name="classB", bases=["ns::A"])
+                        variable_name="classB", bases=[IRBase("ns::A")])
         mod = IRModule(name="m", classes=[cls_a, cls_b],
                        class_by_name={"A": cls_a, "B": cls_b})
         gen = Generator(luabridge3_output_config)
@@ -389,3 +391,156 @@ class TestTemplateExtends:
         out = buf.getvalue()
         assert '.myClass("MyClass")' in out
         assert ".beginClass" not in out
+
+
+# ---------------------------------------------------------------------------
+# ItemFirstEnvironment.getattr fallback paths
+# ---------------------------------------------------------------------------
+
+class TestItemFirstEnvironment:
+    def test_getattr_falls_back_to_python_attr(self):
+        env = ItemFirstEnvironment(
+            loader=jinja2.DictLoader({"t.tpl": "{{ s.upper() }}"}),
+            undefined=jinja2.StrictUndefined,
+        )
+        assert env.get_template("t.tpl").render(s="hello") == "HELLO"
+
+    def test_getattr_returns_undefined_for_missing_attr(self):
+        env = ItemFirstEnvironment(
+            loader=jinja2.DictLoader({"t.tpl": "{{ s.nonexistent_attr }}"}),
+            undefined=jinja2.StrictUndefined,
+        )
+        with pytest.raises(jinja2.UndefinedError):
+            env.get_template("t.tpl").render(s="hello")
+
+
+# ---------------------------------------------------------------------------
+# Broken format file silently ignored (lines 94-95)
+# ---------------------------------------------------------------------------
+
+class TestBrokenFormatFile:
+    def test_load_output_config_exception_silently_ignored(self, make_ir_module, luabridge3_output_config):
+        buf = io.StringIO()
+        with patch("tsujikiri.configurations.load_output_config", side_effect=Exception("bad yml")):
+            Generator(luabridge3_output_config).generate(make_ir_module(), buf)
+        assert buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# IR metadata in context (virtual, noexcept, explicit, abstract)
+# ---------------------------------------------------------------------------
+
+class TestIRMetadataInContext:
+    """Verify that virtual/noexcept/explicit/abstract metadata reaches the template context."""
+
+    def _ctx_class(self, ir_class):
+        from tsujikiri.configurations import OutputConfig
+        cfg = OutputConfig(
+            format_name="test", format_version="1", description="",
+            template="{% for cls in classes %}{{ cls.name }}{% endfor %}",
+        )
+        gen = Generator(cfg)
+        mod = IRModule(name="m", classes=[ir_class], class_by_name={ir_class.name: ir_class})
+        return gen._build_class_ctx(ir_class)
+
+    def test_method_is_virtual_in_context(self):
+        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn",
+                     return_type="void", is_virtual=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", methods=[m], has_virtual_methods=True)
+        ctx = self._ctx_class(cls)
+        assert ctx["has_virtual_methods"] is True
+        assert ctx["method_groups"][0]["methods"][0]["is_virtual"] is True
+
+    def test_method_is_pure_virtual_in_context(self):
+        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn",
+                     return_type="void", is_virtual=True, is_pure_virtual=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", methods=[m],
+                      has_virtual_methods=True, is_abstract=True)
+        ctx = self._ctx_class(cls)
+        assert ctx["is_abstract"] is True
+        assert ctx["method_groups"][0]["methods"][0]["is_pure_virtual"] is True
+
+    def test_method_is_noexcept_in_context(self):
+        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn",
+                     return_type="void", is_noexcept=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", methods=[m])
+        ctx = self._ctx_class(cls)
+        assert ctx["method_groups"][0]["methods"][0]["is_noexcept"] is True
+
+    def test_method_not_noexcept_by_default(self):
+        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn", return_type="void")
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", methods=[m])
+        ctx = self._ctx_class(cls)
+        assert ctx["method_groups"][0]["methods"][0]["is_noexcept"] is False
+
+    def test_constructor_is_noexcept_in_context(self):
+        ctor = IRConstructor(parameters=[], is_noexcept=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", constructors=[ctor])
+        ctx = self._ctx_class(cls)
+        assert ctx["constructor_group"]["constructors"][0]["is_noexcept"] is True
+
+    def test_constructor_is_explicit_in_context(self):
+        ctor = IRConstructor(parameters=[IRParameter("x", "int")], is_explicit=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", constructors=[ctor])
+        ctx = self._ctx_class(cls)
+        assert ctx["constructor_group"]["constructors"][0]["is_explicit"] is True
+
+    def test_constructor_not_explicit_by_default(self):
+        ctor = IRConstructor(parameters=[])
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", constructors=[ctor])
+        ctx = self._ctx_class(cls)
+        assert ctx["constructor_group"]["constructors"][0]["is_explicit"] is False
+
+    def test_class_not_abstract_by_default(self):
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC")
+        ctx = self._ctx_class(cls)
+        assert ctx["is_abstract"] is False
+        assert ctx["has_virtual_methods"] is False
+
+    def test_bases_in_context(self):
+        cls = IRClass(name="D", qualified_name="ns::D", namespace="ns",
+                      variable_name="classD",
+                      bases=[IRBase("ns::A", "public"), IRBase("ns::B", "protected")])
+        ctx = self._ctx_class(cls)
+        assert ctx["bases"] == [
+            {"qualified_name": "ns::A", "access": "public"},
+            {"qualified_name": "ns::B", "access": "protected"},
+        ]
+        assert ctx["base_name"] == "ns::A"
+
+    def test_no_bases_context(self):
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC")
+        ctx = self._ctx_class(cls)
+        assert ctx["bases"] == []
+        assert ctx["base_name"] == ""
+
+    def test_function_is_noexcept_in_context(self):
+        from tsujikiri.configurations import OutputConfig
+        fn = IRFunction(name="foo", qualified_name="ns::foo",
+                        namespace="ns", return_type="void", is_noexcept=True)
+        cfg = OutputConfig(
+            format_name="test", format_version="1", description="", template="",
+        )
+        gen = Generator(cfg)
+        groups = gen._build_function_group_ctxs([fn])
+        assert groups[0]["functions"][0]["is_noexcept"] is True
+
+    def test_function_not_noexcept_by_default(self):
+        from tsujikiri.configurations import OutputConfig
+        fn = IRFunction(name="foo", qualified_name="ns::foo",
+                        namespace="ns", return_type="void")
+        cfg = OutputConfig(
+            format_name="test", format_version="1", description="", template="",
+        )
+        gen = Generator(cfg)
+        groups = gen._build_function_group_ctxs([fn])
+        assert groups[0]["functions"][0]["is_noexcept"] is False

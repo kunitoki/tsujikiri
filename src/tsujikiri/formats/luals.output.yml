@@ -39,11 +39,7 @@ template: |
   {%- for cls in classes %}
   {%- block class scoped %}
 
-  {%- if cls.base_name %}
-  ---@class {{ cls.name }} : {{ cls.base_short_name }}
-  {%- else %}
-  ---@class {{ cls.name }}
-  {%- endif %}
+  ---@class {{ cls.name }} {% if cls.base_name %}: {{ cls.base_short_name }}{% endif %}
   {%- block class_fields scoped %}
   {%- for field in cls.fields %}
   {%- block class_field_annotation scoped %}
@@ -53,7 +49,7 @@ template: |
   {%- endblock %}
   local {{ cls.name }} = {}
 
-  {%- block class_constructors scoped %}
+  {% block class_constructors scoped %}
   {%- if cls.constructor_group.is_overloaded %}
   {%- set first = cls.constructor_group.constructors[0] %}
   {%- block class_constructor_group scoped %}
@@ -73,7 +69,8 @@ template: |
   {%- endblock %}
   {%- endif %}
   {%- endblock %}
-  {%- block class_methods scoped %}
+
+  {% block class_methods scoped %}
   {%- for group in cls.method_groups %}
   {%- if group.is_static %}
   {%- block class_static_method_group scoped %}
@@ -85,12 +82,12 @@ template: |
   ---@overload fun({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
   {%- endfor %}
   function {{ cls.name }}.{{ group.name }}({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
-  {%- else %}
+  {% else %}
   {%- set method = group.methods[0] %}
   {% for p in method.params %}---@param {{ p.name }} {{ p.type }}
   {% endfor -%}---@return {{ method.return_type }}
   function {{ cls.name }}.{{ group.name }}({% if method.params %}{{ method.params | map(attribute='name') | join(', ') }}{% endif %}) end
-  {%- endif %}
+  {% endif %}
   {%- endblock %}
   {%- else %}
   {%- block class_method_group scoped %}
@@ -102,12 +99,12 @@ template: |
   ---@overload fun(self: {{ cls.name }}{% if ov.params %}, {{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
   {%- endfor %}
   function {{ cls.name }}:{{ group.name }}({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
-  {%- else %}
+  {% else %}
   {%- set method = group.methods[0] %}
   {% for p in method.params %}---@param {{ p.name }} {{ p.type }}
   {% endfor -%}---@return {{ method.return_type }}
   function {{ cls.name }}:{{ group.name }}({% if method.params %}{{ method.params | map(attribute='name') | join(', ') }}{% endif %}) end
-  {%- endif %}
+  {% endif %}
   {%- endblock %}
   {%- endif %}
 
@@ -140,13 +137,13 @@ template: |
   ---@overload fun({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
   {%- endfor %}
   function {{ group.name }}({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
-  {%- else %}
+  {% else %}
   {%- set fn = group.functions[0] %}
 
   {% for p in fn.params %}---@param {{ p.name }} {{ p.type }}
   {% endfor -%}---@return {{ fn.return_type }}
   function {{ group.name }}({% if fn.params %}{{ fn.params | map(attribute='name') | join(', ') }}{% endif %}) end
-  {%- endif %}
+  {% endif %}
   {%- endblock %}
   {%- endfor %}
   {%- block epilogue %}{% endblock %}

@@ -74,6 +74,49 @@ class TestShapeClass:
         area = next(m for m in shape.methods if m.name == "area")
         assert area.is_const is True
 
+    def test_area_is_virtual(self, parsed_module):
+        shape = self._shape(parsed_module)
+        area = next(m for m in shape.methods if m.name == "area")
+        assert area.is_virtual is True
+
+    def test_area_is_pure_virtual(self, parsed_module):
+        shape = self._shape(parsed_module)
+        area = next(m for m in shape.methods if m.name == "area")
+        assert area.is_pure_virtual is True
+
+    def test_area_is_noexcept(self, parsed_module):
+        shape = self._shape(parsed_module)
+        area = next(m for m in shape.methods if m.name == "area")
+        assert area.is_noexcept is True
+
+    def test_perimeter_not_noexcept(self, parsed_module):
+        shape = self._shape(parsed_module)
+        perimeter = next(m for m in shape.methods if m.name == "perimeter")
+        assert perimeter.is_noexcept is False
+
+    def test_class_is_abstract(self, parsed_module):
+        shape = self._shape(parsed_module)
+        assert shape.is_abstract is True
+
+    def test_class_has_virtual_methods(self, parsed_module):
+        shape = self._shape(parsed_module)
+        assert shape.has_virtual_methods is True
+
+    def test_default_ctor_noexcept(self, parsed_module):
+        shape = self._shape(parsed_module)
+        default_ctor = next(c for c in shape.constructors if not c.parameters)
+        assert default_ctor.is_noexcept is True
+
+    def test_explicit_ctor(self, parsed_module):
+        shape = self._shape(parsed_module)
+        name_ctor = next(c for c in shape.constructors if c.parameters)
+        assert name_ctor.is_explicit is True
+
+    def test_default_ctor_not_explicit(self, parsed_module):
+        shape = self._shape(parsed_module)
+        default_ctor = next(c for c in shape.constructors if not c.parameters)
+        assert default_ctor.is_explicit is False
+
     def test_field_scale(self, parsed_module):
         shape = self._shape(parsed_module)
         field_names = {f.name for f in shape.fields}
@@ -81,7 +124,7 @@ class TestShapeClass:
 
     def test_no_bases(self, parsed_module):
         shape = self._shape(parsed_module)
-        assert shape.bases == []
+        assert shape.bases == []  # Shape has no base classes
 
 
 class TestCircleClass:
@@ -90,7 +133,12 @@ class TestCircleClass:
 
     def test_inherits_from_shape(self, parsed_module):
         circle = self._circle(parsed_module)
-        assert "mylib::Shape" in circle.bases
+        assert any(b.qualified_name == "mylib::Shape" for b in circle.bases)
+
+    def test_base_access_is_public(self, parsed_module):
+        circle = self._circle(parsed_module)
+        shape_base = next(b for b in circle.bases if b.qualified_name == "mylib::Shape")
+        assert shape_base.access == "public"
 
     def test_overloaded_resize(self, parsed_module):
         circle = self._circle(parsed_module)
@@ -102,6 +150,25 @@ class TestCircleClass:
         circle = self._circle(parsed_module)
         field_names = {f.name for f in circle.fields}
         assert "radius_" in field_names
+
+    def test_default_ctor_noexcept(self, parsed_module):
+        circle = self._circle(parsed_module)
+        default_ctor = next(c for c in circle.constructors if not c.parameters)
+        assert default_ctor.is_noexcept is True
+
+    def test_explicit_ctor(self, parsed_module):
+        circle = self._circle(parsed_module)
+        radius_ctor = next(c for c in circle.constructors if c.parameters)
+        assert radius_ctor.is_explicit is True
+
+    def test_area_noexcept(self, parsed_module):
+        circle = self._circle(parsed_module)
+        area = next(m for m in circle.methods if m.name == "area")
+        assert area.is_noexcept is True
+
+    def test_class_not_abstract(self, parsed_module):
+        circle = self._circle(parsed_module)
+        assert circle.is_abstract is False
 
 
 class TestCalculatorClass:
@@ -140,6 +207,16 @@ class TestFreeFunctions:
     def test_computeArea_return_type(self, parsed_module):
         fn = next(f for f in parsed_module.functions if f.name == "computeArea")
         assert "double" in fn.return_type
+
+    def test_computeArea_single_param_is_noexcept(self, parsed_module):
+        fns = [f for f in parsed_module.functions if f.name == "computeArea"]
+        single = next(f for f in fns if len(f.parameters) == 1)
+        assert single.is_noexcept is True
+
+    def test_computeArea_two_params_not_noexcept(self, parsed_module):
+        fns = [f for f in parsed_module.functions if f.name == "computeArea"]
+        two_param = next(f for f in fns if len(f.parameters) == 2)
+        assert two_param.is_noexcept is False
 
 
 class TestNamespaceFiltering:

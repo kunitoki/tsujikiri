@@ -22,7 +22,6 @@ import io
 from typing import Any, Dict, List, Optional
 
 import jinja2
-import jinja2.sandbox
 
 from tsujikiri.configurations import GenerationConfig, OutputConfig
 from tsujikiri.generator_filters import camel_to_snake, param_pairs
@@ -35,7 +34,7 @@ from tsujikiri.ir import (
 )
 
 
-class _ItemFirstEnvironment(jinja2.Environment):
+class ItemFirstEnvironment(jinja2.Environment):
     """Jinja2 Environment that resolves ``obj.attr`` via item access before
     attribute access.  This ensures that plain-dict context values (e.g.
     ``enum['values']``) take priority over Python built-in dict methods like
@@ -103,7 +102,7 @@ class Generator:
         if self.template_extends:
             dict_templates["__override__.tpl"] = self.template_extends
 
-        env = _ItemFirstEnvironment(
+        env = ItemFirstEnvironment(
             loader=jinja2.DictLoader(dict_templates),
             undefined=jinja2.StrictUndefined,
             keep_trailing_newline=True,
@@ -194,6 +193,7 @@ class Generator:
                     "overload_kind": "overload",
                     "overload_separator": "" if is_last else ",",
                     "overload_index": i,
+                    "is_noexcept": fn.is_noexcept,
                 })
             result.append({
                 "name": key,
@@ -204,7 +204,7 @@ class Generator:
 
     def _build_class_ctx(self, ir_class: IRClass) -> Dict[str, Any]:
         name = ir_class.rename or ir_class.name
-        base_name = ir_class.bases[0] if ir_class.bases else ""
+        base_name = ir_class.bases[0].qualified_name if ir_class.bases else ""
 
         # Constructor group
         ctors = [c for c in ir_class.constructors if c.emit]
@@ -217,6 +217,8 @@ class Generator:
                         for p in ctor.parameters
                     ],
                     "overload_index": i,
+                    "is_noexcept": ctor.is_noexcept,
+                    "is_explicit": ctor.is_explicit,
                 }
                 for i, ctor in enumerate(ctors)
             ],
@@ -252,6 +254,9 @@ class Generator:
                     "overload_kind": self._compute_overload_kind(group, m),
                     "overload_separator": "" if is_last else ",",
                     "is_const": m.is_const,
+                    "is_virtual": m.is_virtual,
+                    "is_pure_virtual": m.is_pure_virtual,
+                    "is_noexcept": m.is_noexcept,
                     "overload_index": i,
                 })
             method_groups.append({
@@ -276,9 +281,12 @@ class Generator:
         return {
             "name": name,
             "qualified_name": ir_class.qualified_name,
+            "bases": [{"qualified_name": b.qualified_name, "access": b.access} for b in ir_class.bases],
             "base_name": base_name,
             "base_short_name": base_name.split("::")[-1] if base_name else "",
             "variable_name": ir_class.variable_name,
+            "has_virtual_methods": ir_class.has_virtual_methods,
+            "is_abstract": ir_class.is_abstract,
             "constructor_group": ctor_group,
             "method_groups": method_groups,
             "fields": fields,
@@ -319,9 +327,9 @@ class Generator:
 
         for c in nodes:
             for base in c.bases:
-                if base in qualified_set:
+                if base.qualified_name in qualified_set:
                     in_degree[c.qualified_name] += 1
-                    dependents[base].append(c.qualified_name)
+                    dependents[base.qualified_name].append(c.qualified_name)
 
         queue = [c for c in nodes if in_degree[c.qualified_name] == 0]
         result = []

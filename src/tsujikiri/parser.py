@@ -15,6 +15,7 @@ from clang import cindex
 from tsujikiri.clang_base_enumerations import AccessSpecifier, CursorKind
 from tsujikiri.configurations import SourceConfig
 from tsujikiri.ir import (
+    IRBase,
     IRClass,
     IRConstructor,
     IREnum,
@@ -43,6 +44,27 @@ def _parse_parameters(cursor) -> List[IRParameter]:
         IRParameter(name=arg.spelling, type_spelling=arg.type.spelling)
         for arg in cursor.get_arguments()
     ]
+
+
+def _is_noexcept(cursor) -> bool:
+    kind = cursor.exception_specification_kind
+    return kind in (
+        cindex.ExceptionSpecificationKind.BASIC_NOEXCEPT,
+        cindex.ExceptionSpecificationKind.COMPUTED_NOEXCEPT,
+    )
+
+
+def _is_explicit(cursor) -> bool:
+    """Return True if the cursor has the explicit specifier (checked via tokens)."""
+    return any(tok.spelling == "explicit" for tok in cursor.get_tokens())
+
+
+def _access_str(access_specifier) -> str:
+    if access_specifier == AccessSpecifier.PUBLIC:
+        return "public"
+    if access_specifier == AccessSpecifier.PROTECTED:
+        return "protected"
+    return "private"
 
 
 def _parse_enum(cursor, namespace: str) -> IREnum:
@@ -75,7 +97,10 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     # --- Bases ---
     for child in cursor.get_children():
         if child.kind == CursorKind.CXX_BASE_SPECIFIER:
-            ir_class.bases.append(child.type.get_canonical().spelling)
+            ir_class.bases.append(IRBase(
+                qualified_name=child.type.get_canonical().spelling,
+                access=_access_str(child.access_specifier),
+            ))
 
     # --- Methods ---
     methods_by_name: Dict[str, list] = defaultdict(list)
@@ -96,6 +121,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 is_const=m.is_const_method(),
                 is_virtual=m.is_virtual_method(),
                 is_pure_virtual=m.is_pure_virtual_method(),
+                is_noexcept=_is_noexcept(m),
                 is_overload=is_overload,
                 source_file=_source_file(m),
             )
@@ -114,7 +140,13 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         ir_class.constructors.append(IRConstructor(
             parameters=_parse_parameters(ctor),
             is_overload=is_ctor_overload,
+            is_noexcept=_is_noexcept(ctor),
+            is_explicit=_is_explicit(ctor),
         ))
+
+    # --- Virtual / abstract class flags ---
+    ir_class.has_virtual_methods = any(m.is_virtual for m in ir_class.methods)
+    ir_class.is_abstract = any(m.is_pure_virtual for m in ir_class.methods)
 
     # --- Fields ---
     for child in cursor.get_children():
@@ -192,6 +224,7 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
                 return_type=fn_cursor.result_type.spelling,
                 parameters=_parse_parameters(fn_cursor),
                 is_overload=is_overload,
+                is_noexcept=_is_noexcept(fn_cursor),
             ))
 
     # --- Top-level enums ---
