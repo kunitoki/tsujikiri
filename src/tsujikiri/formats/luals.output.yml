@@ -1,13 +1,12 @@
 format_name: luals
 format_version: "1.0"
 description: "Lua Language Server (LuaLS) type annotation stubs — use alongside LuaBridge3 bindings"
+language: lua
 
-# Types that force a method/function/field to be commented out
 unsupported_types:
   - CFStringRef
   - OSType
 
-# C++ → Lua type name mappings (informational; apply via add_type_mapping transform before generating)
 type_mappings:
   "int": "integer"
   "unsigned int": "integer"

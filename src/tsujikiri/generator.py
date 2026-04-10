@@ -31,6 +31,17 @@ from tsujikiri.ir import (
 )
 
 
+def param_pairs(params: List[Dict[str, Any]], name_key: str, sep: str, type_key: str, joiner: str) -> str:
+    """Jinja2 filter helper to format parameter lists."""
+    return joiner.join(f"{p[name_key]}{sep}{p[type_key]}" for p in params)
+
+def camel_to_snake(name: str) -> str:
+    """Convert CamelCase to snake_case for variable naming."""
+    import re
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+
 class Generator:
     def __init__(
         self,
@@ -50,7 +61,8 @@ class Generator:
             keep_trailing_newline=True,
         )
         env.filters["map_type"] = self._map_type
-        env.filters["param_pairs"] = lambda params, name_key, sep, type_key, joiner: joiner.join(f"{p[name_key]}{sep}{p[type_key]}" for p in params)
+        env.filters["param_pairs"] = param_pairs
+        env.filters["camel_to_snake"] = camel_to_snake
         self.jinja_env = env
 
     # ------------------------------------------------------------------

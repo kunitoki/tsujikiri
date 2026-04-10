@@ -1,6 +1,7 @@
 format_name: luabridge3
 format_version: "1.0"
 description: "LuaBridge3 C++ to Lua binding templates"
+launguage: cpp
 
 # Types that force a method/function/field to be commented out
 unsupported_types:
@@ -58,10 +59,10 @@ templates:
 
   # ---- Regular methods ----
   class_method_begin: |2
-            .addFunction("{{ method_name }}", &{{ qualified_class_name }}::{{ method_spelling }})
+            .addFunction("{{ method_name | camel_to_snake }}", &{{ qualified_class_name }}::{{ method_spelling }})
   class_method_end: ""
   class_overloaded_method_group_begin: |2
-            .addFunction("{{ method_name }}",
+            .addFunction("{{ method_name | camel_to_snake }}",
   class_overloaded_method_begin: |2
               {{ method_overload_cast }}<{{ method_params | map(attribute='type') | join(', ') }}>(&{{ qualified_class_name }}::{{ method_spelling }}){{ method_overload_separator }}
   class_overloaded_method_group_end: |2
@@ -69,9 +70,9 @@ templates:
 
   # ---- Static methods ----
   class_static_method_begin: |2
-            .addStaticFunction("{{ method_name }}", &{{ qualified_class_name }}::{{ method_spelling }})
+            .addStaticFunction("{{ method_name | camel_to_snake }}", &{{ qualified_class_name }}::{{ method_spelling }})
   class_overloaded_static_method_group_begin: |2
-            .addStaticFunction("{{ method_name }}",
+            .addStaticFunction("{{ method_name | camel_to_snake }}",
   class_overloaded_static_method_begin: |2
               {{ method_overload_cast }}<{{ method_params | map(attribute='type') | join(', ') }}>(&{{ qualified_class_name }}::{{ method_spelling }}){{ method_overload_separator }}
   class_overloaded_static_method_group_end: |2
@@ -85,24 +86,24 @@ templates:
 
   # ---- Fields / Properties ----
   class_field_begin: |2
-            .addProperty("{{ field_name }}", &{{ qualified_class_name }}::{{ field_name }})
+            .addProperty("{{ field_name | camel_to_snake }}", &{{ qualified_class_name }}::{{ field_name }})
   class_readonly_field_begin: |2
-            .addProperty("{{ field_name }}", &{{ qualified_class_name }}::{{ field_name }}, nullptr)
+            .addProperty("{{ field_name | camel_to_snake }}", &{{ qualified_class_name }}::{{ field_name }}, nullptr)
 
   # ---- Free functions ----
   function_begin: |2
-        .addFunction("{{ function_name }}", &{{ function_spelling }})
+          .addFunction("{{ function_name | camel_to_snake }}", &{{ function_spelling }})
   function_overloaded_group_begin: |2
-        .addFunction("{{ function_name }}",
+          .addFunction("{{ function_name | camel_to_snake }}",
   function_overloaded_begin: |2
-          {{ function_overload_cast }}<{{ function_params | map(attribute='type') | join(', ') }}>(&{{ function_spelling }}){{ function_overload_separator }}
+            {{ function_overload_cast }}<{{ function_params | map(attribute='type') | join(', ') }}>(&{{ function_spelling }}){{ function_overload_separator }}
   function_overloaded_group_end: |2
-        )
+          )
 
   # ---- Enums ----
   enum_begin: |2
-        .beginNamespace("{{ enum_name }}")
+          .beginNamespace("{{ enum_name }}")
   enum_value: |2
-          .addProperty("{{ value_name }}", +[] { return static_cast<std::underlying_type_t<{{ qualified_enum_name }}>>({{ qualified_enum_name }}::{{ value_name }}); })
+            .addProperty("{{ value_name }}", +[] { return static_cast<std::underlying_type_t<{{ qualified_enum_name }}>>({{ qualified_enum_name }}::{{ value_name }}); })
   enum_end: |2
-        .endNamespace()
+          .endNamespace()

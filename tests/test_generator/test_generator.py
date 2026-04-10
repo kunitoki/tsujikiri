@@ -72,7 +72,7 @@ class TestClassTemplates:
 class TestMethodTemplates:
     def test_regular_method(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
-        assert '.addFunction("getValue"' in out
+        assert '.addFunction("get_value"' in out
 
     def test_overloaded_method_uses_overload_cast(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
@@ -87,7 +87,7 @@ class TestMethodTemplates:
         mod = make_ir_module()
         mod.classes[0].methods[0].emit = False  # suppress getValue
         out = _generate(mod, luabridge3_output_config)
-        assert 'addFunction("getValue"' not in out
+        assert 'addFunction("get_value"' not in out
 
 
 # ---------------------------------------------------------------------------
