@@ -103,11 +103,18 @@ class ClassTweak:
 
 
 @dataclass
+class AttributeHandlerConfig:
+    """Maps custom attribute names to actions: 'skip', 'keep', or 'rename'."""
+    handlers: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class GenerationConfig:
     """Per-project generation settings: headers to include, prefix/postfix code."""
     includes: List[str] = field(default_factory=list)
     prefix: str = ""
     postfix: str = ""
+    embed_version: bool = False
 
 
 @dataclass
@@ -131,8 +138,8 @@ class FormatOverrideConfig:
 
     Specified under ``format_overrides.<format_name>`` in the input YAML.
 
-    - ``templates``: override individual template strings; support ``{super}``
-      placeholder which expands to the format's original rendered template.
+    - ``template_extends``: inline Jinja2 child template using ``{% extends %}``
+      to customise the format's single-template output via block overrides.
     - ``unsupported_types``: additional types to treat as unsupported.
     - ``filters``: if set, *replaces* the effective per-source/top-level filters
       when generating for this format (highest-priority filter override).
@@ -142,7 +149,7 @@ class FormatOverrideConfig:
       includes; ``prefix``/``postfix`` replace the top-level values when
       non-empty.
     """
-    templates: Dict[str, str] = field(default_factory=dict)
+    template_extends: str = ""  # inline child template for single-template system
     unsupported_types: List[str] = field(default_factory=list)
     filters: Optional[FilterConfig] = None
     transforms: Optional[List[TransformSpec]] = None
@@ -159,6 +166,8 @@ class InputConfig:
     transforms: List[TransformSpec] = field(default_factory=list)
     tweaks: Dict[str, ClassTweak] = field(default_factory=dict)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
+    # Attribute-based annotation handlers (applied after filtering, before transforms).
+    attributes: AttributeHandlerConfig = field(default_factory=AttributeHandlerConfig)
     # Per-format template/type overrides (keyed by format name, e.g. "luabridge3").
     format_overrides: Dict[str, FormatOverrideConfig] = field(default_factory=dict)
 
@@ -176,70 +185,13 @@ class InputConfig:
 # ---------------------------------------------------------------------------
 
 @dataclass
-class TemplateSet:
-    line_comment: str = ""
-    prologue: str = ""
-    epilogue: str = ""
-    module_name: str = ""
-    include_directive: str = ""
-    # class
-    class_begin: str = ""
-    class_derived_begin: str = ""
-    class_end: str = ""
-    class_methods_begin: str = ""
-    class_methods_end: str = ""
-    # methods
-    class_method_begin: str = ""
-    class_method_end: str = ""
-    class_overloaded_method_group_begin: str = ""
-    class_overloaded_method_group_end: str = ""
-    class_overloaded_method_begin: str = ""
-    class_overloaded_method_end: str = ""
-    class_static_method_begin: str = ""
-    class_static_method_end: str = ""
-    class_overloaded_static_method_group_begin: str = ""
-    class_overloaded_static_method_group_end: str = ""
-    class_overloaded_static_method_begin: str = ""
-    class_overloaded_static_method_end: str = ""
-    class_overload_const_definition: str = ""
-    class_overload_cast: str = ""
-    class_const_overload_cast: str = ""
-    class_nonconst_overload_cast: str = ""
-    function_overload_cast: str = ""
-    # constructors
-    class_constructor_group_begin: str = ""
-    class_constructor_group_end: str = ""
-    class_constructor_begin: str = ""
-    class_constructor_end: str = ""
-    class_overloaded_constructor_begin: str = ""
-    class_overloaded_constructor_end: str = ""
-    # fields / properties
-    class_field_annotation: str = ""
-    class_field_begin: str = ""
-    class_field_end: str = ""
-    class_readonly_field_begin: str = ""
-    class_readonly_field_end: str = ""
-    # free functions
-    function_begin: str = ""
-    function_end: str = ""
-    function_overloaded_group_begin: str = ""
-    function_overloaded_group_end: str = ""
-    function_overloaded_begin: str = ""
-    function_overloaded_end: str = ""
-    # enums
-    enum_begin: str = ""
-    enum_end: str = ""
-    enum_value: str = ""
-
-
-@dataclass
 class OutputConfig:
     format_name: str = ""
     format_version: str = "1.0"
     description: str = ""
-    templates: TemplateSet = field(default_factory=TemplateSet)
     type_mappings: Dict[str, str] = field(default_factory=dict)
     unsupported_types: List[str] = field(default_factory=list)
+    template: str = ""  # full Jinja2 template (single-template system)
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +271,7 @@ def _parse_generation_config(gen_raw: Dict[str, Any]) -> GenerationConfig:
         includes=gen_raw.get("includes", []),
         prefix=gen_raw.get("prefix", "") or "",
         postfix=gen_raw.get("postfix", "") or "",
+        embed_version=gen_raw.get("embed_version", False),
     )
 
 
@@ -381,6 +334,12 @@ def load_input_config(config_file: Path) -> InputConfig:
     transforms = _parse_transforms_list(data.get("transforms", []))
     generation = _parse_generation_config(data.get("generation", {}))
 
+    # --- Attribute handlers ---
+    attr_raw = data.get("attributes", {})
+    attributes = AttributeHandlerConfig(
+        handlers=attr_raw.get("handlers", {}),
+    )
+
     # --- Tweaks ---
     tweaks_raw = data.get("tweaks", {})
     tweaks = {
@@ -395,7 +354,7 @@ def load_input_config(config_file: Path) -> InputConfig:
     fmt_overrides_raw = data.get("format_overrides", {})
     format_overrides: Dict[str, FormatOverrideConfig] = {
         fmt_name: FormatOverrideConfig(
-            templates=override_raw.get("templates", {}),
+            template_extends=override_raw.get("template_extends", "") or "",
             unsupported_types=override_raw.get("unsupported_types", []),
             filters=filters,
             transforms=transforms,
@@ -412,29 +371,20 @@ def load_input_config(config_file: Path) -> InputConfig:
         transforms=transforms,
         tweaks=tweaks,
         generation=generation,
+        attributes=attributes,
         format_overrides=format_overrides,
     )
-
-
-def _parse_template_set(raw: Dict[str, Any]) -> TemplateSet:
-    tmpl = TemplateSet()
-    for fname in TemplateSet.__dataclass_fields__:
-        if fname in raw:
-            setattr(tmpl, fname, raw[fname] or "")
-    return tmpl
 
 
 def load_output_config(config_file: Path) -> OutputConfig:
     with open(config_file, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
-    templates = _parse_template_set(data.get("templates", {}))
-
     return OutputConfig(
         format_name=data.get("format_name", ""),
         format_version=str(data.get("format_version", "1.0")),
         description=data.get("description", ""),
-        templates=templates,
         type_mappings=data.get("type_mappings", {}),
         unsupported_types=data.get("unsupported_types", []),
+        template=data.get("template", "") or "",
     )

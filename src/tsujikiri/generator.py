@@ -1,23 +1,19 @@
-"""Generate binding code from an IRModule using an OutputConfig.
+"""Generate binding code from an IRModule using a single Jinja2 template.
 
-Template strings use Jinja2. An empty template string produces no output for
-that construct. Unsupported return types (as listed in
-OutputConfig.unsupported_types) cause the method/function to be commented out
-using the line_comment prefix.
+Each output format defines a ``template:`` key in its ``.output.yml`` file
+containing a full Jinja2 template with named ``{% block %}`` tags.  Users
+can extend a built-in format template using standard Jinja2 template
+inheritance (``{% extends "luabridge3.tpl" %}``) and override specific
+blocks.
 
-Template overrides (from the input YAML ``format_overrides`` section) can
-replace any template by name. An override may contain ``{{ super }}`` which
-expands to the base format's rendered template for that key, allowing
-"wrap" patterns such as::
+The complete IR is serialised into a plain-data context dict before
+rendering, so templates iterate over the data themselves rather than
+relying on Python-side orchestration.  All Jinja2 filters (``map_type``,
+``param_pairs``, ``camel_to_snake``) remain available inside templates.
 
-    prologue: "// pre-amble\\n{{ super }}// post-amble\\n"
-
-Parameters are passed to templates as structured lists (``method_params``,
-``function_params``, ``constructor_params``), each element being a dict with
-keys ``name``, ``type`` (mapped), and ``raw_type`` (original C++ spelling).
-Templates can join them however the target language requires, for example::
-
-    {{ method_params | map(attribute='type') | join(', ') }}
+Unsupported return/field types (as listed in OutputConfig.unsupported_types
+plus any extra list) are excluded from the context entirely — the template
+never sees them.
 """
 
 from __future__ import annotations
@@ -28,6 +24,7 @@ from typing import Any, Dict, List, Optional
 import jinja2
 
 from tsujikiri.configurations import GenerationConfig, OutputConfig
+from tsujikiri.generator_filters import camel_to_snake, param_pairs
 from tsujikiri.ir import (
     IRClass,
     IREnum,
@@ -37,379 +34,139 @@ from tsujikiri.ir import (
 )
 
 
+class ItemFirstEnvironment(jinja2.Environment):
+    """Jinja2 Environment that resolves ``obj.attr`` via item access before
+    attribute access.  This ensures that plain-dict context values (e.g.
+    ``enum['values']``) take priority over Python built-in dict methods like
+    ``dict.values()``, which would otherwise shadow same-named keys."""
+
+    def getattr(self, obj, attribute):  # type: ignore[override]
+        try:
+            return obj[attribute]
+        except (TypeError, LookupError, AttributeError):
+            pass
+        try:
+            return getattr(obj, attribute)
+        except AttributeError:
+            return self.undefined(obj=obj, name=attribute)
+
+
 class Generator:
     def __init__(
         self,
         output_config: OutputConfig,
         generation: Optional[GenerationConfig] = None,
-        template_overrides: Optional[Dict[str, str]] = None,
         extra_unsupported_types: Optional[List[str]] = None,
+        template_extends: Optional[str] = None,
     ) -> None:
         self.cfg = output_config
-        self.tmpl = output_config.templates
         self.generation = generation
-        self.overrides: Dict[str, str] = template_overrides or {}
         self.extra_unsupported: List[str] = extra_unsupported_types or []
-
-        env = jinja2.Environment(
-            undefined=jinja2.StrictUndefined,
-            keep_trailing_newline=True,
-        )
-        env.filters["map_type"] = self._map_type
-        env.filters["param_pairs"] = lambda params: ", ".join(f"{p['name']}: {p['type']}" for p in params)
-        self.jinja_env = env
+        self.template_extends: str = template_extends or ""
 
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
 
-    def generate(self, module: IRModule, out: io.TextIOBase) -> None:
-        ctx: Dict[str, Any] = {"module_name": module.name}
+    def generate(self, module: IRModule, out: io.TextIOBase, api_version: str = "") -> None:
+        self.generate_from_template(module, out, api_version)
 
-        if self.generation:
-            if self.generation.prefix:
-                out.write(self.generation.prefix)
-            for inc in self.generation.includes:
-                # include_directive defaults to C-style when not set by the format
-                inc_ctx = {**ctx, "include": inc}
-                base = getattr(self.tmpl, "include_directive", "") or "#include {{ include }}\n"
-                override = self.overrides.get("include_directive")
-                if override is not None:
-                    if "{{ super }}" in override:
-                        super_rendered = self._render(base, inc_ctx)
-                        out.write(self._render(override, {**inc_ctx, "super": super_rendered}))
-                    elif override:
-                        out.write(self._render(override, inc_ctx))
-                else:
-                    out.write(self._render(base, inc_ctx))
+    # ------------------------------------------------------------------
+    # Single-template rendering
+    # ------------------------------------------------------------------
 
-        self._write("prologue", ctx, out)
+    def generate_from_template(self, module: IRModule, out: io.TextIOBase, api_version: str = "") -> None:
+        """Render the format's single Jinja2 template with full IR context."""
+        from tsujikiri.configurations import load_output_config
+        from tsujikiri.formats import _FORMATS_DIR
 
-        # Top-level enums
-        for enum in module.enums:
-            if enum.emit:
-                self._emit_enum(enum, ctx, out)
+        ctx = self._build_ir_context(module, api_version)
 
-        # Free functions
-        self._emit_functions(module.functions, ctx, out)
+        # Build a DictLoader with all available format templates so that
+        # {% extends "luabridge3.tpl" %} (etc.) resolves correctly.
+        dict_templates: Dict[str, str] = {}
+        for fmt_file in _FORMATS_DIR.glob("*.output.yml"):
+            try:
+                cfg = load_output_config(fmt_file)
+                if cfg.template:
+                    dict_templates[f"{cfg.format_name}.tpl"] = cfg.template
+            except Exception:
+                pass
 
-        # Classes in topological order (bases before derived)
-        for ir_class in self._topo_sort(module.classes, module.class_by_name):
-            if ir_class.emit:
-                self._emit_class(ir_class, ctx, out)
+        # Register current format as "main.tpl" alias.
+        if self.cfg.template:
+            dict_templates["main.tpl"] = self.cfg.template
+            dict_templates[f"{self.cfg.format_name}.tpl"] = self.cfg.template
 
-        self._write("epilogue", ctx, out)
+        # Register override child template if provided.
+        if self.template_extends:
+            dict_templates["__override__.tpl"] = self.template_extends
+
+        env = ItemFirstEnvironment(
+            loader=jinja2.DictLoader(dict_templates),
+            undefined=jinja2.StrictUndefined,
+            keep_trailing_newline=True,
+        )
+
+        env.filters.update({
+            "map_type": self._map_type,
+            "param_pairs": param_pairs,
+            "camel_to_snake": camel_to_snake,
+        })
+
+        if self.generation and self.generation.prefix:
+            out.write(self.generation.prefix)
+
+        template_name = "__override__.tpl" if self.template_extends else "main.tpl"
+        tmpl = env.get_template(template_name)
+        out.write(tmpl.render(ctx))
 
         if self.generation and self.generation.postfix:
             out.write(self.generation.postfix)
 
     # ------------------------------------------------------------------
-    # Class emission
+    # IR context building
     # ------------------------------------------------------------------
 
-    def _emit_class(self, ir_class: IRClass, parent_ctx: Dict[str, Any], out: io.TextIOBase) -> None:
-        class_name = ir_class.rename or ir_class.name
-        class_base_name = ir_class.bases[0] if ir_class.bases else ""
-        parent_variable_name = parent_ctx.get("class_variable_name") or parent_ctx.get("module_name", "")
+    def _build_ir_context(self, module: IRModule, api_version: str = "") -> Dict[str, Any]:
+        """Build a plain-data context dict from the IR for template rendering."""
+        topo = self._topo_sort(module.classes, module.class_by_name)
+        flat_classes: List[Dict[str, Any]] = []
+        for cls in topo:
+            if cls.emit:
+                flat_classes.extend(self._flatten_class_ctx(cls))
 
-        class_base_short_name = class_base_name.split("::")[-1] if class_base_name else ""
+        return {
+            "module_name": module.name,
+            "includes": list(self.generation.includes) if self.generation else [],
+            "enums": [self._build_enum_ctx(e) for e in module.enums if e.emit],
+            "function_groups": self._build_function_group_ctxs(module.functions),
+            "classes": flat_classes,
+            "api_version": api_version,
+        }
 
-        ctx = dict(parent_ctx)
-        ctx.update({
-            "class_name": class_name,
-            "class_base_name": class_base_name,
-            "class_base_short_name": class_base_short_name,
-            "class_variable_name": ir_class.variable_name,
-            "parent_variable_name": parent_variable_name,
-            "qualified_class_name": ir_class.qualified_name,
-        })
-
-        ctx["class_fields_block"] = self._render_field_annotations(ir_class, ctx)
-
-        if class_base_name:
-            self._write("class_derived_begin", ctx, out)
-        else:
-            self._write("class_begin", ctx, out)
-
-        self._emit_constructors(ir_class, ctx, out)
-        self._emit_methods(ir_class, ctx, out)
-        self._emit_fields(ir_class, ctx, out)
-
-        for enum in ir_class.enums:
-            if enum.emit:
-                self._emit_enum(enum, ctx, out)
-
-        self._write("class_end", ctx, out)
-
-        # Inner classes (use class_variable_name as their parent_variable_name)
+    def _flatten_class_ctx(self, ir_class: IRClass) -> List[Dict[str, Any]]:
+        """Return class ctx followed by inner-class ctxs (recursive, flattened)."""
+        result = [self._build_class_ctx(ir_class)]
         for inner in ir_class.inner_classes:
             if inner.emit:
-                self._emit_class(inner, ctx, out)
+                result.extend(self._flatten_class_ctx(inner))
+        return result
 
-    # ------------------------------------------------------------------
-    # Methods
-    # ------------------------------------------------------------------
-
-    def _emit_methods(self, ir_class: IRClass, class_ctx: Dict[str, Any], out: io.TextIOBase) -> None:
-        methods = [m for m in ir_class.methods if m.emit]
-        if not methods:
-            return
-
-        self._write("class_methods_begin", class_ctx, out)
-
-        # Group same-name methods (preserving original order) so we can emit group wrappers
-        groups: Dict[tuple, List[IRMethod]] = {}
-        order: List[tuple] = []
-        for method in methods:
-            key = (method.rename or method.name, method.is_static)
-            if key not in groups:
-                groups[key] = []
-                order.append(key)
-            groups[key].append(method)
-
-        for key in order:
-            group = groups[key]
-            is_static = key[1]
-            group_begin_name = (
-                "class_overloaded_static_method_group_begin" if is_static
-                else "class_overloaded_method_group_begin"
-            )
-            if len(group) > 1 and self._has_template(group_begin_name):
-                self._emit_overload_method_group(group, class_ctx, out)
-            else:
-                for i, method in enumerate(group):
-                    self._emit_method(method, class_ctx, out, overload_index=i)
-
-        self._write("class_methods_end", class_ctx, out)
-
-    def _emit_overload_method_group(self, methods: List[IRMethod], class_ctx: Dict[str, Any], out: io.TextIOBase) -> None:
-        is_static = methods[0].is_static
-        method_name = methods[0].rename or methods[0].name
-
-        group_begin_name = (
-            "class_overloaded_static_method_group_begin" if is_static
-            else "class_overloaded_method_group_begin"
-        )
-        group_end_name = (
-            "class_overloaded_static_method_group_end" if is_static
-            else "class_overloaded_method_group_end"
-        )
-
-        any_unsupported = any(self._is_unsupported(m.return_type) for m in methods)
-        group_ctx = dict(class_ctx)
-        group_ctx.update({
-            "method_name": method_name,
-            "method_comment": f"{self._get_template('line_comment')} " if any_unsupported else "",
-            "overloads": [
-                {
-                    "method_params": [
-                        {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
-                        for p in m.parameters
-                    ],
-                    "method_return": self._map_type(m.return_type),
-                }
-                for m in methods
+    def _build_enum_ctx(self, enum: IREnum) -> Dict[str, Any]:
+        return {
+            "name": enum.name,
+            "qualified_name": enum.qualified_name,
+            "attributes": list(enum.attributes),
+            "values": [
+                {"name": v.name, "number": str(v.value), "attributes": list(v.attributes)}
+                for v in enum.values
+                if v.emit
             ],
-        })
+        }
 
-        self._write(group_begin_name, group_ctx, out)
-
-        for i, method in enumerate(methods):
-            is_last = i == len(methods) - 1
-            comment = f"{self._get_template('line_comment')} " if self._is_unsupported(method.return_type) else ""
-
-            ctx = dict(class_ctx)
-            ctx.update({
-                "method_comment": comment,
-                "method_name": method_name,
-                "method_spelling": method.spelling,
-                "method_params": [
-                    {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
-                    for p in method.parameters
-                ],
-                "method_return": self._map_type(method.return_type),
-                "method_is_const": self._get_template("class_overload_const_definition") if method.is_const else "",
-                "method_overload_cast": self._get_method_overload_cast(methods, method),
-                "method_overload_separator": "" if is_last else ",",
-            })
-
-            if is_static:
-                begin_name = "class_overloaded_static_method_begin"
-                end_name = "class_overloaded_static_method_end"
-            else:
-                begin_name = "class_overloaded_method_begin"
-                end_name = "class_overloaded_method_end"
-
-            self._write(begin_name, ctx, out)
-            self._write(end_name, ctx, out)
-
-        self._write(group_end_name, group_ctx, out)
-
-    def _get_method_overload_cast(self, group: List[IRMethod], method: IRMethod) -> str:
-        """Return the overload cast string for this method within its group."""
-        method_args = ", ".join(p.type_spelling for p in method.parameters)
-        for other in group:
-            if other is method:
-                continue
-            other_args = ", ".join(p.type_spelling for p in other.parameters)
-            if other_args == method_args and other.is_const != method.is_const:
-                cast_name = "class_const_overload_cast" if method.is_const else "class_nonconst_overload_cast"
-                return self._get_template(cast_name)
-        return self._get_template("class_overload_cast")
-
-    def _emit_method(self, method: IRMethod, class_ctx: Dict[str, Any], out: io.TextIOBase, overload_index: int = 0) -> None:
-        comment = ""
-        if self._is_unsupported(method.return_type):
-            comment = f"{self._get_template('line_comment')} "
-
-        method_name = method.rename or method.name
-
-        ctx = dict(class_ctx)
-        ctx.update({
-            "method_comment": comment,
-            "method_name": method_name,
-            "method_spelling": method.spelling,
-            "method_params": [
-                {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
-                for p in method.parameters
-            ],
-            "method_return": self._map_type(method.return_type),
-            "method_is_const": self._get_template("class_overload_const_definition") if method.is_const else "",
-            "method_overload_cast": self._get_template("class_overload_cast"),
-            "method_overload_separator": "",
-            "overload_index": str(overload_index),
-        })
-
-        if method.is_static:
-            begin_name = "class_overloaded_static_method_begin" if method.is_overload else "class_static_method_begin"
-            end_name = "class_overloaded_static_method_end" if method.is_overload else "class_static_method_end"
-        else:
-            begin_name = "class_overloaded_method_begin" if method.is_overload else "class_method_begin"
-            end_name = "class_overloaded_method_end" if method.is_overload else "class_method_end"
-
-        self._write(begin_name, ctx, out)
-        self._write(end_name, ctx, out)
-
-    # ------------------------------------------------------------------
-    # Constructors
-    # ------------------------------------------------------------------
-
-    def _emit_constructors(self, ir_class: IRClass, class_ctx: Dict[str, Any], out: io.TextIOBase) -> None:
-        ctors = [c for c in ir_class.constructors if c.emit]
-        if not ctors:
-            return
-
-        if len(ctors) > 1 and self._has_template("class_constructor_group_begin"):
-            group_ctx = dict(class_ctx)
-            group_ctx["overloads"] = [
-                {
-                    "constructor_params": [
-                        {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
-                        for p in ctor.parameters
-                    ]
-                }
-                for ctor in ctors
-            ]
-            self._write("class_constructor_group_begin", group_ctx, out)
-            self._write("class_constructor_group_end", group_ctx, out)
-            return
-
-        for i, ctor in enumerate(ctors):
-            ctx = dict(class_ctx)
-            ctx["constructor_params"] = [
-                {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
-                for p in ctor.parameters
-            ]
-            ctx["method_comment"] = ""
-            ctx["overload_index"] = str(i)
-
-            begin_name = "class_overloaded_constructor_begin" if ctor.is_overload else "class_constructor_begin"
-            end_name = "class_overloaded_constructor_end" if ctor.is_overload else "class_constructor_end"
-
-            self._write(begin_name, ctx, out)
-            self._write(end_name, ctx, out)
-
-    # ------------------------------------------------------------------
-    # Fields
-    # ------------------------------------------------------------------
-
-    def _render_field_annotations(self, ir_class: IRClass, class_ctx: Dict[str, Any]) -> str:
-        """Pre-render field header annotations for inclusion in class_begin templates."""
-        annotation_template = self._get_template("class_field_annotation")
-        if not annotation_template:
-            return ""
-
-        parts = []
-        for field in ir_class.fields:
-            if not field.emit:
-                continue
-            comment = f"{self._get_template('line_comment')} " if self._is_unsupported(field.type_spelling) else ""
-            field_name = field.rename or field.name
-            ctx = dict(class_ctx)
-            ctx.update({
-                "field_comment": comment,
-                "field_name": field_name,
-                "field_type": self._map_type(field.type_spelling),
-                "field_is_const": "true" if field.is_const else "false",
-            })
-            parts.append(self._render(annotation_template, ctx))
-        return "".join(parts)
-
-    def _emit_fields(self, ir_class: IRClass, class_ctx: Dict[str, Any], out: io.TextIOBase) -> None:
-        for field in ir_class.fields:
-            if not field.emit:
-                continue
-            comment = ""
-            if self._is_unsupported(field.type_spelling):
-                comment = f"{self._get_template('line_comment')} "
-
-            field_name = field.rename or field.name
-            ctx = dict(class_ctx)
-            ctx.update({
-                "field_comment": comment,
-                "field_name": field_name,
-                "field_type": self._map_type(field.type_spelling),
-                "field_is_const": "true" if field.is_const else "false",
-            })
-
-            if field.is_const:
-                self._write("class_readonly_field_begin", ctx, out)
-                self._write("class_readonly_field_end", ctx, out)
-            else:
-                self._write("class_field_begin", ctx, out)
-                self._write("class_field_end", ctx, out)
-
-    # ------------------------------------------------------------------
-    # Enums
-    # ------------------------------------------------------------------
-
-    def _emit_enum(self, enum: IREnum, parent_ctx: Dict[str, Any], out: io.TextIOBase) -> None:
-        ctx = dict(parent_ctx)
-        ctx.update({
-            "enum_name": enum.name,
-            "qualified_enum_name": enum.qualified_name,
-        })
-        self._write("enum_begin", ctx, out)
-        for val in enum.values:
-            if val.emit:
-                vctx = dict(ctx)
-                vctx.update({
-                    "value_name": val.name,
-                    "value_number": str(val.value),
-                })
-                self._write("enum_value", vctx, out)
-        self._write("enum_end", ctx, out)
-
-    # ------------------------------------------------------------------
-    # Free functions
-    # ------------------------------------------------------------------
-
-    def _emit_functions(self, functions: List[IRFunction], parent_ctx: Dict[str, Any], out: io.TextIOBase) -> None:
-        active = [fn for fn in functions if fn.emit]
-        if not active:
-            return
-
-        # Group same-name free functions (preserving order) for group-wrapper support
+    def _build_function_group_ctxs(self, functions: List[IRFunction]) -> List[Dict[str, Any]]:
+        active = [fn for fn in functions if fn.emit and not self._is_unsupported(fn.return_type)]
         groups: Dict[str, List[IRFunction]] = {}
         order: List[str] = []
         for fn in active:
@@ -419,85 +176,138 @@ class Generator:
                 order.append(key)
             groups[key].append(fn)
 
+        result = []
         for key in order:
             group = groups[key]
-            if len(group) > 1 and self._has_template("function_overloaded_group_begin"):
-                self._emit_overload_function_group(group, parent_ctx, out)
-            else:
-                for i, fn in enumerate(group):
-                    self._emit_function(fn, parent_ctx, out, overload_index=i)
-
-    def _emit_overload_function_group(self, functions: List[IRFunction], parent_ctx: Dict[str, Any], out: io.TextIOBase) -> None:
-        fn_name = functions[0].rename or functions[0].name
-
-        any_unsupported = any(self._is_unsupported(fn.return_type) for fn in functions)
-        group_ctx = dict(parent_ctx)
-        group_ctx.update({
-            "function_name": fn_name,
-            "function_comment": f"{self._get_template('line_comment')} " if any_unsupported else "",
-            "overloads": [
-                {
-                    "function_params": [
+            is_overloaded = len(group) > 1
+            fns = []
+            for i, fn in enumerate(group):
+                is_last = i == len(group) - 1
+                fns.append({
+                    "name": fn.rename or fn.name,
+                    "spelling": fn.qualified_name,
+                    "params": [
                         {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
                         for p in fn.parameters
                     ],
-                    "function_return": self._map_type(fn.return_type),
+                    "return_type": self._map_type(fn.return_type),
+                    "raw_return_type": fn.return_type,
+                    "overload_kind": "overload",
+                    "overload_separator": "" if is_last else ",",
+                    "overload_index": i,
+                    "is_noexcept": fn.is_noexcept,
+                    "attributes": list(fn.attributes),
+                })
+            result.append({
+                "name": key,
+                "is_overloaded": is_overloaded,
+                "functions": fns,
+            })
+        return result
+
+    def _build_class_ctx(self, ir_class: IRClass) -> Dict[str, Any]:
+        name = ir_class.rename or ir_class.name
+        base_name = ir_class.bases[0].qualified_name if ir_class.bases else ""
+
+        # Constructor group
+        ctors = [c for c in ir_class.constructors if c.emit]
+        ctor_group = {
+            "is_overloaded": len(ctors) > 1,
+            "constructors": [
+                {
+                    "params": [
+                        {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
+                        for p in ctor.parameters
+                    ],
+                    "overload_index": i,
+                    "is_noexcept": ctor.is_noexcept,
+                    "is_explicit": ctor.is_explicit,
                 }
-                for fn in functions
+                for i, ctor in enumerate(ctors)
             ],
-        })
+        }
 
-        self._write("function_overloaded_group_begin", group_ctx, out)
+        # Method groups (preserving original order)
+        methods = [m for m in ir_class.methods if m.emit and not self._is_unsupported(m.return_type)]
+        mgroups: Dict[tuple, List[IRMethod]] = {}
+        morder: List[tuple] = []
+        for m in methods:
+            key = (m.rename or m.name, m.is_static)
+            if key not in mgroups:
+                mgroups[key] = []
+                morder.append(key)
+            mgroups[key].append(m)
 
-        for i, fn in enumerate(functions):
-            is_last = i == len(functions) - 1
-            comment = f"{self._get_template('line_comment')} " if self._is_unsupported(fn.return_type) else ""
-
-            ctx = dict(parent_ctx)
-            ctx.update({
-                "function_comment": comment,
-                "function_name": fn_name,
-                "function_spelling": fn.qualified_name,
-                "function_params": [
-                    {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
-                    for p in fn.parameters
-                ],
-                "function_return": self._map_type(fn.return_type),
-                "function_overload_cast": self._get_template("function_overload_cast"),
-                "function_overload_separator": "" if is_last else ",",
+        method_groups = []
+        for key in morder:
+            group = mgroups[key]
+            group_name, is_static = key
+            is_overloaded = len(group) > 1
+            method_ctxs = []
+            for i, m in enumerate(group):
+                is_last = i == len(group) - 1
+                method_ctxs.append({
+                    "name": group_name,
+                    "spelling": m.spelling,
+                    "params": [
+                        {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
+                        for p in m.parameters
+                    ],
+                    "return_type": self._map_type(m.return_type),
+                    "overload_kind": self._compute_overload_kind(group, m),
+                    "overload_separator": "" if is_last else ",",
+                    "is_const": m.is_const,
+                    "is_virtual": m.is_virtual,
+                    "is_pure_virtual": m.is_pure_virtual,
+                    "is_noexcept": m.is_noexcept,
+                    "overload_index": i,
+                    "attributes": list(m.attributes),
+                })
+            method_groups.append({
+                "name": group_name,
+                "is_overloaded": is_overloaded,
+                "is_static": is_static,
+                "methods": method_ctxs,
             })
 
-            self._write("function_overloaded_begin", ctx, out)
-            self._write("function_overloaded_end", ctx, out)
+        # Fields (excluding unsupported types and emit=False)
+        fields = [
+            {
+                "name": f.rename or f.name,
+                "type": self._map_type(f.type_spelling),
+                "raw_type": f.type_spelling,
+                "is_const": f.is_const,
+            }
+            for f in ir_class.fields
+            if f.emit and not self._is_unsupported(f.type_spelling)
+        ]
 
-        self._write("function_overloaded_group_end", group_ctx, out)
+        return {
+            "name": name,
+            "qualified_name": ir_class.qualified_name,
+            "attributes": list(ir_class.attributes),
+            "bases": [{"qualified_name": b.qualified_name, "access": b.access} for b in ir_class.bases],
+            "base_name": base_name,
+            "base_short_name": base_name.split("::")[-1] if base_name else "",
+            "variable_name": ir_class.variable_name,
+            "has_virtual_methods": ir_class.has_virtual_methods,
+            "is_abstract": ir_class.is_abstract,
+            "constructor_group": ctor_group,
+            "method_groups": method_groups,
+            "fields": fields,
+            "enums": [self._build_enum_ctx(e) for e in ir_class.enums if e.emit],
+        }
 
-    def _emit_function(self, fn: IRFunction, parent_ctx: Dict[str, Any], out: io.TextIOBase, overload_index: int = 0) -> None:
-        comment = ""
-        if self._is_unsupported(fn.return_type):
-            comment = f"{self._get_template('line_comment')} "
-
-        fn_name = fn.rename or fn.name
-        ctx = dict(parent_ctx)
-        ctx.update({
-            "function_comment": comment,
-            "function_name": fn_name,
-            "function_spelling": fn.qualified_name,
-            "function_params": [
-                {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
-                for p in fn.parameters
-            ],
-            "function_return": self._map_type(fn.return_type),
-            "function_overload_cast": self._get_template("function_overload_cast"),
-            "function_overload_separator": "",
-            "overload_index": str(overload_index),
-        })
-
-        begin_name = "function_overloaded_begin" if fn.is_overload else "function_begin"
-        end_name = "function_overloaded_end" if fn.is_overload else "function_end"
-
-        self._write(begin_name, ctx, out)
-        self._write(end_name, ctx, out)
+    def _compute_overload_kind(self, group: List[IRMethod], method: IRMethod) -> str:
+        """Return 'const', 'nonconst', or 'overload' for the cast type of this method."""
+        method_args = ", ".join(p.type_spelling for p in method.parameters)
+        for other in group:
+            if other is method:
+                continue
+            other_args = ", ".join(p.type_spelling for p in other.parameters)
+            if other_args == method_args and other.is_const != method.is_const:
+                return "const" if method.is_const else "nonconst"
+        return "overload"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -508,63 +318,23 @@ class Generator:
         return self.cfg.type_mappings.get(type_spelling, type_spelling)
 
     def _is_unsupported(self, type_spelling: str) -> bool:
+        """Return True if the type spelling matches any unsupported type."""
         all_unsupported = self.cfg.unsupported_types + self.extra_unsupported
         return any(t in type_spelling for t in all_unsupported)
 
-    def _get_template(self, name: str) -> str:
-        """Return the effective template string (override if present, else base)."""
-        override = self.overrides.get(name)
-        if override is not None:
-            return override
-        return getattr(self.tmpl, name, "")
-
-    def _has_template(self, name: str) -> bool:
-        """Return True if the effective template for *name* is non-empty."""
-        return bool(self._get_template(name))
-
-    def _render(self, template_str: str, ctx: Dict[str, Any]) -> str:
-        """Render a Jinja2 template string with the given context."""
-        try:
-            return self.jinja_env.from_string(template_str).render(ctx)
-        except jinja2.UndefinedError as e:
-            raise KeyError(str(e)) from e
-
-    def _write(self, name: str, ctx: Dict[str, Any], out: io.TextIOBase) -> None:
-        """Render the template identified by *name* and write to *out*.
-
-        If an override is present and contains ``{{ super }}``, the base template
-        is rendered first (with *ctx*) and the result is made available as the
-        ``super`` variable when rendering the override.
-        """
-        base = getattr(self.tmpl, name, "")
-        override = self.overrides.get(name)
-
-        if override is not None:
-            if not override:
-                return
-            if "{{ super }}" in override:
-                super_rendered = self._render(base, ctx) if base else ""
-                out.write(self._render(override, {**ctx, "super": super_rendered}))
-            else:
-                out.write(self._render(override, ctx))
-        elif base:
-            out.write(self._render(base, ctx))
-
     def _topo_sort(self, classes: List[IRClass], class_by_name: Dict[str, IRClass]) -> List[IRClass]:  # noqa: ARG002
         """Kahn's algorithm: emit bases before derived classes."""
-        # Only consider top-level emit=True classes
         nodes = [c for c in classes if c.emit]
         qualified_set = {c.qualified_name for c in nodes}
 
-        # Build in-degree and adjacency using qualified names (bases are fully qualified)
         in_degree: Dict[str, int] = {c.qualified_name: 0 for c in nodes}
         dependents: Dict[str, List[str]] = {c.qualified_name: [] for c in nodes}
 
         for c in nodes:
             for base in c.bases:
-                if base in qualified_set:
+                if base.qualified_name in qualified_set:
                     in_degree[c.qualified_name] += 1
-                    dependents[base].append(c.qualified_name)
+                    dependents[base.qualified_name].append(c.qualified_name)
 
         queue = [c for c in nodes if in_degree[c.qualified_name] == 0]
         result = []
@@ -578,7 +348,6 @@ class Generator:
                 if in_degree[dep_qname] == 0:
                     queue.append(qname_to_cls[dep_qname])
 
-        # Append any remaining (cycle or unknown bases) to avoid dropping them
         emitted = {c.qualified_name for c in result}
         for c in nodes:
             if c.qualified_name not in emitted:

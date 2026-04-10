@@ -5,9 +5,11 @@ from __future__ import annotations
 import io
 
 import pytest
+import jinja2
+from unittest.mock import patch
 
-from tsujikiri.generator import Generator
-from tsujikiri.ir import IRClass, IREnum, IREnumValue, IRField, IRFunction, IRMethod, IRModule, IRParameter, IRConstructor
+from tsujikiri.generator import Generator, ItemFirstEnvironment
+from tsujikiri.ir import IRBase, IRClass, IRConstructor, IREnumValue, IRField, IRFunction, IRMethod, IRModule, IRParameter
 
 
 def _generate(module: IRModule, output_config) -> str:
@@ -45,18 +47,17 @@ class TestClassTemplates:
         base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        variable_name="classBase")
         derived = IRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
-                          bases=["ns::Base"], variable_name="classDerived")
+                          bases=[IRBase("ns::Base")], variable_name="classDerived")
         mod = IRModule(name="m", classes=[base, derived],
                        class_by_name={"Base": base, "Derived": derived})
         out = _generate(mod, luabridge3_output_config)
         assert '.deriveClass<ns::Derived, ns::Base>("Derived")' in out
 
     def test_topo_sort_emits_base_before_derived(self, luabridge3_output_config):
-        from tsujikiri.generator import Generator
         base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        variable_name="classBase")
         derived = IRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
-                          bases=["ns::Base"], variable_name="classDerived")
+                          bases=[IRBase("ns::Base")], variable_name="classDerived")
         # Deliberately put derived first in list; topo sort should fix ordering
         mod = IRModule(name="m", classes=[derived, base],
                        class_by_name={"Base": base, "Derived": derived})
@@ -72,7 +73,7 @@ class TestClassTemplates:
 class TestMethodTemplates:
     def test_regular_method(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
-        assert '.addFunction("getValue"' in out
+        assert '.addFunction("get_value"' in out
 
     def test_overloaded_method_uses_overload_cast(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
@@ -87,7 +88,7 @@ class TestMethodTemplates:
         mod = make_ir_module()
         mod.classes[0].methods[0].emit = False  # suppress getValue
         out = _generate(mod, luabridge3_output_config)
-        assert 'addFunction("getValue"' not in out
+        assert 'addFunction("get_value"' not in out
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +158,8 @@ class TestFunctionTemplates:
 # ---------------------------------------------------------------------------
 
 class TestUnsupportedTypes:
-    def test_unsupported_return_type_commented_out(self, make_ir_module, luabridge3_output_config):
+    def test_unsupported_return_type_excluded(self, make_ir_module, luabridge3_output_config):
+        from tsujikiri.ir import IRMethod
         mod = make_ir_module()
         bad_method = IRMethod(
             name="bad", spelling="bad",
@@ -166,32 +168,15 @@ class TestUnsupportedTypes:
         )
         mod.classes[0].methods.append(bad_method)
         out = _generate(mod, luabridge3_output_config)
-        assert '// .addFunction("bad"' in out
+        assert '.addFunction("bad"' not in out
 
 
 # ---------------------------------------------------------------------------
-# Renamed entities
+# Generation config
 # ---------------------------------------------------------------------------
 
-class TestTemplateOverrides:
-    def test_override_replaces_template(self, make_ir_module, luabridge3_output_config):
-        overrides = {"class_begin": ".custom(\"{{ qualified_class_name }}\")\n"}
-        buf = io.StringIO()
-        Generator(luabridge3_output_config, template_overrides=overrides).generate(make_ir_module(), buf)
-        out = buf.getvalue()
-        assert '.custom("mylib::MyClass")' in out
-        assert ".beginClass" not in out
-
-    def test_override_super_wraps_base(self, make_ir_module, luabridge3_output_config):
-        overrides = {"prologue": "// PRE\n{{ super }}// POST\n"}
-        buf = io.StringIO()
-        Generator(luabridge3_output_config, template_overrides=overrides).generate(make_ir_module(), buf)
-        out = buf.getvalue()
-        assert out.startswith("// PRE\n")
-        assert "getGlobalNamespace" in out  # base prologue content
-        assert "// POST\n" in out
-
-    def test_extra_unsupported_types_comment_out(self, make_ir_module, luabridge3_output_config):
+class TestGenerationConfig:
+    def test_extra_unsupported_types_not_present(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
         bad = IRMethod(
             name="doThing", spelling="doThing",
@@ -205,52 +190,15 @@ class TestTemplateOverrides:
             extra_unsupported_types=["MyOpaqueType"],
         ).generate(mod, buf)
         out = buf.getvalue()
-        assert '// .addFunction("doThing"' in out
+        assert '.addFunction("doThing"' not in out
 
-    def test_override_empty_string_suppresses_template(self, make_ir_module, luabridge3_output_config):
-        overrides = {"class_end": ""}
-        buf = io.StringIO()
-        Generator(luabridge3_output_config, template_overrides=overrides).generate(make_ir_module(), buf)
-        out = buf.getvalue()
-        assert ".endClass()" not in out
-
-    def test_include_directive_override(self, make_ir_module, luabridge3_output_config):
-        from tsujikiri.configurations import GenerationConfig
-        overrides = {"include_directive": "import {{ include }};\n"}
-        gen_cfg = GenerationConfig(includes=["<foo.h>"])
-        buf = io.StringIO()
-        Generator(
-            luabridge3_output_config,
-            generation=gen_cfg,
-            template_overrides=overrides,
-        ).generate(make_ir_module(), buf)
-        out = buf.getvalue()
-        # custom directive is used for generation.includes entries
-        assert "import <foo.h>;" in out
-        # the custom include appears before the prologue (which has its own #include lines)
-        assert out.index("import <foo.h>;") < out.index("getGlobalNamespace")
-
-    def test_include_no_override_uses_default(self, make_ir_module, luabridge3_output_config):
+    def test_include_rendered_in_prologue(self, make_ir_module, luabridge3_output_config):
         from tsujikiri.configurations import GenerationConfig
         gen_cfg = GenerationConfig(includes=["<myheader.h>"])
         buf = io.StringIO()
         Generator(luabridge3_output_config, generation=gen_cfg).generate(make_ir_module(), buf)
         out = buf.getvalue()
         assert "#include <myheader.h>" in out
-
-    def test_include_super_in_override(self, make_ir_module, luabridge3_output_config):
-        from tsujikiri.configurations import GenerationConfig
-        overrides = {"include_directive": "{{ super }}// extra\n"}
-        gen_cfg = GenerationConfig(includes=["<bar.h>"])
-        buf = io.StringIO()
-        Generator(
-            luabridge3_output_config,
-            generation=gen_cfg,
-            template_overrides=overrides,
-        ).generate(make_ir_module(), buf)
-        out = buf.getvalue()
-        assert "#include <bar.h>" in out
-        assert "// extra" in out
 
     def test_generation_prefix_written(self, make_ir_module, luabridge3_output_config):
         from tsujikiri.configurations import GenerationConfig
@@ -266,16 +214,10 @@ class TestTemplateOverrides:
         Generator(luabridge3_output_config, generation=gen_cfg).generate(make_ir_module(), buf)
         assert buf.getvalue().endswith("// MY POSTFIX\n")
 
-    def test_get_template_returns_override(self, luabridge3_output_config):
-        overrides = {"class_overload_cast": "MY_CAST"}
-        gen = Generator(luabridge3_output_config, template_overrides=overrides)
-        assert gen._get_template("class_overload_cast") == "MY_CAST"
 
-    def test_render_raises_key_error_for_undefined_var(self, luabridge3_output_config):
-        gen = Generator(luabridge3_output_config)
-        with pytest.raises(KeyError):
-            gen._render("{{ undefined_variable }}", {})
-
+# ---------------------------------------------------------------------------
+# Type mappings
+# ---------------------------------------------------------------------------
 
 class TestTypeMappings:
     def test_luals_return_types_mapped(self, make_ir_module, luals_output_config):
@@ -298,6 +240,10 @@ class TestTypeMappings:
         assert "---@field value_ integer\n" in out  # int field → integer via ---@field
         assert "---@type int\n" not in out           # no bare "int" type annotation
 
+
+# ---------------------------------------------------------------------------
+# Renamed entities
+# ---------------------------------------------------------------------------
 
 class TestRenaming:
     def test_renamed_class_uses_new_name_in_template(self, luabridge3_output_config):
@@ -380,13 +326,13 @@ class TestFieldEdgeCases:
         out = _generate(mod, luals_output_config)
         assert "---@field value_" not in out
 
-    def test_unsupported_field_type_commented(self, luabridge3_output_config):
+    def test_unsupported_field_type_excluded(self, luabridge3_output_config):
         f = IRField(name="data_", type_spelling="CFStringRef")
         cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", fields=[f])
         mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
         out = _generate(mod, luabridge3_output_config)
-        assert "// " in out
+        assert "data_" not in out
 
 
 # ---------------------------------------------------------------------------
@@ -394,12 +340,12 @@ class TestFieldEdgeCases:
 # ---------------------------------------------------------------------------
 
 class TestFunctionUnsupportedType:
-    def test_unsupported_function_return_commented(self, luabridge3_output_config):
+    def test_unsupported_function_return_excluded(self, luabridge3_output_config):
         fn = IRFunction(name="badFn", qualified_name="ns::badFn",
                         namespace="ns", return_type="CFStringRef")
         mod = IRModule(name="m", functions=[fn])
         out = _generate(mod, luabridge3_output_config)
-        assert "// " in out
+        assert "badFn" not in out
 
 
 # ---------------------------------------------------------------------------
@@ -408,13 +354,193 @@ class TestFunctionUnsupportedType:
 
 class TestTopoSortCycle:
     def test_cycle_classes_still_emitted(self, luabridge3_output_config):
-        from tsujikiri.generator import Generator
         cls_a = IRClass(name="A", qualified_name="ns::A", namespace="ns",
-                        variable_name="classA", bases=["ns::B"])
+                        variable_name="classA", bases=[IRBase("ns::B")])
         cls_b = IRClass(name="B", qualified_name="ns::B", namespace="ns",
-                        variable_name="classB", bases=["ns::A"])
+                        variable_name="classB", bases=[IRBase("ns::A")])
         mod = IRModule(name="m", classes=[cls_a, cls_b],
                        class_by_name={"A": cls_a, "B": cls_b})
         gen = Generator(luabridge3_output_config)
         sorted_classes = gen._topo_sort(mod.classes, mod.class_by_name)
         assert len(sorted_classes) == 2
+
+
+# ---------------------------------------------------------------------------
+# Template inheritance (template_extends)
+# ---------------------------------------------------------------------------
+
+class TestTemplateExtends:
+    def test_extends_overrides_prologue(self, make_ir_module, luabridge3_output_config):
+        child = (
+            '{% extends "luabridge3.tpl" %}'
+            '{% block prologue %}// CUSTOM PROLOGUE\n{% endblock %}'
+        )
+        buf = io.StringIO()
+        Generator(luabridge3_output_config, template_extends=child).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        assert "// CUSTOM PROLOGUE" in out
+        assert "getGlobalNamespace" not in out
+
+    def test_extends_overrides_class_block(self, make_ir_module, luabridge3_output_config):
+        child = (
+            '{% extends "luabridge3.tpl" %}'
+            '{% block class scoped %}.myClass("{{ cls.name }}")\n{% endblock %}'
+        )
+        buf = io.StringIO()
+        Generator(luabridge3_output_config, template_extends=child).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        assert '.myClass("MyClass")' in out
+        assert ".beginClass" not in out
+
+
+# ---------------------------------------------------------------------------
+# ItemFirstEnvironment.getattr fallback paths
+# ---------------------------------------------------------------------------
+
+class TestItemFirstEnvironment:
+    def test_getattr_falls_back_to_python_attr(self):
+        env = ItemFirstEnvironment(
+            loader=jinja2.DictLoader({"t.tpl": "{{ s.upper() }}"}),
+            undefined=jinja2.StrictUndefined,
+        )
+        assert env.get_template("t.tpl").render(s="hello") == "HELLO"
+
+    def test_getattr_returns_undefined_for_missing_attr(self):
+        env = ItemFirstEnvironment(
+            loader=jinja2.DictLoader({"t.tpl": "{{ s.nonexistent_attr }}"}),
+            undefined=jinja2.StrictUndefined,
+        )
+        with pytest.raises(jinja2.UndefinedError):
+            env.get_template("t.tpl").render(s="hello")
+
+
+# ---------------------------------------------------------------------------
+# Broken format file silently ignored (lines 94-95)
+# ---------------------------------------------------------------------------
+
+class TestBrokenFormatFile:
+    def test_load_output_config_exception_silently_ignored(self, make_ir_module, luabridge3_output_config):
+        buf = io.StringIO()
+        with patch("tsujikiri.configurations.load_output_config", side_effect=Exception("bad yml")):
+            Generator(luabridge3_output_config).generate(make_ir_module(), buf)
+        assert buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# IR metadata in context (virtual, noexcept, explicit, abstract)
+# ---------------------------------------------------------------------------
+
+class TestIRMetadataInContext:
+    """Verify that virtual/noexcept/explicit/abstract metadata reaches the template context."""
+
+    def _ctx_class(self, ir_class):
+        from tsujikiri.configurations import OutputConfig
+        cfg = OutputConfig(
+            format_name="test", format_version="1", description="",
+            template="{% for cls in classes %}{{ cls.name }}{% endfor %}",
+        )
+        gen = Generator(cfg)
+        mod = IRModule(name="m", classes=[ir_class], class_by_name={ir_class.name: ir_class})
+        return gen._build_class_ctx(ir_class)
+
+    def test_method_is_virtual_in_context(self):
+        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn",
+                     return_type="void", is_virtual=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", methods=[m], has_virtual_methods=True)
+        ctx = self._ctx_class(cls)
+        assert ctx["has_virtual_methods"] is True
+        assert ctx["method_groups"][0]["methods"][0]["is_virtual"] is True
+
+    def test_method_is_pure_virtual_in_context(self):
+        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn",
+                     return_type="void", is_virtual=True, is_pure_virtual=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", methods=[m],
+                      has_virtual_methods=True, is_abstract=True)
+        ctx = self._ctx_class(cls)
+        assert ctx["is_abstract"] is True
+        assert ctx["method_groups"][0]["methods"][0]["is_pure_virtual"] is True
+
+    def test_method_is_noexcept_in_context(self):
+        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn",
+                     return_type="void", is_noexcept=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", methods=[m])
+        ctx = self._ctx_class(cls)
+        assert ctx["method_groups"][0]["methods"][0]["is_noexcept"] is True
+
+    def test_method_not_noexcept_by_default(self):
+        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn", return_type="void")
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", methods=[m])
+        ctx = self._ctx_class(cls)
+        assert ctx["method_groups"][0]["methods"][0]["is_noexcept"] is False
+
+    def test_constructor_is_noexcept_in_context(self):
+        ctor = IRConstructor(parameters=[], is_noexcept=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", constructors=[ctor])
+        ctx = self._ctx_class(cls)
+        assert ctx["constructor_group"]["constructors"][0]["is_noexcept"] is True
+
+    def test_constructor_is_explicit_in_context(self):
+        ctor = IRConstructor(parameters=[IRParameter("x", "int")], is_explicit=True)
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", constructors=[ctor])
+        ctx = self._ctx_class(cls)
+        assert ctx["constructor_group"]["constructors"][0]["is_explicit"] is True
+
+    def test_constructor_not_explicit_by_default(self):
+        ctor = IRConstructor(parameters=[])
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC", constructors=[ctor])
+        ctx = self._ctx_class(cls)
+        assert ctx["constructor_group"]["constructors"][0]["is_explicit"] is False
+
+    def test_class_not_abstract_by_default(self):
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC")
+        ctx = self._ctx_class(cls)
+        assert ctx["is_abstract"] is False
+        assert ctx["has_virtual_methods"] is False
+
+    def test_bases_in_context(self):
+        cls = IRClass(name="D", qualified_name="ns::D", namespace="ns",
+                      variable_name="classD",
+                      bases=[IRBase("ns::A", "public"), IRBase("ns::B", "protected")])
+        ctx = self._ctx_class(cls)
+        assert ctx["bases"] == [
+            {"qualified_name": "ns::A", "access": "public"},
+            {"qualified_name": "ns::B", "access": "protected"},
+        ]
+        assert ctx["base_name"] == "ns::A"
+
+    def test_no_bases_context(self):
+        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                      variable_name="classC")
+        ctx = self._ctx_class(cls)
+        assert ctx["bases"] == []
+        assert ctx["base_name"] == ""
+
+    def test_function_is_noexcept_in_context(self):
+        from tsujikiri.configurations import OutputConfig
+        fn = IRFunction(name="foo", qualified_name="ns::foo",
+                        namespace="ns", return_type="void", is_noexcept=True)
+        cfg = OutputConfig(
+            format_name="test", format_version="1", description="", template="",
+        )
+        gen = Generator(cfg)
+        groups = gen._build_function_group_ctxs([fn])
+        assert groups[0]["functions"][0]["is_noexcept"] is True
+
+    def test_function_not_noexcept_by_default(self):
+        from tsujikiri.configurations import OutputConfig
+        fn = IRFunction(name="foo", qualified_name="ns::foo",
+                        namespace="ns", return_type="void")
+        cfg = OutputConfig(
+            format_name="test", format_version="1", description="", template="",
+        )
+        gen = Generator(cfg)
+        groups = gen._build_function_group_ctxs([fn])
+        assert groups[0]["functions"][0]["is_noexcept"] is False

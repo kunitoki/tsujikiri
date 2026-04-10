@@ -19,11 +19,11 @@ sdist:
 
 # Run test suite.
 test *args:
-    uv run pytest {{args}}
+    uv run pytest -n auto {{args}}
 
 # Run tests with coverage report.
-coverage:
-    uv run pytest --cov=tsujikiri --cov-report=term-missing
+coverage *args:
+    uv run pytest -n auto --cov=tsujikiri --cov-report=term-missing {{args}}
 
 # Remove build artifacts.
 clean:

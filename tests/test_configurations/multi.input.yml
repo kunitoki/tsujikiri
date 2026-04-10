@@ -22,9 +22,13 @@ generation:
 
 format_overrides:
   luabridge3:
-    templates:
-      class_begin: ".custom(\"{qualified_class_name}\")\n"
-      prologue: "// pre\n{super}// post\n"
+    template_extends: |
+      {% extends "luabridge3.tpl" %}
+      {% block prologue %}// pre
+      {{ super() }}// post
+      {% endblock %}
+      {% block class scoped %}.custom("{{ cls.qualified_name }}")
+      {% endblock %}
     unsupported_types:
       - MyOpaqueType
     filters:

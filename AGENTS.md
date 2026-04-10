@@ -1,2 +1,0 @@
-- use "just test" to test
-- use "just coverage" to coverage

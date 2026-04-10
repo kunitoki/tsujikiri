@@ -18,6 +18,12 @@ class IRParameter:
 
 
 @dataclass
+class IRBase:
+    qualified_name: str
+    access: str = "public"   # "public", "protected", or "private"
+
+
+@dataclass
 class IRMethod:
     name: str
     spelling: str           # original C++ name (for &ClassName::spelling)
@@ -28,17 +34,22 @@ class IRMethod:
     is_const: bool = False
     is_virtual: bool = False
     is_pure_virtual: bool = False
+    is_noexcept: bool = False
     is_overload: bool = False   # set during IR build when multiple same-name methods exist
     source_file: Optional[str] = None
     emit: bool = True
     rename: Optional[str] = None    # set by transforms to change the binding name
+    attributes: List[str] = field(default_factory=list)   # raw [[...]] attribute contents
 
 
 @dataclass
 class IRConstructor:
     parameters: List[IRParameter] = field(default_factory=list)
     is_overload: bool = False   # set when multiple constructors exist
+    is_noexcept: bool = False
+    is_explicit: bool = False
     emit: bool = True
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -49,6 +60,7 @@ class IRField:
     is_static: bool = False
     emit: bool = True
     rename: Optional[str] = None
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -56,6 +68,7 @@ class IREnumValue:
     name: str
     value: int
     emit: bool = True
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -64,6 +77,7 @@ class IREnum:
     qualified_name: str
     values: List[IREnumValue] = field(default_factory=list)
     emit: bool = True
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -71,17 +85,20 @@ class IRClass:
     name: str
     qualified_name: str
     namespace: str
-    bases: List[str] = field(default_factory=list)          # base class qualified names
+    bases: List[IRBase] = field(default_factory=list)        # base classes with access specifier
     inner_classes: List[IRClass] = field(default_factory=list)
     constructors: List[IRConstructor] = field(default_factory=list)
     methods: List[IRMethod] = field(default_factory=list)
     fields: List[IRField] = field(default_factory=list)
     enums: List[IREnum] = field(default_factory=list)
+    has_virtual_methods: bool = False   # True if any method is virtual or pure virtual
+    is_abstract: bool = False           # True if any method is pure virtual
     emit: bool = True
     rename: Optional[str] = None
     variable_name: str = ""         # camelCase binding variable name
     parent_class: Optional[str] = None   # for inner classes
     source_file: Optional[str] = None
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -92,8 +109,10 @@ class IRFunction:
     return_type: str
     parameters: List[IRParameter] = field(default_factory=list)
     is_overload: bool = False
+    is_noexcept: bool = False
     emit: bool = True
     rename: Optional[str] = None
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass

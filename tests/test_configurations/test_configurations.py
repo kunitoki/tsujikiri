@@ -13,7 +13,6 @@ from tsujikiri.configurations import (
     OutputConfig,
     SourceConfig,
     SourceEntry,
-    TemplateSet,
     load_input_config,
     load_output_config,
 )
@@ -95,18 +94,13 @@ class TestOutputConfigLoading:
         assert "CFStringRef" in cfg.unsupported_types
         assert "OSType" in cfg.unsupported_types
 
-    def test_luabridge3_prologue_not_empty(self):
+    def test_luabridge3_template_not_empty(self):
         cfg = load_output_config(resolve_format_path("luabridge3"))
-        assert cfg.templates.prologue.strip() != ""
+        assert cfg.template.strip() != ""
 
-    def test_luabridge3_class_begin(self):
+    def test_luabridge3_template_has_begin_class(self):
         cfg = load_output_config(resolve_format_path("luabridge3"))
-        assert "beginClass" in cfg.templates.class_begin
-
-    def test_template_set_defaults(self):
-        ts = TemplateSet()
-        assert ts.prologue == ""
-        assert ts.class_begin == ""
+        assert "beginClass" in cfg.template
 
     def test_source_config_defaults(self):
         sc = SourceConfig(path="foo.hpp")
@@ -180,14 +174,14 @@ class TestMultiSourceLoading:
     def test_format_overrides_parsed(self, cfg):
         assert "luabridge3" in cfg.format_overrides
 
-    def test_format_override_templates(self, cfg):
+    def test_format_override_template_extends_set(self, cfg):
         override = cfg.format_overrides["luabridge3"]
-        assert "class_begin" in override.templates
-        assert "custom" in override.templates["class_begin"]
+        assert override.template_extends != ""
+        assert "custom" in override.template_extends
 
-    def test_format_override_super_in_template(self, cfg):
+    def test_format_override_template_extends_has_super(self, cfg):
         override = cfg.format_overrides["luabridge3"]
-        assert "{super}" in override.templates["prologue"]
+        assert "super()" in override.template_extends
 
     def test_format_override_extra_unsupported_types(self, cfg):
         override = cfg.format_overrides["luabridge3"]

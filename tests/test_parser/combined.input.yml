@@ -6,3 +6,7 @@ filters:
   namespaces: ["mylib"]
   constructors:
     include: true
+
+attributes:
+  handlers:
+    "mygame::no_export": skip

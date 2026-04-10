@@ -1,0 +1,4 @@
+- always use python via "uv python"
+- use "just test" to test
+- use "just coverage" to coverage
+- in python files, never import inside methods (in tests too)

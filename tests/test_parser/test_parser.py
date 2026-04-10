@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+from tsujikiri.configurations import SourceConfig
+from tsujikiri.parser import (
+    parse_translation_unit,
+    _source_file,
+    _collect_attr_blocks,
+    _read_source_lines,
+    _get_attributes,
+    _SOURCE_CACHE
+)
 
 HERE = Path(__file__).parent
 
@@ -74,6 +84,49 @@ class TestShapeClass:
         area = next(m for m in shape.methods if m.name == "area")
         assert area.is_const is True
 
+    def test_area_is_virtual(self, parsed_module):
+        shape = self._shape(parsed_module)
+        area = next(m for m in shape.methods if m.name == "area")
+        assert area.is_virtual is True
+
+    def test_area_is_pure_virtual(self, parsed_module):
+        shape = self._shape(parsed_module)
+        area = next(m for m in shape.methods if m.name == "area")
+        assert area.is_pure_virtual is True
+
+    def test_area_is_noexcept(self, parsed_module):
+        shape = self._shape(parsed_module)
+        area = next(m for m in shape.methods if m.name == "area")
+        assert area.is_noexcept is True
+
+    def test_perimeter_not_noexcept(self, parsed_module):
+        shape = self._shape(parsed_module)
+        perimeter = next(m for m in shape.methods if m.name == "perimeter")
+        assert perimeter.is_noexcept is False
+
+    def test_class_is_abstract(self, parsed_module):
+        shape = self._shape(parsed_module)
+        assert shape.is_abstract is True
+
+    def test_class_has_virtual_methods(self, parsed_module):
+        shape = self._shape(parsed_module)
+        assert shape.has_virtual_methods is True
+
+    def test_default_ctor_noexcept(self, parsed_module):
+        shape = self._shape(parsed_module)
+        default_ctor = next(c for c in shape.constructors if not c.parameters)
+        assert default_ctor.is_noexcept is True
+
+    def test_explicit_ctor(self, parsed_module):
+        shape = self._shape(parsed_module)
+        name_ctor = next(c for c in shape.constructors if c.parameters)
+        assert name_ctor.is_explicit is True
+
+    def test_default_ctor_not_explicit(self, parsed_module):
+        shape = self._shape(parsed_module)
+        default_ctor = next(c for c in shape.constructors if not c.parameters)
+        assert default_ctor.is_explicit is False
+
     def test_field_scale(self, parsed_module):
         shape = self._shape(parsed_module)
         field_names = {f.name for f in shape.fields}
@@ -81,7 +134,27 @@ class TestShapeClass:
 
     def test_no_bases(self, parsed_module):
         shape = self._shape(parsed_module)
-        assert shape.bases == []
+        assert shape.bases == []  # Shape has no base classes
+
+    def test_getname_has_skip_attribute(self, parsed_module):
+        shape = self._shape(parsed_module)
+        getName = next(m for m in shape.methods if m.name == "getName")
+        assert any("tsujikiri::skip" in a for a in getName.attributes)
+
+    def test_setname_has_rename_attribute(self, parsed_module):
+        shape = self._shape(parsed_module)
+        setName = next(m for m in shape.methods if m.name == "setName")
+        assert any("tsujikiri::rename" in a for a in setName.attributes)
+
+    def test_getscale_has_custom_attribute(self, parsed_module):
+        shape = self._shape(parsed_module)
+        getScale = next(m for m in shape.methods if m.name == "getScale")
+        assert any("mygame::no_export" in a for a in getScale.attributes)
+
+    def test_area_has_no_attributes(self, parsed_module):
+        shape = self._shape(parsed_module)
+        area = next(m for m in shape.methods if m.name == "area")
+        assert area.attributes == []
 
 
 class TestCircleClass:
@@ -90,7 +163,12 @@ class TestCircleClass:
 
     def test_inherits_from_shape(self, parsed_module):
         circle = self._circle(parsed_module)
-        assert "mylib::Shape" in circle.bases
+        assert any(b.qualified_name == "mylib::Shape" for b in circle.bases)
+
+    def test_base_access_is_public(self, parsed_module):
+        circle = self._circle(parsed_module)
+        shape_base = next(b for b in circle.bases if b.qualified_name == "mylib::Shape")
+        assert shape_base.access == "public"
 
     def test_overloaded_resize(self, parsed_module):
         circle = self._circle(parsed_module)
@@ -102,6 +180,25 @@ class TestCircleClass:
         circle = self._circle(parsed_module)
         field_names = {f.name for f in circle.fields}
         assert "radius_" in field_names
+
+    def test_default_ctor_noexcept(self, parsed_module):
+        circle = self._circle(parsed_module)
+        default_ctor = next(c for c in circle.constructors if not c.parameters)
+        assert default_ctor.is_noexcept is True
+
+    def test_explicit_ctor(self, parsed_module):
+        circle = self._circle(parsed_module)
+        radius_ctor = next(c for c in circle.constructors if c.parameters)
+        assert radius_ctor.is_explicit is True
+
+    def test_area_noexcept(self, parsed_module):
+        circle = self._circle(parsed_module)
+        area = next(m for m in circle.methods if m.name == "area")
+        assert area.is_noexcept is True
+
+    def test_class_not_abstract(self, parsed_module):
+        circle = self._circle(parsed_module)
+        assert circle.is_abstract is False
 
 
 class TestCalculatorClass:
@@ -141,6 +238,16 @@ class TestFreeFunctions:
         fn = next(f for f in parsed_module.functions if f.name == "computeArea")
         assert "double" in fn.return_type
 
+    def test_computeArea_single_param_is_noexcept(self, parsed_module):
+        fns = [f for f in parsed_module.functions if f.name == "computeArea"]
+        single = next(f for f in fns if len(f.parameters) == 1)
+        assert single.is_noexcept is True
+
+    def test_computeArea_two_params_not_noexcept(self, parsed_module):
+        fns = [f for f in parsed_module.functions if f.name == "computeArea"]
+        two_param = next(f for f in fns if len(f.parameters) == 2)
+        assert two_param.is_noexcept is False
+
 
 class TestNamespaceFiltering:
     def test_only_mylib_namespace(self, parsed_module):
@@ -158,7 +265,6 @@ class TestNamespaceFiltering:
 
 class TestSourceFileHelper:
     def test_returns_none_when_no_file(self):
-        from tsujikiri.parser import _source_file
         cursor = MagicMock()
         cursor.location.file = None
         assert _source_file(cursor) is None
@@ -166,8 +272,6 @@ class TestSourceFileHelper:
 
 class TestParseTranslationUnitErrors:
     def test_raises_file_not_found(self):
-        from tsujikiri.configurations import SourceConfig
-        from tsujikiri.parser import parse_translation_unit
         src = SourceConfig(path="/definitely/does/not/exist.hpp")
         with pytest.raises(FileNotFoundError, match="Source file not found"):
             parse_translation_unit(src, [], "test")
@@ -209,3 +313,73 @@ class TestNestedTypes:
         # nested_types.hpp has a top-level typedef; parser skips it (continue)
         # If parsing succeeded, the continue branch was exercised
         assert nested_parsed_module.name == "nested"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for attribute-extraction helpers
+# ---------------------------------------------------------------------------
+
+class TestCollectAttrBlocks:
+    def test_empty_string(self):
+        assert _collect_attr_blocks("") == []
+
+    def test_no_attribute_syntax(self):
+        assert _collect_attr_blocks("void method();") == []
+
+    def test_single_attribute(self):
+        assert _collect_attr_blocks("[[tsujikiri::skip]]") == ["tsujikiri::skip"]
+
+    def test_attribute_with_arg(self):
+        result = _collect_attr_blocks('[[tsujikiri::rename("foo")]]')
+        assert result == ['tsujikiri::rename("foo")']
+
+    def test_two_attrs_in_one_block(self):
+        result = _collect_attr_blocks("[[ns::a, ns::b]]")
+        assert result == ["ns::a", "ns::b"]
+
+    def test_attribute_in_trailing_text(self):
+        result = _collect_attr_blocks(" [[myns::tag]];")
+        assert "myns::tag" in result
+
+
+class TestReadSourceLines:
+    def test_oserror_returns_empty(self):
+        fake = "/no/such/file_unique_test_path_xyzzy.hpp"
+        _SOURCE_CACHE.pop(fake, None)
+        with patch("builtins.open", side_effect=OSError("no file")):
+            result = _read_source_lines(fake)
+        assert result == []
+
+    def test_caches_result(self, tmp_path):
+        f = tmp_path / "cached.hpp"
+        f.write_text("int x;\n")
+        path = str(f)
+        _SOURCE_CACHE.pop(path, None)
+        first = _read_source_lines(path)
+        second = _read_source_lines(path)
+        assert first is second  # same list object from cache
+
+
+class TestGetAttributesHelpers:
+    def test_no_file_returns_empty(self):
+        cursor = MagicMock()
+        cursor.location.file = None
+        assert _get_attributes(cursor) == []
+
+    def test_empty_file_returns_empty(self, tmp_path):
+        f = tmp_path / "empty.hpp"
+        f.write_text("")
+        _SOURCE_CACHE.pop(str(f), None)
+        cursor = MagicMock()
+        cursor.location.file.name = str(f)
+        cursor.extent.start.line = 1
+        cursor.extent.start.column = 1
+        cursor.extent.end.line = 1
+        cursor.extent.end.column = 1
+        assert _get_attributes(cursor) == []
+
+    def test_previous_line_attribute(self, parsed_module):
+        # combined.hpp has [[mygame::no_export]] on its own line before setScale
+        shape = next(c for c in parsed_module.classes if c.name == "Shape")
+        setScale = next(m for m in shape.methods if m.name == "setScale")
+        assert any("mygame::no_export" in a for a in setScale.attributes)

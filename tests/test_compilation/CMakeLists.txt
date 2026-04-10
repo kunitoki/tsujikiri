@@ -19,13 +19,9 @@ FetchContent_GetProperties(lua)
 if(NOT lua_POPULATED)
     FetchContent_Populate(lua)
 
-    file(GLOB LUA_SOURCES "${lua_SOURCE_DIR}/*.c")
-    list(REMOVE_ITEM LUA_SOURCES
-        "${lua_SOURCE_DIR}/lua.c"
-        "${lua_SOURCE_DIR}/luac.c")
-
-    add_library(lua_static STATIC ${LUA_SOURCES})
+    add_library(lua_static STATIC "${lua_SOURCE_DIR}/onelua.c")
     target_include_directories(lua_static PUBLIC "${lua_SOURCE_DIR}")
+    target_compile_definitions(lua_static PRIVATE -DMAKE_LIB=1)
     if(UNIX AND NOT APPLE)
         target_compile_definitions(lua_static PRIVATE LUA_USE_POSIX LUA_USE_DLOPEN)
         target_link_libraries(lua_static PUBLIC dl m)
@@ -57,14 +53,19 @@ endif()
 # --------------------------------------------------------------------------
 # LuaBridge3 bindings compilation test
 # --------------------------------------------------------------------------
+file(GLOB_RECURSE TSUJIKIRI_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../src/**/*.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../src/**/*.yml")
 set(INPUT_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/combined.input.yml)
+set(GENERATED_MANIFEST ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.manifest)
 set(GENERATED_SOURCE ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.cpp)
 set(GENERATED_LUALS ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.lua)
 
 add_custom_command(
     OUTPUT ${GENERATED_SOURCE}
-    COMMAND tsujikiri -i ${INPUT_SOURCE} -o luabridge3 -O ${GENERATED_SOURCE}
+    COMMAND tsujikiri -i ${INPUT_SOURCE} -o luabridge3 --manifest-file ${GENERATED_MANIFEST} -O ${GENERATED_SOURCE}
     DEPENDS ${INPUT_SOURCE}
+    IMPLICIT_DEPENDS ${TSUJIKIRI_SOURCES}
     COMMENT "Generating LuaBridge3 bindings with tsujikiri..."
     VERBATIM)
 
@@ -72,9 +73,10 @@ add_custom_command(
     OUTPUT ${GENERATED_LUALS}
     COMMAND tsujikiri -i ${INPUT_SOURCE} -o luals -O ${GENERATED_LUALS}
     DEPENDS ${INPUT_SOURCE}
+    IMPLICIT_DEPENDS ${TSUJIKIRI_SOURCES}
     COMMENT "Generating LuaLS bindings with tsujikiri..."
     VERBATIM)
 
-add_library(test_luabridge3_bindings STATIC ${GENERATED_SOURCE} ${GENERATED_LUALS})
+add_executable(test_luabridge3_bindings ${GENERATED_SOURCE} ${GENERATED_LUALS} main.cpp)
 target_include_directories(test_luabridge3_bindings PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_luabridge3_bindings PRIVATE LuaBridge3::LuaBridge3)
