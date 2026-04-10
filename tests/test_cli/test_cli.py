@@ -137,9 +137,9 @@ class TestGeneration:
         fmt = tmp_path / "noop.output.yml"
         fmt.write_text(
             "format_name: noop\n"
-            "templates:\n"
-            "  prologue: 'NOOP_START\\n'\n"
-            "  epilogue: 'NOOP_END\\n'\n"
+            "template: |\n"
+            "  NOOP_START\n"
+            "  NOOP_END\n"
         )
         stdout, _ = _run(
             "--input", str(simple_input_yml),

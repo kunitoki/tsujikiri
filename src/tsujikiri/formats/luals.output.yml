@@ -32,99 +32,121 @@ type_mappings:
   "std::string_view": "string"
   "void": "nil"
 
-templates:
-  line_comment: "--"
-  module_name: "{{ module_name }}"
+template: |
+  {%- block prologue -%}
+  -- DO NOT EDIT - Auto-generated LuaLS annotations for {{ module_name }} by tsujikiri
+  {%- endblock %}
+  {%- for cls in classes %}
+  {%- block class scoped %}
 
-  # ---- Globals ----
-  prologue: |
-    -- DO NOT EDIT - Auto-generated LuaLS annotations for {{ module_name }} by tsujikiri
+  {%- if cls.base_name %}
+  ---@class {{ cls.name }} : {{ cls.base_short_name }}
+  {%- else %}
+  ---@class {{ cls.name }}
+  {%- endif %}
+  {%- block class_fields scoped %}
+  {%- for field in cls.fields %}
+  {%- block class_field_annotation scoped %}
+  ---@field {{ field.name }} {{ field.type }}
+  {%- endblock %}
+  {%- endfor %}
+  {%- endblock %}
+  local {{ cls.name }} = {}
 
-  # ---- Class ----
-  class_begin: |
-    ---@class {{ class_name }}
-    {{ class_fields_block }}local {{ class_name }} = {}{{ '\n' }}
+  {%- block class_constructors scoped %}
+  {%- if cls.constructor_group.is_overloaded %}
+  {%- set first = cls.constructor_group.constructors[0] %}
+  {%- block class_constructor_group scoped %}
+  {% for p in first.params %}---@param {{ p.name }} {{ p.type }}
+  {% endfor -%}---@return {{ cls.name }}
+  {%- for ov in cls.constructor_group.constructors[1:] %}
+  ---@overload fun({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ cls.name }}
+  {%- endfor %}
+  function {{ cls.name }}.new({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
+  {%- endblock %}
+  {%- elif cls.constructor_group.constructors %}
+  {%- set ctor = cls.constructor_group.constructors[0] %}
+  {%- block class_constructor scoped %}
+  {% for p in ctor.params %}---@param {{ p.name }} {{ p.type }}
+  {% endfor -%}---@return {{ cls.name }}
+  function {{ cls.name }}.new({% if ctor.params %}{{ ctor.params | map(attribute='name') | join(', ') }}{% endif %}) end
+  {%- endblock %}
+  {%- endif %}
+  {%- endblock %}
+  {%- block class_methods scoped %}
+  {%- for group in cls.method_groups %}
+  {%- if group.is_static %}
+  {%- block class_static_method_group scoped %}
+  {%- if group.is_overloaded %}
+  {%- set first = group.methods[0] %}
+  {% for p in first.params %}---@param {{ p.name }} {{ p.type }}
+  {% endfor -%}---@return {{ first.return_type }}
+  {%- for ov in group.methods[1:] %}
+  ---@overload fun({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
+  {%- endfor %}
+  function {{ cls.name }}.{{ group.name }}({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
+  {%- else %}
+  {%- set method = group.methods[0] %}
+  {% for p in method.params %}---@param {{ p.name }} {{ p.type }}
+  {% endfor -%}---@return {{ method.return_type }}
+  function {{ cls.name }}.{{ group.name }}({% if method.params %}{{ method.params | map(attribute='name') | join(', ') }}{% endif %}) end
+  {%- endif %}
+  {%- endblock %}
+  {%- else %}
+  {%- block class_method_group scoped %}
+  {%- if group.is_overloaded %}
+  {%- set first = group.methods[0] %}
+  {% for p in first.params %}---@param {{ p.name }} {{ p.type }}
+  {% endfor -%}---@return {{ first.return_type }}
+  {%- for ov in group.methods[1:] %}
+  ---@overload fun(self: {{ cls.name }}{% if ov.params %}, {{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
+  {%- endfor %}
+  function {{ cls.name }}:{{ group.name }}({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
+  {%- else %}
+  {%- set method = group.methods[0] %}
+  {% for p in method.params %}---@param {{ p.name }} {{ p.type }}
+  {% endfor -%}---@return {{ method.return_type }}
+  function {{ cls.name }}:{{ group.name }}({% if method.params %}{{ method.params | map(attribute='name') | join(', ') }}{% endif %}) end
+  {%- endif %}
+  {%- endblock %}
+  {%- endif %}
 
-  class_derived_begin: |
-    ---@class {{ class_name }} : {{ class_base_short_name }}
-    {{ class_fields_block }}local {{ class_name }} = {}{{ '\n' }}
+  {%- endfor %}
+  {%- endblock %}
+  {%- endblock %}
+  {%- endfor %}
+  {%- for enum in enums %}
+  {%- block enum scoped %}
 
-  class_overload_const_definition: " const"
+  ---@enum {{ enum.name }}
+  local {{ enum.name }} = {
+  {%- for value in enum.values %}
+  {%- block enum_value scoped %}
+    {{ value.name }} = {{ value.number }},
+  {%- endblock %}
+  {%- endfor %}
+  }
 
-  # ---- Regular instance methods ----
-  class_method_begin: |
-    {% for p in method_params %}---@param {{ p.name }} {{ p.type }}
-    {% endfor %}---@return {{ method_return }}
-    function {{ class_name }}:{{ method_name }}({% if method_params %}{{ method_params | map(attribute='name') | join(', ') }}{% endif %}) end
+  {%- endblock %}
+  {%- endfor %}
+  {%- for group in function_groups %}
+  {%- block function_group scoped %}
+  {%- if group.is_overloaded %}
+  {%- set first = group.functions[0] %}
 
-  class_method_end: "\n"
+  {% for p in first.params %}---@param {{ p.name }} {{ p.type }}
+  {% endfor -%}---@return {{ first.return_type }}
+  {%- for ov in group.functions[1:] %}
+  ---@overload fun({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
+  {%- endfor %}
+  function {{ group.name }}({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
+  {%- else %}
+  {%- set fn = group.functions[0] %}
 
-  class_overloaded_method_group_begin: |
-    {% set first = overloads[0] %}{% for p in first.method_params %}---@param {{ p.name }} {{ p.type }}
-    {% endfor %}---@return {{ first.method_return }}
-    {% for ov in overloads[1:] %}---@overload fun(self: {{ class_name }}{% if ov.method_params %}, {{ ov.method_params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.method_return }}
-    {% endfor %}function {{ class_name }}:{{ method_name }}({% if first.method_params %}{{ first.method_params | map(attribute='name') | join(', ') }}{% endif %}) end
-
-  class_overloaded_method_group_end: "\n"
-
-  # ---- Static methods ----
-  class_static_method_begin: |
-    {% for p in method_params %}---@param {{ p.name }} {{ p.type }}
-    {% endfor %}---@return {{ method_return }}
-    function {{ class_name }}.{{ method_name }}({% if method_params %}{{ method_params | map(attribute='name') | join(', ') }}{% endif %}) end
-
-  class_static_method_end: "\n"
-
-  class_overloaded_static_method_group_begin: |
-    {% set first = overloads[0] %}{% for p in first.method_params %}---@param {{ p.name }} {{ p.type }}
-    {% endfor %}---@return {{ first.method_return }}
-    {% for ov in overloads[1:] %}---@overload fun({% if ov.method_params %}{{ ov.method_params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.method_return }}
-    {% endfor %}function {{ class_name }}.{{ method_name }}({% if first.method_params %}{{ first.method_params | map(attribute='name') | join(', ') }}{% endif %}) end
-
-  class_overloaded_static_method_group_end: "\n"
-
-  # ---- Constructors ----
-  class_constructor_group_begin: |
-    {% set first = overloads[0] %}{% for p in first.constructor_params %}---@param {{ p.name }} {{ p.type }}
-    {% endfor %}---@return {{ class_name }}
-    {% for ov in overloads[1:] %}---@overload fun({% if ov.constructor_params %}{{ ov.constructor_params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ class_name }}
-    {% endfor %}function {{ class_name }}.new({% if first.constructor_params %}{{ first.constructor_params | map(attribute='name') | join(', ') }}{% endif %}) end
-
-  class_constructor_group_end: "\n"
-
-  class_constructor_begin: |
-    {% for p in constructor_params %}---@param {{ p.name }} {{ p.type }}
-    {% endfor %}---@return {{ class_name }}
-    function {{ class_name }}.new({% if constructor_params %}{{ constructor_params | map(attribute='name') | join(', ') }}{% endif %}) end
-
-  class_constructor_end: "\n"
-
-  # ---- Fields / Properties ----
-  class_field_annotation: |
-    ---@field {{ field_name }} {{ field_type }}
-
-  # ---- Free functions ----
-  function_begin: |
-    {% for p in function_params %}---@param {{ p.name }} {{ p.type }}
-    {% endfor %}---@return {{ function_return }}
-    function {{ function_name }}({% if function_params %}{{ function_params | map(attribute='name') | join(', ') }}{% endif %}) end
-
-  function_end: "\n"
-
-  function_overloaded_group_begin: |
-    {% set first = overloads[0] %}{% for p in first.function_params %}---@param {{ p.name }} {{ p.type }}
-    {% endfor %}---@return {{ first.function_return }}
-    {% for ov in overloads[1:] %}---@overload fun({% if ov.function_params %}{{ ov.function_params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.function_return }}
-    {% endfor %}function {{ function_name }}({% if first.function_params %}{{ first.function_params | map(attribute='name') | join(', ') }}{% endif %}) end
-
-  function_overloaded_group_end: "\n"
-
-  # ---- Enums ----
-  enum_begin: |
-    ---@enum {{ enum_name }}
-    local {{ enum_name }} = {
-
-  enum_value: |
-    {{ value_name }} = {{ value_number }},
-
-  enum_end: "}\n\n"
+  {% for p in fn.params %}---@param {{ p.name }} {{ p.type }}
+  {% endfor -%}---@return {{ fn.return_type }}
+  function {{ group.name }}({% if fn.params %}{{ fn.params | map(attribute='name') | join(', ') }}{% endif %}) end
+  {%- endif %}
+  {%- endblock %}
+  {%- endfor %}
+  {%- block epilogue %}{% endblock %}

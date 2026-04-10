@@ -97,7 +97,7 @@ def main() -> None:
 
     # --- Collect format overrides for the chosen format ---
     fmt_override = input_config.format_overrides.get(output_config.format_name)
-    template_overrides = fmt_override.templates if fmt_override else {}
+    template_extends = fmt_override.template_extends if fmt_override else ""
     extra_unsupported = fmt_override.unsupported_types if fmt_override else []
     fmt_filters = fmt_override.filters if fmt_override else None
     fmt_transforms = fmt_override.transforms if fmt_override else None
@@ -173,8 +173,8 @@ def main() -> None:
     gen = Generator(
         output_config,
         generation=effective_generation,
-        template_overrides=template_overrides,
         extra_unsupported_types=extra_unsupported,
+        template_extends=template_extends,
     )
 
     if args.output_file:

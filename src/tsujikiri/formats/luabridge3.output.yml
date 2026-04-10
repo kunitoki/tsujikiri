@@ -1,109 +1,138 @@
 format_name: luabridge3
 format_version: "1.0"
 description: "LuaBridge3 C++ to Lua binding templates"
-launguage: cpp
+language: cpp
 
-# Types that force a method/function/field to be commented out
+# Types that force a method/function/field to be excluded from output
 unsupported_types:
   - CFStringRef
   - OSType
 
-# Optional C++ → target-language type remapping (informational; apply via add_type_mapping transform)
+# Optional C++ → target-language type remapping (use add_type_mapping transform)
 type_mappings: {}
 
-templates:
-  line_comment: "//"
-  module_name: "{{ module_name }}"
-  include_directive: "#include {{ include }}\n"
+template: |
+  {%- block prologue -%}
+  // DO NOT EDIT - Auto-generated LuaBridge3 bindings for {{ module_name }} by tsujikiri
+  extern "C" {
+  #include <lua.h>
+  #include <lualib.h>
+  #include <lauxlib.h>
+  } // extern "C"
 
-  # ---- Globals ----
-  header: ""
+  #include <LuaBridge/LuaBridge.h>
 
-  prologue: |
-    // DO NOT EDIT - Auto-generated LuaBridge3 bindings for {{ module_name }} by tsujikiri
-    extern "C" {
-    #include <lua.h>
-    #include <lualib.h>
-    #include <lauxlib.h>
-    } // extern "C"
+  #include <utility>
+  {% for inc in includes %}
+  #include {{ inc }}
+  {%- endfor %}
 
-    #include <LuaBridge/LuaBridge.h>
-
-    #include <utility>
-
-    void register_{{ module_name }}(lua_State* L)
-    {
-      luabridge::getGlobalNamespace(L)
-        .beginNamespace("{{ module_name }}")
-
-  epilogue: |2
-        .endNamespace();
-    }
-
-  footer: ""
-
-  # ---- Casts ----
-  class_overload_const_definition: " const"
-  class_overload_cast: "luabridge::overload"
-  class_const_overload_cast: "luabridge::constOverload"
-  class_nonconst_overload_cast: "luabridge::nonConstOverload"
-  function_overload_cast: "luabridge::overload"
-
-  # ---- Class ----
-  class_begin: |2
-          .beginClass<{{ qualified_class_name }}>("{{ class_name }}")
-  class_derived_begin: |2
-          .deriveClass<{{ qualified_class_name }}, {{ class_base_name }}>("{{ class_name }}")
-  class_end: |2
-          .endClass()
-
-  # ---- Regular methods ----
-  class_method_begin: |2
-            .addFunction("{{ method_name | camel_to_snake }}", &{{ qualified_class_name }}::{{ method_spelling }})
-  class_method_end: ""
-  class_overloaded_method_group_begin: |2
-            .addFunction("{{ method_name | camel_to_snake }}",
-  class_overloaded_method_begin: |2
-              {{ method_overload_cast }}<{{ method_params | map(attribute='type') | join(', ') }}>(&{{ qualified_class_name }}::{{ method_spelling }}){{ method_overload_separator }}
-  class_overloaded_method_group_end: |2
-            )
-
-  # ---- Static methods ----
-  class_static_method_begin: |2
-            .addStaticFunction("{{ method_name | camel_to_snake }}", &{{ qualified_class_name }}::{{ method_spelling }})
-  class_overloaded_static_method_group_begin: |2
-            .addStaticFunction("{{ method_name | camel_to_snake }}",
-  class_overloaded_static_method_begin: |2
-              {{ method_overload_cast }}<{{ method_params | map(attribute='type') | join(', ') }}>(&{{ qualified_class_name }}::{{ method_spelling }}){{ method_overload_separator }}
-  class_overloaded_static_method_group_end: |2
-            )
-
-  # ---- Constructors ----
-  class_constructor_begin: |2
-            .addConstructor<void (*)({{ constructor_params | map(attribute='raw_type') | join(', ') }})>()
-  class_overloaded_constructor_begin: |2
-            .addConstructor<void (*)({{ constructor_params | map(attribute='raw_type') | join(', ') }})>()
-
-  # ---- Fields / Properties ----
-  class_field_begin: |2
-            .addProperty("{{ field_name | camel_to_snake }}", &{{ qualified_class_name }}::{{ field_name }})
-  class_readonly_field_begin: |2
-            .addProperty("{{ field_name | camel_to_snake }}", &{{ qualified_class_name }}::{{ field_name }}, nullptr)
-
-  # ---- Free functions ----
-  function_begin: |2
-          .addFunction("{{ function_name | camel_to_snake }}", &{{ function_spelling }})
-  function_overloaded_group_begin: |2
-          .addFunction("{{ function_name | camel_to_snake }}",
-  function_overloaded_begin: |2
-            {{ function_overload_cast }}<{{ function_params | map(attribute='type') | join(', ') }}>(&{{ function_spelling }}){{ function_overload_separator }}
-  function_overloaded_group_end: |2
-          )
-
-  # ---- Enums ----
-  enum_begin: |2
-          .beginNamespace("{{ enum_name }}")
-  enum_value: |2
-            .addProperty("{{ value_name }}", +[] { return static_cast<std::underlying_type_t<{{ qualified_enum_name }}>>({{ qualified_enum_name }}::{{ value_name }}); })
-  enum_end: |2
+  void register_{{ module_name }}(lua_State* L)
+  {
+    luabridge::getGlobalNamespace(L)
+      .beginNamespace("{{ module_name }}")
+  {%- endblock %}
+  {%- for enum in enums %}
+  {%- block enum scoped %}
+          .beginNamespace("{{ enum.name }}")
+  {%- for value in enum.values %}
+  {%- block enum_value scoped %}
+            .addProperty("{{ value.name }}", +[] { return static_cast<std::underlying_type_t<{{ enum.qualified_name }}>>({{ enum.qualified_name }}::{{ value.name }}); })
+  {%- endblock %}
+  {%- endfor %}
           .endNamespace()
+  {%- endblock %}
+  {%- endfor %}
+  {%- for group in function_groups %}
+  {%- block function_group scoped %}
+  {%- if group.is_overloaded %}
+          .addFunction("{{ group.name | camel_to_snake }}",
+  {%- for fn in group.functions %}
+  {%- block function_overloaded scoped %}
+            luabridge::overload<{{ fn.params | map(attribute='type') | join(', ') }}>(&{{ fn.spelling }}){{ fn.overload_separator }}
+  {%- endblock %}
+  {%- endfor %}
+          )
+  {%- else %}
+          .addFunction("{{ group.functions[0].name | camel_to_snake }}", &{{ group.functions[0].spelling }})
+  {%- endif %}
+  {%- endblock %}
+  {%- endfor %}
+  {%- for cls in classes %}
+  {%- block class scoped %}
+  {%- if cls.base_name %}
+          .deriveClass<{{ cls.qualified_name }}, {{ cls.base_name }}>("{{ cls.name }}")
+  {%- else %}
+          .beginClass<{{ cls.qualified_name }}>("{{ cls.name }}")
+  {%- endif %}
+  {%- block class_constructors scoped %}
+  {%- for ctor in cls.constructor_group.constructors %}
+  {%- block class_constructor_group scoped %}
+            .addConstructor<void (*)({{ ctor.params | map(attribute='raw_type') | join(', ') }})>()
+  {%- endblock %}
+  {%- endfor %}
+  {%- endblock %}
+  {%- block class_methods scoped %}
+  {%- for group in cls.method_groups %}
+  {%- if group.is_static %}
+  {%- block class_static_method_group scoped %}
+  {%- if group.is_overloaded %}
+            .addStaticFunction("{{ group.name | camel_to_snake }}",
+  {%- for method in group.methods %}
+  {%- block class_overloaded_static_method scoped %}
+              {%- if method.overload_kind == "const" %}luabridge::constOverload{%- elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{%- else %}luabridge::overload{%- endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
+  {%- endblock %}
+  {%- endfor %}
+            )
+  {%- else %}
+            .addStaticFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ group.methods[0].spelling }})
+  {%- endif %}
+  {%- endblock %}
+  {%- else %}
+  {%- block class_method_group scoped %}
+  {%- if group.is_overloaded %}
+            .addFunction("{{ group.name | camel_to_snake }}",
+  {%- for method in group.methods %}
+  {%- block class_overloaded_method scoped %}
+              {%- if method.overload_kind == "const" %}luabridge::constOverload{%- elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{%- else %}luabridge::overload{%- endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
+  {%- endblock %}
+  {%- endfor %}
+            )
+  {%- else %}
+            .addFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ group.methods[0].spelling }})
+  {%- endif %}
+  {%- endblock %}
+  {%- endif %}
+  {%- endfor %}
+  {%- endblock %}
+  {%- block class_fields scoped %}
+  {%- for field in cls.fields %}
+  {%- block class_field scoped %}
+  {%- if field.is_const %}
+            .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}, nullptr)
+  {%- else %}
+            .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }})
+  {%- endif %}
+  {%- endblock %}
+  {%- endfor %}
+  {%- endblock %}
+  {%- block class_enums scoped %}
+  {%- for enum in cls.enums %}
+  {%- block class_enum scoped %}
+          .beginNamespace("{{ enum.name }}")
+  {%- for value in enum.values %}
+  {%- block class_enum_value scoped %}
+            .addProperty("{{ value.name }}", +[] { return static_cast<std::underlying_type_t<{{ enum.qualified_name }}>>({{ enum.qualified_name }}::{{ value.name }}); })
+  {%- endblock %}
+  {%- endfor %}
+          .endNamespace()
+  {%- endblock %}
+  {%- endfor %}
+  {%- endblock %}
+          .endClass()
+  {%- endblock %}
+  {%- endfor %}
+  {%- block epilogue %}
+        .endNamespace();
+  }
+  {%- endblock %}
