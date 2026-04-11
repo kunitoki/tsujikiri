@@ -1,1 +1,2 @@
 remote_theme: pages-themes/cayman@v0.2.0
+render_with_liquid: false
