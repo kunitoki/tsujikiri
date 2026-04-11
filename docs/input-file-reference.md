@@ -36,13 +36,17 @@ source:
   include_paths:              # Additional include directories
     - "/usr/local/include"
     - "third_party/include"
+  defines:                    # Preprocessor definitions (equivalent to -D flags)
+    - "NDEBUG"
+    - "MY_FEATURE=1"
 ```
 
 | Field | Type | Required | Default | Notes |
 |-------|------|----------|---------|-------|
 | `path` | string | yes | — | Relative to the input YAML's directory |
-| `parse_args` | list of strings | no | `[]` | Any clang flag: `-std=c++17`, `-DMYDEFINE=1`, `-x c++` |
+| `parse_args` | list of strings | no | `[]` | Any clang flag: `-std=c++17`, `-x c++` |
 | `include_paths` | list of strings | no | `[]` | Equivalent to `-I` flags; added after `parse_args` |
+| `defines` | list of strings | no | `[]` | Preprocessor definitions; equivalent to `-D` flags, added after `include_paths` |
 
 ---
 
@@ -60,7 +64,8 @@ sources:
       includes: ['"core/types.hpp"']
 
   - path: "ui/widgets.hpp"
-    parse_args: ["-std=c++20", "-DHAS_WIDGETS=1"]
+    parse_args: ["-std=c++20"]
+    defines: ["HAS_WIDGETS=1"]
     transforms:
       - stage: suppress_class
         pattern: ".*Internal.*"
@@ -300,14 +305,16 @@ This configuration combines multi-source, top-level filters, format-specific ove
 
 sources:
   - path: "engine/physics.hpp"
-    parse_args: ["-std=c++17", "-DENGINE_PHYSICS=1"]
+    parse_args: ["-std=c++17"]
+    defines: ["ENGINE_PHYSICS=1"]
     filters:
       namespaces: ["physics"]
     generation:
       includes: ['"engine/physics.hpp"']
 
   - path: "engine/audio.hpp"
-    parse_args: ["-std=c++17", "-DENGINE_AUDIO=1"]
+    parse_args: ["-std=c++17"]
+    defines: ["ENGINE_AUDIO=1"]
     filters:
       namespaces: ["audio"]
     generation:

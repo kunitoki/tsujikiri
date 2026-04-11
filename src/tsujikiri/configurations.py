@@ -32,6 +32,7 @@ class SourceConfig:
     path: str
     parse_args: List[str] = field(default_factory=list)
     include_paths: List[str] = field(default_factory=list)
+    defines: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -302,6 +303,7 @@ def _parse_source_entry(entry_raw: Dict[str, Any], config_dir: Path) -> SourceEn
         path=src_path,
         parse_args=entry_raw.get("parse_args", []),
         include_paths=entry_raw.get("include_paths", []),
+        defines=entry_raw.get("defines", []),
     )
 
     filters, transforms, generation = _parse_optional_overrides(entry_raw)
@@ -325,6 +327,7 @@ def load_input_config(config_file: Path) -> InputConfig:
             path=src_path,
             parse_args=src.get("parse_args", []),
             include_paths=src.get("include_paths", []),
+            defines=src.get("defines", []),
         )
 
     # --- Multiple sources ---

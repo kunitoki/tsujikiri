@@ -295,6 +295,7 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
 
     args = list(source.parse_args)
     args += [f"-I{p}" for p in source.include_paths]
+    args += [f"-D{d}" for d in source.defines]
     # Ensure we parse as C++ by default if not already specified
     if "-x" not in args:
         args = ["-x", "c++"] + args
