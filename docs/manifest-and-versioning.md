@@ -194,11 +194,11 @@ tsujikiri -i project.input.yml -o luabridge3 -O src/bindings.cpp \
           -M api.manifest.json --embed-version
 ```
 
-When `--embed-version` is passed (or `embed_version: true` in `generation`), the SHA-256 uid is embedded in the generated code.
+When `--embed-version` is passed (or `embed_version: true` in `generation`), the api version number is embedded in the generated code.
 
 **luabridge3 output:**
 ```cpp
-static constexpr const char* k_myproject_api_version = "3a8fe2d4c8b1f9...";
+static constexpr const char* k_myproject_api_version = "1.7.3";
 
 const char* get_myproject_api_version()
 {
@@ -217,10 +217,15 @@ function myproject.get_api_version() end
 
 **Runtime version check (Lua side):**
 ```lua
-local expected = "3a8fe2d4c8b1f9..."
+local function parse(v)
+    local a, b, c = v:match("(%d+)%.(%d+)%.(%d+)")
+    return a*1e6 + b*1e3 + c
+end
+
+local expected = "1.7.3"
 local actual = myproject.get_api_version()
-if actual ~= expected then
-    error("API version mismatch: expected " .. expected .. " got " .. actual)
+if parse(actual) ~= parse(expected) then
+    error(("API version mismatch: expected %s got %s"):format(expected, actual))
 end
 ```
 
@@ -241,11 +246,7 @@ MANIFEST="api.manifest.json"
 OUTPUT="src/lua_bindings.cpp"
 
 echo "--- Generating bindings ---"
-tsujikiri \
-  -i "$INPUT" \
-  -o luabridge3 \
-  -O "$OUTPUT" \
-  -M "$MANIFEST" \
+tsujikiri -i "$INPUT" -o luabridge3 -O "$OUTPUT" -M "$MANIFEST" \
   --check-compat \
   --embed-version
 
@@ -255,10 +256,7 @@ tsujikiri \
 #   c) No changes at all
 
 echo "--- Generating LuaLS annotations ---"
-tsujikiri \
-  -i "$INPUT" \
-  -o luals \
-  -O "types/myproject.lua"
+tsujikiri -i "$INPUT" -o luals -O "types/myproject.lua"
 
 echo "--- Committing updated bindings ---"
 git add "$OUTPUT" "$MANIFEST" "types/myproject.lua"
