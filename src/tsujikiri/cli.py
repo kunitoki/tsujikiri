@@ -215,7 +215,7 @@ def main() -> None:
                 manifest["version"] = old_manifest["version"]
 
     if args.embed_version or effective_generation.embed_version:
-        api_version = manifest["uid"]
+        api_version = manifest["version"]
 
     if args.dry_run:
         emitted_classes = [c.name for c in merged.classes if c.emit]
@@ -226,7 +226,7 @@ def main() -> None:
         print(f"Classes : {len(emitted_classes)} — {', '.join(emitted_classes) or '(none)'}")
         print(f"Functions: {len(emitted_functions)} — {', '.join(emitted_functions) or '(none)'}")
         print(f"Enums   : {len(emitted_enums)} — {', '.join(emitted_enums) or '(none)'}")
-        print(f"Version : {manifest['uid']}")
+        print(f"Version : {manifest['version']}")
         return
 
     gen = Generator(

@@ -297,10 +297,10 @@ class TestManifestCompatibility:
 
         stdout_io, stderr_io = StringIO(), StringIO()
         with patch("sys.argv", ["tsujikiri",
-                                 "--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                                 "--output", "luabridge3",
-                                 "--manifest-file", str(manifest),
-                                 "--check-compat"]):
+                                "--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
+                                "--output", "luabridge3",
+                                "--manifest-file", str(manifest),
+                                "--check-compat"]):
             with patch("sys.stdout", stdout_io), patch("sys.stderr", stderr_io):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -332,10 +332,10 @@ class TestManifestCompatibility:
 
         stdout_io, stderr_io = StringIO(), StringIO()
         with patch("sys.argv", ["tsujikiri",
-                                 "--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                                 "--output", "luabridge3",
-                                 "--manifest-file", str(manifest),
-                                 "--check-compat"]):
+                                "--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
+                                "--output", "luabridge3",
+                                "--manifest-file", str(manifest),
+                                "--check-compat"]):
             with patch("sys.stdout", stdout_io), patch("sys.stderr", stderr_io):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -401,7 +401,7 @@ class TestManifestCompatibility:
              "--embed-version",
              "--output-file", str(out))
 
-        version = json.loads(manifest.read_text())["uid"]
+        version = json.loads(manifest.read_text())["version"]
         content = out.read_text(encoding="utf-8")
         assert version in content
         assert "get_api_version" in content
@@ -431,7 +431,7 @@ class TestManifestCompatibility:
             if "Version" in line
         ]
         assert len(version_lines) == 1
-        assert len(version_lines[0].split(":")[-1].strip()) == 64
+        assert version_lines[0].split(":")[-1].strip() == "0.0.0"
 
 
 # ---------------------------------------------------------------------------
