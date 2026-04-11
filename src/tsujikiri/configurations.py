@@ -170,6 +170,9 @@ class InputConfig:
     attributes: AttributeHandlerConfig = field(default_factory=AttributeHandlerConfig)
     # Per-format template/type overrides (keyed by format name, e.g. "luabridge3").
     format_overrides: Dict[str, FormatOverrideConfig] = field(default_factory=dict)
+    # Post-generation formatting: run the language-appropriate formatter on output.
+    format: bool = False
+    format_options: List[str] = field(default_factory=list)
 
     def get_source_entries(self) -> List[SourceEntry]:
         """Return all source entries, normalising a bare ``source:`` key into the list."""
@@ -189,6 +192,7 @@ class OutputConfig:
     format_name: str = ""
     format_version: str = "1.0"
     description: str = ""
+    language: str = ""  # target language, e.g. "cpp" or "lua"
     type_mappings: Dict[str, str] = field(default_factory=dict)
     unsupported_types: List[str] = field(default_factory=list)
     template: str = ""  # full Jinja2 template (single-template system)
@@ -373,6 +377,8 @@ def load_input_config(config_file: Path) -> InputConfig:
         generation=generation,
         attributes=attributes,
         format_overrides=format_overrides,
+        format=data.get("format", False),
+        format_options=data.get("format_options", []),
     )
 
 
@@ -384,6 +390,7 @@ def load_output_config(config_file: Path) -> OutputConfig:
         format_name=data.get("format_name", ""),
         format_version=str(data.get("format_version", "1.0")),
         description=data.get("description", ""),
+        language=data.get("language", ""),
         type_mappings=data.get("type_mappings", {}),
         unsupported_types=data.get("unsupported_types", []),
         template=data.get("template", "") or "",

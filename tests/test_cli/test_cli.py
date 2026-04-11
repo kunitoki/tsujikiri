@@ -6,7 +6,7 @@ import json
 import sys
 from io import StringIO
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -432,3 +432,74 @@ class TestManifestCompatibility:
         ]
         assert len(version_lines) == 1
         assert len(version_lines[0].split(":")[-1].strip()) == 64
+
+
+# ---------------------------------------------------------------------------
+# format / format_options
+# ---------------------------------------------------------------------------
+
+class TestFormatting:
+    def test_format_false_by_default_skips_formatter(self, simple_input_yml):
+        """When format is not set, format_content is never called."""
+        with patch("tsujikiri.cli.format_content") as mock_fmt:
+            _run("--input", str(simple_input_yml), "--output", "luabridge3")
+        mock_fmt.assert_not_called()
+
+    def test_format_true_calls_formatter(self, tmp_path):
+        """When format: true, format_content is called with the generated content."""
+        data = {
+            "source": {
+                "path": str(Path(__file__).parent / "simple.hpp"),
+                "parse_args": ["-std=c++17"],
+            },
+            "filters": {"namespaces": ["simple"]},
+            "format": True,
+        }
+        p = tmp_path / "fmt.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        fake_result = MagicMock()
+        fake_result.stdout = "// formatted\n"
+        with patch("subprocess.run", return_value=fake_result):
+            stdout, _ = _run("--input", str(p), "--output", "luabridge3")
+
+        assert "// formatted" in stdout
+
+    def test_format_true_passes_language_to_formatter(self, tmp_path):
+        """format_content receives the output config language ('cpp' for luabridge3)."""
+        data = {
+            "source": {
+                "path": str(Path(__file__).parent / "simple.hpp"),
+                "parse_args": ["-std=c++17"],
+            },
+            "filters": {"namespaces": ["simple"]},
+            "format": True,
+        }
+        p = tmp_path / "fmt_lang.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        with patch("tsujikiri.cli.format_content", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(p), "--output", "luabridge3")
+
+        args, kwargs = mock_fmt.call_args
+        assert args[1] == "cpp"
+
+    def test_format_options_forwarded_to_formatter(self, tmp_path):
+        """format_options list is passed as extra_args to format_content."""
+        data = {
+            "source": {
+                "path": str(Path(__file__).parent / "simple.hpp"),
+                "parse_args": ["-std=c++17"],
+            },
+            "filters": {"namespaces": ["simple"]},
+            "format": True,
+            "format_options": ["--style=Google"],
+        }
+        p = tmp_path / "fmt_opts.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        with patch("tsujikiri.cli.format_content", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(p), "--output", "luabridge3")
+
+        args, kwargs = mock_fmt.call_args
+        assert args[2] == ["--style=Google"]

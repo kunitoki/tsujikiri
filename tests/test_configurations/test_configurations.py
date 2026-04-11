@@ -102,6 +102,20 @@ class TestOutputConfigLoading:
         cfg = load_output_config(resolve_format_path("luabridge3"))
         assert "beginClass" in cfg.template
 
+    def test_luabridge3_language_is_cpp(self):
+        cfg = load_output_config(resolve_format_path("luabridge3"))
+        assert cfg.language == "cpp"
+
+    def test_luals_language_is_lua(self):
+        cfg = load_output_config(resolve_format_path("luals"))
+        assert cfg.language == "lua"
+
+    def test_language_defaults_to_empty_string(self, tmp_path):
+        yml = tmp_path / "nolang.output.yml"
+        yml.write_text("format_name: nolang\ntemplate: |\n  NOOP\n", encoding="utf-8")
+        cfg = load_output_config(yml)
+        assert cfg.language == ""
+
     def test_source_config_defaults(self):
         sc = SourceConfig(path="foo.hpp")
         assert sc.parse_args == []
@@ -216,6 +230,44 @@ class TestMultiSourceLoading:
         # Only luabridge3 is defined; a missing key returns None filters
         override = cfg.format_overrides.get("luals")
         assert override is None
+
+
+class TestFormatFields:
+    def test_format_defaults_to_false(self, tmp_path):
+        yml = tmp_path / "noformat.input.yml"
+        yml.write_text("source:\n  path: 'dummy.hpp'\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.format is False
+
+    def test_format_options_defaults_to_empty(self, tmp_path):
+        yml = tmp_path / "noformat.input.yml"
+        yml.write_text("source:\n  path: 'dummy.hpp'\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.format_options == []
+
+    def test_format_true_parsed(self, tmp_path):
+        yml = tmp_path / "withformat.input.yml"
+        yml.write_text("source:\n  path: 'dummy.hpp'\nformat: true\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.format is True
+
+    def test_format_false_explicit(self, tmp_path):
+        yml = tmp_path / "noformat2.input.yml"
+        yml.write_text("source:\n  path: 'dummy.hpp'\nformat: false\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.format is False
+
+    def test_format_options_parsed(self, tmp_path):
+        yml = tmp_path / "fmtopts.input.yml"
+        yml.write_text(
+            "source:\n  path: 'dummy.hpp'\n"
+            "format: true\n"
+            "format_options:\n  - '--style=Google'\n  - '--sort-includes'\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert "--style=Google" in cfg.format_options
+        assert "--sort-includes" in cfg.format_options
 
 
 class TestGetSourceEntries:
