@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 import jinja2
 
 from tsujikiri.configurations import GenerationConfig, OutputConfig
-from tsujikiri.generator_filters import camel_to_snake, param_pairs
+from tsujikiri.generator_filters import camel_to_snake, code_at, param_pairs
 from tsujikiri.ir import (
     IRClass,
     IREnum,
@@ -112,6 +112,7 @@ class Generator:
             "map_type": self._map_type,
             "param_pairs": param_pairs,
             "camel_to_snake": camel_to_snake,
+            "code_at": code_at,
         })
 
         if self.generation and self.generation.prefix:
@@ -143,6 +144,7 @@ class Generator:
             "function_groups": self._build_function_group_ctxs(module.functions),
             "classes": flat_classes,
             "api_version": api_version,
+            "code_injections": [{"position": c.position, "code": c.code} for c in module.code_injections],
         }
 
     def _flatten_class_ctx(self, ir_class: IRClass) -> List[Dict[str, Any]]:
@@ -216,19 +218,29 @@ class Generator:
             "constructors": [
                 {
                     "params": [
-                        {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
+                        {
+                            "name": p.rename or p.name,
+                            "original_name": p.name,
+                            "type": self._map_type(p.type_override or p.type_spelling),
+                            "raw_type": p.type_override or p.type_spelling,
+                            "ownership": p.ownership,
+                            "default": p.default_override,
+                        }
                         for p in ctor.parameters
+                        if p.emit
                     ],
                     "overload_index": i,
                     "is_noexcept": ctor.is_noexcept,
                     "is_explicit": ctor.is_explicit,
+                    "code_injections": [{"position": c.position, "code": c.code} for c in ctor.code_injections],
                 }
                 for i, ctor in enumerate(ctors)
             ],
         }
 
         # Method groups (preserving original order)
-        methods = [m for m in ir_class.methods if m.emit and not self._is_unsupported(m.return_type)]
+        effective_return = lambda m: m.return_type_override or m.return_type  # noqa: E731
+        methods = [m for m in ir_class.methods if m.emit and not self._is_unsupported(effective_return(m))]
         mgroups: Dict[tuple, List[IRMethod]] = {}
         morder: List[tuple] = []
         for m in methods:
@@ -250,10 +262,22 @@ class Generator:
                     "name": group_name,
                     "spelling": m.spelling,
                     "params": [
-                        {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
+                        {
+                            "name": p.rename or p.name,
+                            "original_name": p.name,
+                            "type": self._map_type(p.type_override or p.type_spelling),
+                            "raw_type": p.type_override or p.type_spelling,
+                            "ownership": p.ownership,
+                            "default": p.default_override,
+                        }
                         for p in m.parameters
+                        if p.emit
                     ],
-                    "return_type": self._map_type(m.return_type),
+                    "return_type": self._map_type(effective_return(m)),
+                    "raw_return_type": effective_return(m),
+                    "return_ownership": m.return_ownership,
+                    "allow_thread": m.allow_thread,
+                    "wrapper_code": m.wrapper_code,
                     "overload_kind": self._compute_overload_kind(group, m),
                     "overload_separator": "" if is_last else ",",
                     "is_const": m.is_const,
@@ -262,6 +286,7 @@ class Generator:
                     "is_noexcept": m.is_noexcept,
                     "overload_index": i,
                     "attributes": list(m.attributes),
+                    "code_injections": [{"position": c.position, "code": c.code} for c in m.code_injections],
                 })
             method_groups.append({
                 "name": group_name,
@@ -277,6 +302,7 @@ class Generator:
                 "type": self._map_type(f.type_spelling),
                 "raw_type": f.type_spelling,
                 "is_const": f.is_const,
+                "read_only": f.read_only or f.is_const,
             }
             for f in ir_class.fields
             if f.emit and not self._is_unsupported(f.type_spelling)
@@ -292,19 +318,26 @@ class Generator:
             "variable_name": ir_class.variable_name,
             "has_virtual_methods": ir_class.has_virtual_methods,
             "is_abstract": ir_class.is_abstract,
+            "copyable": ir_class.copyable,
+            "movable": ir_class.movable,
+            "force_abstract": ir_class.force_abstract,
             "constructor_group": ctor_group,
             "method_groups": method_groups,
             "fields": fields,
             "enums": [self._build_enum_ctx(e) for e in ir_class.enums if e.emit],
+            "code_injections": [{"position": c.position, "code": c.code} for c in ir_class.code_injections],
         }
 
     def _compute_overload_kind(self, group: List[IRMethod], method: IRMethod) -> str:
         """Return 'const', 'nonconst', or 'overload' for the cast type of this method."""
-        method_args = ", ".join(p.type_spelling for p in method.parameters)
+        def _eff_args(m: IRMethod) -> str:
+            return ", ".join((p.type_override or p.type_spelling) for p in m.parameters if p.emit)
+
+        method_args = _eff_args(method)
         for other in group:
             if other is method:
                 continue
-            other_args = ", ".join(p.type_spelling for p in other.parameters)
+            other_args = _eff_args(other)
             if other_args == method_args and other.is_const != method.is_const:
                 return "const" if method.is_const else "nonconst"
         return "overload"

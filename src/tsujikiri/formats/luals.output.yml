@@ -35,6 +35,7 @@ type_mappings:
 template: |
   {%- block prologue -%}
   -- DO NOT EDIT - Auto-generated LuaLS annotations for {{ module_name }} by tsujikiri
+  {{ code_injections | code_at("beginning") }}
   {%- endblock %}
   {%- block api_version %}
   {%- if api_version %}
@@ -50,13 +51,15 @@ template: |
   {%- block class_fields scoped %}
   {%- for field in cls.fields %}
   {%- block class_field_annotation scoped %}
-  ---@field {{ field.name }} {{ field.type }}
+  ---@field {{ field.name }} {{ field.type }}{% if field.read_only %} (readonly){% endif %}
   {%- endblock %}
   {%- endfor %}
   {%- endblock %}
+  {{ cls.code_injections | code_at("beginning") }}
   local {{ cls.name }} = {}
 
   {% block class_constructors scoped %}
+  {%- if not cls.force_abstract %}
   {%- if cls.constructor_group.is_overloaded %}
   {%- set first = cls.constructor_group.constructors[0] %}
   {%- block class_constructor_group scoped %}
@@ -74,6 +77,7 @@ template: |
   {% endfor -%}---@return {{ cls.name }}
   function {{ cls.name }}.new({% if ctor.params %}{{ ctor.params | map(attribute='name') | join(', ') }}{% endif %}) end
   {%- endblock %}
+  {%- endif %}
   {%- endif %}
   {%- endblock %}
 
@@ -117,6 +121,7 @@ template: |
 
   {%- endfor %}
   {%- endblock %}
+  {{ cls.code_injections | code_at("end") }}
   {%- endblock %}
   {%- endfor %}
   {%- for enum in enums %}
@@ -153,4 +158,5 @@ template: |
   {% endif %}
   {%- endblock %}
   {%- endfor %}
+  {{ code_injections | code_at("end") }}
   {%- block epilogue %}{% endblock %}

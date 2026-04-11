@@ -12,9 +12,21 @@ from typing import Dict, List, Optional
 
 
 @dataclass
+class IRCodeInjection:
+    """A snippet of code to be injected at a specific position in the output."""
+    position: str   # "beginning" or "end"
+    code: str
+
+
+@dataclass
 class IRParameter:
     name: str
     type_spelling: str
+    emit: bool = True                        # False = removed from binding signature
+    rename: Optional[str] = None             # binding-visible name override
+    type_override: Optional[str] = None      # replaces type_spelling in output only
+    default_override: Optional[str] = None   # replaces default expression in output
+    ownership: str = "none"                  # "none" | "cpp" | "script"
 
 
 @dataclass
@@ -40,6 +52,11 @@ class IRMethod:
     emit: bool = True
     rename: Optional[str] = None    # set by transforms to change the binding name
     attributes: List[str] = field(default_factory=list)   # raw [[...]] attribute contents
+    return_type_override: Optional[str] = None   # overrides return_type in output only
+    return_ownership: str = "none"               # "none" | "cpp" | "script"
+    allow_thread: bool = False                   # hint: release GIL around call
+    wrapper_code: Optional[str] = None           # if set, template emits lambda instead of &Class::method
+    code_injections: List[IRCodeInjection] = field(default_factory=list)
 
 
 @dataclass
@@ -50,6 +67,7 @@ class IRConstructor:
     is_explicit: bool = False
     emit: bool = True
     attributes: List[str] = field(default_factory=list)
+    code_injections: List[IRCodeInjection] = field(default_factory=list)
 
 
 @dataclass
@@ -60,6 +78,7 @@ class IRField:
     is_static: bool = False
     emit: bool = True
     rename: Optional[str] = None
+    read_only: bool = False   # force read-only even if not const in C++
     attributes: List[str] = field(default_factory=list)
 
 
@@ -99,6 +118,10 @@ class IRClass:
     parent_class: Optional[str] = None   # for inner classes
     source_file: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
+    copyable: Optional[bool] = None     # None = infer from C++; True/False = forced
+    movable: Optional[bool] = None      # None = infer from C++; True/False = forced
+    force_abstract: bool = False        # suppress constructors even if C++ is not abstract
+    code_injections: List[IRCodeInjection] = field(default_factory=list)
 
 
 @dataclass
@@ -124,6 +147,7 @@ class IRModule:
     functions: List[IRFunction] = field(default_factory=list)
     enums: List[IREnum] = field(default_factory=list)
     class_by_name: Dict[str, IRClass] = field(default_factory=dict)  # for topo-sort
+    code_injections: List[IRCodeInjection] = field(default_factory=list)
 
 
 def merge_modules(modules: List[IRModule]) -> IRModule:

@@ -42,6 +42,7 @@ template: |
   {
     luabridge::getGlobalNamespace(L)
       .beginNamespace("{{ module_name }}")
+  {{ code_injections | code_at("beginning") }}
   {%- endblock %}
   {%- block api_version_registration %}
   {%- if api_version %}
@@ -80,12 +81,15 @@ template: |
   {%- else %}
         .beginClass<{{ cls.qualified_name }}>("{{ cls.name }}")
   {%- endif %}
+  {{ cls.code_injections | code_at("beginning") }}
   {%- block class_constructors scoped %}
+  {%- if not cls.force_abstract %}
   {%- for ctor in cls.constructor_group.constructors %}
   {%- block class_constructor_group scoped %}
           .addConstructor<void (*)({{ ctor.params | map(attribute='raw_type') | join(', ') }})>()
   {%- endblock %}
   {%- endfor %}
+  {%- endif %}
   {%- endblock %}
   {%- block class_methods scoped %}
   {%- for group in cls.method_groups %}
@@ -99,7 +103,12 @@ template: |
   {%- endfor %}
           )
   {%- else %}
-          .addStaticFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ group.methods[0].spelling }})
+  {%- set method = group.methods[0] %}
+  {%- if method.wrapper_code %}
+          .addStaticFunction("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }})
+  {%- else %}
+          .addStaticFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }})
+  {%- endif %}
   {%- endif %}
   {%- endblock %}
   {%- else %}
@@ -112,7 +121,12 @@ template: |
   {%- endfor %}
           )
   {%- else %}
-          .addFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ group.methods[0].spelling }})
+  {%- set method = group.methods[0] %}
+  {%- if method.wrapper_code %}
+          .addFunction("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }})
+  {%- else %}
+          .addFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }})
+  {%- endif %}
   {%- endif %}
   {%- endblock %}
   {%- endif %}
@@ -121,7 +135,7 @@ template: |
   {%- block class_fields scoped %}
   {%- for field in cls.fields %}
   {%- block class_field scoped %}
-  {%- if field.is_const %}
+  {%- if field.read_only %}
           .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}, nullptr)
   {%- else %}
           .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }})
@@ -142,9 +156,11 @@ template: |
   {%- endblock %}
   {%- endfor %}
   {%- endblock %}
+  {{ cls.code_injections | code_at("end") }}
         .endClass()
   {%- endblock %}
   {%- endfor %}
+  {{ code_injections | code_at("end") }}
   {%- block epilogue %}
       .endNamespace();
   }
