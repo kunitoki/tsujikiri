@@ -182,6 +182,9 @@ format_overrides:                 # Per-format overrides (filters, transforms, g
       - stage: suppress_method
         class: "*"
         pattern: "clone"
+
+pretty: false                     # Run clang-format (or language equivalent) on output
+pretty_options: []                # Extra args forwarded to the pretty printer CLI
 ```
 
 ### Transform stages

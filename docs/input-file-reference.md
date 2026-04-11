@@ -18,6 +18,8 @@ An **input file** (conventionally named `*.input.yml`) is the primary configurat
 | `attributes` | mapping | no | (built-ins only) | Custom C++ attribute handlers |
 | `tweaks` | mapping | no | `{}` | Legacy per-class overrides |
 | `format_overrides` | mapping | no | `{}` | Per-format filter/transform/generation overrides |
+| `pretty` | bool | no | `false` | Run the language-appropriate pretty printer on generated output |
+| `pretty_options` | list of strings | no | `[]` | Extra arguments forwarded to the pretty printer CLI |
 
 The module name used in the generated output (e.g. `register_myproject`) is derived from the input file name: `myproject.input.yml` → `myproject`.
 
@@ -350,6 +352,34 @@ format_overrides:
     generation:
       prefix: "-- LuaLS type stubs for My Game Engine\n"
 ```
+
+---
+
+## `pretty` / `pretty_options` — Post-Generation Pretty Printing
+
+When `pretty: true`, tsujikiri pipes the generated output through the language-appropriate pretty printer before writing it. The pretty printer is determined by the output config's `language` field.
+
+Currently registered pretty printers:
+
+| Language | Command |
+|----------|---------|
+| `cpp` | `clang-format` |
+
+```yaml
+pretty: true
+pretty_options:
+  - "--style=Google"
+  - "--sort-includes"
+```
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `pretty` | bool | `false` | Run the pretty printer on generated output |
+| `pretty_options` | list of strings | `[]` | Extra CLI arguments forwarded to the pretty printer |
+
+The pretty printer is invoked with `-` as the filename so it reads from stdin and writes to stdout — no temporary file is created. If the pretty printer binary is not on `PATH`, tsujikiri raises `FileNotFoundError`. If the pretty printer exits non-zero, `subprocess.CalledProcessError` is raised.
+
+> **Tip:** When `language` has no registered pretty printer (e.g. `luals`), `pretty: true` is silently ignored.
 
 ---
 
