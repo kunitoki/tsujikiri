@@ -257,8 +257,8 @@ class TestManifestCompatibility:
 
         assert manifest.exists()
         data = json.loads(manifest.read_text(encoding="utf-8"))
-        assert "version" in data
-        assert len(data["version"]) == 64  # SHA-256 hex digest
+        assert "uid" in data
+        assert len(data["uid"]) == 64  # SHA-256 hex digest
 
     def test_no_change_exits_0_and_manifest_unchanged(self, tmp_path):
         hpp = tmp_path / "api.hpp"
@@ -268,13 +268,13 @@ class TestManifestCompatibility:
 
         _run("--input", str(input_yml), "--output", "luabridge3",
              "--manifest-file", str(manifest))
-        v1_version = json.loads(manifest.read_text())["version"]
+        v1_version = json.loads(manifest.read_text())["uid"]
 
         _, stderr = _run("--input", str(input_yml), "--output", "luabridge3",
                          "--manifest-file", str(manifest), "--check-compat")
 
         assert "Breaking" not in stderr
-        assert json.loads(manifest.read_text())["version"] == v1_version
+        assert json.loads(manifest.read_text())["uid"] == v1_version
 
     def test_breaking_change_exits_1(self, tmp_path):
         """Core scenario: adding a parameter to a function is a breaking change.
@@ -289,7 +289,7 @@ class TestManifestCompatibility:
         _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
              "--output", "luabridge3",
              "--manifest-file", str(manifest))
-        v1_version = json.loads(manifest.read_text())["version"]
+        v1_version = json.loads(manifest.read_text())["uid"]
 
         # v2: add a second parameter — breaking change
         v2_hpp = tmp_path / "v2.hpp"
@@ -310,7 +310,7 @@ class TestManifestCompatibility:
         assert "Breaking" in stderr
         assert "compute" in stderr
         # Manifest must NOT be updated — baseline stays at v1 for the next check
-        assert json.loads(manifest.read_text())["version"] == v1_version
+        assert json.loads(manifest.read_text())["uid"] == v1_version
 
     def test_breaking_change_method_on_class_exits_1(self, tmp_path):
         """Class method parameter count change is a breaking change."""
@@ -323,7 +323,7 @@ class TestManifestCompatibility:
         _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
              "--output", "luabridge3",
              "--manifest-file", str(manifest))
-        v1_version = json.loads(manifest.read_text())["version"]
+        v1_version = json.loads(manifest.read_text())["uid"]
 
         v2_hpp = tmp_path / "v2.hpp"
         v2_hpp.write_text(
@@ -344,7 +344,7 @@ class TestManifestCompatibility:
         stderr = stderr_io.getvalue()
         assert "Breaking" in stderr
         assert "add" in stderr
-        assert json.loads(manifest.read_text())["version"] == v1_version
+        assert json.loads(manifest.read_text())["uid"] == v1_version
 
     def test_additive_change_exits_0_with_warning(self, tmp_path):
         """Adding a new function is additive — warns but does not fail."""
@@ -401,7 +401,7 @@ class TestManifestCompatibility:
              "--embed-version",
              "--output-file", str(out))
 
-        version = json.loads(manifest.read_text())["version"]
+        version = json.loads(manifest.read_text())["uid"]
         content = out.read_text(encoding="utf-8")
         assert version in content
         assert "get_api_version" in content
