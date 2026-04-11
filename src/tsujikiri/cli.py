@@ -10,7 +10,7 @@ from pathlib import Path
 from tsujikiri.attribute_processor import AttributeProcessor
 from tsujikiri.configurations import GenerationConfig, load_input_config, load_output_config
 from tsujikiri.filters import FilterEngine
-from tsujikiri.formatters import format_content
+from tsujikiri.pretty_printers import pretty
 from tsujikiri.formats import resolve_format_path
 from tsujikiri.generator import Generator
 from tsujikiri.ir import merge_modules
@@ -240,8 +240,8 @@ def main() -> None:
     gen.generate(merged, buf, api_version=api_version)
     content = buf.getvalue()
 
-    if input_config.format:
-        content = format_content(content, output_config.language, input_config.format_options)
+    if input_config.pretty:
+        content = pretty(content, output_config.language, input_config.pretty_options)
 
     if args.output_file:
         out_path = Path(args.output_file)

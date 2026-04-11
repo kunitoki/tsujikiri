@@ -232,42 +232,42 @@ class TestMultiSourceLoading:
         assert override is None
 
 
-class TestFormatFields:
-    def test_format_defaults_to_false(self, tmp_path):
+class TestPrettyFields:
+    def test_pretty_defaults_to_false(self, tmp_path):
         yml = tmp_path / "noformat.input.yml"
         yml.write_text("source:\n  path: 'dummy.hpp'\n", encoding="utf-8")
         cfg = load_input_config(yml)
-        assert cfg.format is False
+        assert cfg.pretty is False
 
-    def test_format_options_defaults_to_empty(self, tmp_path):
+    def test_pretty_options_defaults_to_empty(self, tmp_path):
         yml = tmp_path / "noformat.input.yml"
         yml.write_text("source:\n  path: 'dummy.hpp'\n", encoding="utf-8")
         cfg = load_input_config(yml)
-        assert cfg.format_options == []
+        assert cfg.pretty_options == []
 
-    def test_format_true_parsed(self, tmp_path):
+    def test_pretty_true_parsed(self, tmp_path):
         yml = tmp_path / "withformat.input.yml"
-        yml.write_text("source:\n  path: 'dummy.hpp'\nformat: true\n", encoding="utf-8")
+        yml.write_text("source:\n  path: 'dummy.hpp'\npretty: true\n", encoding="utf-8")
         cfg = load_input_config(yml)
-        assert cfg.format is True
+        assert cfg.pretty is True
 
-    def test_format_false_explicit(self, tmp_path):
+    def test_pretty_false_explicit(self, tmp_path):
         yml = tmp_path / "noformat2.input.yml"
-        yml.write_text("source:\n  path: 'dummy.hpp'\nformat: false\n", encoding="utf-8")
+        yml.write_text("source:\n  path: 'dummy.hpp'\npretty: false\n", encoding="utf-8")
         cfg = load_input_config(yml)
-        assert cfg.format is False
+        assert cfg.pretty is False
 
-    def test_format_options_parsed(self, tmp_path):
+    def test_pretty_options_parsed(self, tmp_path):
         yml = tmp_path / "fmtopts.input.yml"
         yml.write_text(
             "source:\n  path: 'dummy.hpp'\n"
-            "format: true\n"
-            "format_options:\n  - '--style=Google'\n  - '--sort-includes'\n",
+            "pretty: true\n"
+            "pretty_options:\n  - '--style=Google'\n  - '--sort-includes'\n",
             encoding="utf-8",
         )
         cfg = load_input_config(yml)
-        assert "--style=Google" in cfg.format_options
-        assert "--sort-includes" in cfg.format_options
+        assert "--style=Google" in cfg.pretty_options
+        assert "--sort-includes" in cfg.pretty_options
 
 
 class TestGetSourceEntries:

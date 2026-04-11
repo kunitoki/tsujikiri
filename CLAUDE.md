@@ -2,3 +2,4 @@
 - use "just test" to test
 - use "just coverage" to coverage
 - in python files, never import inside methods (in tests too)
+- always use type annotations
