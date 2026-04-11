@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=2)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
 [![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=2)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=2)](https://tsujikiri.readthedocs.io/en/latest/)
 [![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=2)](https://pypi.org/project/tsujikiri/)
 [![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=2)](https://pypi.org/project/tsujikiri/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -36,13 +37,25 @@ Each phase is independently configurable per input file and per output format.
 
 ---
 
+## Documentation
+
+Full documentation is available at [tsujikiri.readthedocs.io](https://tsujikiri.readthedocs.io/en/latest/).
+
+---
+
 ## Installation
 
+Using pip:
 ```bash
 pip install tsujikiri
 ```
 
-**Requirements:** Python ≥ 3.12, libclang 16
+Using uv:
+```bash
+uv pip install tsujikiri
+```
+
+**Requirements:** Python ≥ 3.12
 
 ---
 
