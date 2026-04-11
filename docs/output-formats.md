@@ -499,7 +499,7 @@ injection = { position: "beginning"|"end", code: string }
 | `code_at` | `injections \| code_at("beginning"\|"end")` | Extract and concatenate code injections at a position |
 
 **`param_pairs` example:**
-```jinja2
+```jinja
 {{ ctor.params | param_pairs('name', ': ', 'type', ', ') }}
 {# Produces: "x: number, y: number, z: number" #}
 ```

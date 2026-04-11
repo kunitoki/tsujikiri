@@ -42,6 +42,19 @@ Each phase is independently configurable per input file and per output format. A
 
 ---
 
+```{toctree}
+:hidden:
+:maxdepth: 2
+
+getting-started
+input-file-reference
+filtering
+transforms
+output-formats
+attributes
+manifest-and-versioning
+```
+
 ## Navigation
 
 | Document | What it covers |

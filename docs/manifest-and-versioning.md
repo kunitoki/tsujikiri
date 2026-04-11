@@ -269,7 +269,7 @@ If the C++ API has breaking changes, `tsujikiri` exits with code 1 at the `--che
 
 **Sample manifest after a breaking change is resolved and MAJOR bumped:**
 
-```json
+```text
 {
   "module": "myproject",
   "version": "2.0.0",
