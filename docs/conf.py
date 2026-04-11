@@ -12,8 +12,12 @@ release = __version__
 copyright = f"{datetime.now().year}, {author}"
 
 extensions = [
-    "myst_parser",
     "sphinx.ext.autodoc",
+    "sphinx.ext.doctest",
+    "sphinx.ext.extlinks",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.todo",
+    "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
 ]
 
@@ -27,4 +31,5 @@ master_doc = "index"
 html_theme = "sphinx_rtd_theme"
 html_static_path = []
 
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = [
+    "_build", "dist", "src", "tests", "Thumbs.db", ".DS_Store"]
