@@ -1,9 +1,9 @@
-![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg)
+![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=2)
 
-[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
-[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
-[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=1)](https://pypi.org/project/tsujikiri/)
-[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=1)](https://pypi.org/project/tsujikiri/)
+[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=2)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
+[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=2)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=2)](https://pypi.org/project/tsujikiri/)
+[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=2)](https://pypi.org/project/tsujikiri/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 # tsujikiri — 辻斬り
