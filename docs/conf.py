@@ -12,6 +12,7 @@ release = __version__
 copyright = f"{datetime.now().year}, {author}"
 
 extensions = [
+    "myst_parser",
     "sphinx.ext.autodoc",
     "sphinx.ext.doctest",
     "sphinx.ext.extlinks",
