@@ -61,10 +61,12 @@ set(GENERATED_MANIFEST ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.manifest)
 set(GENERATED_SOURCE ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.cpp)
 set(GENERATED_LUALS ${CMAKE_CURRENT_BINARY_DIR}/luabridge3_bindings.lua)
 
+file(GLOB_RECURSE COMBINED_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
+
 add_custom_command(
     OUTPUT ${GENERATED_SOURCE}
     COMMAND tsujikiri -i ${INPUT_SOURCE} -o luabridge3 --manifest-file ${GENERATED_MANIFEST} -O ${GENERATED_SOURCE}
-    DEPENDS ${INPUT_SOURCE}
+    DEPENDS ${INPUT_SOURCE} ${COMBINED_HEADERS}
     IMPLICIT_DEPENDS ${TSUJIKIRI_SOURCES}
     COMMENT "Generating LuaBridge3 bindings with tsujikiri..."
     VERBATIM)
