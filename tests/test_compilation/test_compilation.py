@@ -36,20 +36,22 @@ def _generate(module, output_config, generation=None) -> str:
     return buf.getvalue()
 
 
-def _cmake_compile_luabridge3() -> tuple[bool, str]:
+def _cmake_compile_luabridge3() -> bool:
     """Write bindings to file and compile via CMake FetchContent."""
     cfg = subprocess.run(
         ["cmake", "-S", str(HERE), "-B", str(CMAKE_BUILD_DIR), "-DCMAKE_BUILD_TYPE=Release", "-Wno-dev"],
         capture_output=True, text=True)
+    print(cfg.stdout + cfg.stderr)
 
     if cfg.returncode != 0:
-        return False, cfg.stderr + cfg.stdout
+        return False
 
     build = subprocess.run(
         ["cmake", "--build", str(CMAKE_BUILD_DIR), "--target", "test_luabridge3_bindings"],
         capture_output=True, text=True)
+    print(build.stdout + build.stderr)
 
-    return build.returncode == 0, build.stderr + build.stdout
+    return build.returncode == 0
 
 
 # ---------------------------------------------------------------------------
@@ -86,5 +88,4 @@ class TestLuaBridge3CMakeBuild:
     """CMake FetchContent build — compiles against the real LuaBridge3 library."""
 
     def test_cmake_build(self, compiled_module, luabridge3_output_config, compilation_input_config):
-        ok, output = _cmake_compile_luabridge3()
-        assert ok, f"LuaBridge3 CMake build failed:\n{output}"
+        assert _cmake_compile_luabridge3()
