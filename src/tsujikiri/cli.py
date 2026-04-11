@@ -12,7 +12,7 @@ from tsujikiri.filters import FilterEngine
 from tsujikiri.formats import resolve_format_path
 from tsujikiri.generator import Generator
 from tsujikiri.ir import merge_modules
-from tsujikiri.manifest import compare_manifests, compute_manifest, load_manifest, save_manifest
+from tsujikiri.manifest import compare_manifests, compute_manifest, load_manifest, save_manifest, suggest_version_bump
 from tsujikiri.parser import parse_translation_unit
 from tsujikiri.transforms import build_pipeline_from_config
 
@@ -191,7 +191,7 @@ def main() -> None:
         manifest_path = Path(args.manifest_file)
         if manifest_path.exists():
             old_manifest = load_manifest(manifest_path)
-            if old_manifest["version"] != manifest["version"]:
+            if old_manifest["uid"] != manifest["uid"]:
                 report = compare_manifests(old_manifest, manifest)
                 if report.additive_changes:
                     print("WARNING: Additive API changes:", file=sys.stderr)
@@ -203,9 +203,17 @@ def main() -> None:
                         print(f"  ! {ch}", file=sys.stderr)
                     if args.check_compat:
                         has_breaking = True
+                new_version = suggest_version_bump(old_manifest, report)
+                if new_version is not None:
+                    manifest["version"] = new_version
+                    old_version = old_manifest["version"]
+                    if new_version != old_version:
+                        print(f"INFO: Suggested version bump: {old_version} -> {new_version}", file=sys.stderr)
+            elif "version" in old_manifest:
+                manifest["version"] = old_manifest["version"]
 
     if args.embed_version or effective_generation.embed_version:
-        api_version = manifest["version"]
+        api_version = manifest["uid"]
 
     if args.dry_run:
         emitted_classes = [c.name for c in merged.classes if c.emit]
@@ -216,7 +224,7 @@ def main() -> None:
         print(f"Classes : {len(emitted_classes)} — {', '.join(emitted_classes) or '(none)'}")
         print(f"Functions: {len(emitted_functions)} — {', '.join(emitted_functions) or '(none)'}")
         print(f"Enums   : {len(emitted_enums)} — {', '.join(emitted_enums) or '(none)'}")
-        print(f"Version : {manifest['version']}")
+        print(f"Version : {manifest['uid']}")
         return
 
     gen = Generator(

@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from tsujikiri.ir import IRClass, IRModule
 
@@ -129,11 +130,12 @@ def compute_manifest(module: IRModule) -> Dict[str, Any]:
     }
 
     canonical = json.dumps(api, sort_keys=True)
-    version = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    uid = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     return {
         "module": module.name,
-        "version": version,
+        "version": "0.0.0",
+        "uid": uid,
         "api": api,
     }
 
@@ -151,6 +153,56 @@ def save_manifest(manifest: Dict[str, Any], path: Path) -> None:
 def load_manifest(path: Path) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+# ---------------------------------------------------------------------------
+# Public: version bump suggestion
+# ---------------------------------------------------------------------------
+
+_SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+
+
+def is_semver(s: str) -> bool:
+    """Return True if *s* is a ``MAJOR.MINOR.PATCH`` semantic version string."""
+    return bool(_SEMVER_RE.match(s))
+
+
+def bump_semver(version: str, report: CompatibilityReport) -> str:
+    """Return a bumped semver string derived from *report*.
+
+    * Breaking changes (removed or modified API) → bump MAJOR, reset MINOR and PATCH to 0.
+    * Additive-only changes (new classes, enums, functions, methods, constructors) →
+      bump MINOR, reset PATCH to 0.
+    * No changes → return *version* unchanged.
+
+    Raises ``ValueError`` if *version* is not a valid ``MAJOR.MINOR.PATCH`` string.
+    """
+    m = _SEMVER_RE.match(version)
+    if not m:
+        raise ValueError(f"Not a valid semver string: {version!r}")
+    major, minor, _ = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if report.breaking_changes:
+        return f"{major + 1}.0.0"
+    if report.additive_changes:
+        return f"{major}.{minor + 1}.0"
+    return version
+
+
+def suggest_version_bump(
+    old_manifest: Dict[str, Any], report: CompatibilityReport
+) -> Optional[str]:
+    """Return the suggested semver for the new manifest, or ``None``.
+
+    A suggestion is returned only when *old_manifest* contains a ``"semver"``
+    field that is a valid ``MAJOR.MINOR.PATCH`` string.  The returned value is
+    the appropriately bumped version (or the same version when there are no
+    changes).  ``None`` is returned when the old manifest has no semver field
+    or its value is not a valid semver string.
+    """
+    old_version = old_manifest.get("version")
+    if not isinstance(old_version, str) or not is_semver(old_version):
+        return None
+    return bump_semver(old_version, report)
 
 
 # ---------------------------------------------------------------------------
@@ -212,14 +264,10 @@ def _compare_constructors(
 
     for sig in old_sigs - new_sigs:
         params = ", ".join(sig)
-        report.breaking_changes.append(
-            f"Constructor '{class_name}({params})' was removed"
-        )
+        report.breaking_changes.append(f"Constructor '{class_name}({params})' was removed")
     for sig in new_sigs - old_sigs:
         params = ", ".join(sig)
-        report.additive_changes.append(
-            f"Constructor '{class_name}({params})' was added"
-        )
+        report.additive_changes.append(f"Constructor '{class_name}({params})' was added")
 
 
 def _compare_methods(
