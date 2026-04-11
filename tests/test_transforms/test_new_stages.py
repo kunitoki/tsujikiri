@@ -181,9 +181,10 @@ class TestModifyArgumentStage:
 
     def test_default_override(self):
         mod = _simple_module()
-        ModifyArgumentStage(**{"class": "Cls", "method": "getValue", "argument": "x", "default": "0"}).apply(mod)
-        # getValue has no params named "x", so nothing should change — no error
-        assert _get_method(mod, "getValue").parameters == []
+        ModifyArgumentStage(**{"class": "Cls", "method": "process", "argument": "x", "default": "0"}).apply(mod)
+        process_methods = [m for m in _get_cls(mod).methods if m.name == "process"]
+        for m in process_methods:
+            assert m.parameters[0].default_override == "0"
 
     def test_ownership(self):
         mod = _simple_module()
@@ -196,6 +197,13 @@ class TestModifyArgumentStage:
         mod = _simple_module()
         ModifyArgumentStage(**{"class": "Cls", "method": "getValue", "argument": 5, "rename": "x"}).apply(mod)
         assert _get_method(mod, "getValue").parameters == []
+
+    def test_name_not_found_is_noop(self):
+        mod = _simple_module()
+        ModifyArgumentStage(**{"class": "Cls", "method": "process", "argument": "nonexistent", "rename": "y"}).apply(mod)
+        process_methods = [m for m in _get_cls(mod).methods if m.name == "process"]
+        for m in process_methods:
+            assert m.parameters[0].rename is None
 
 
 # ---------------------------------------------------------------------------
