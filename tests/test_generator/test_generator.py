@@ -6,8 +6,10 @@ import io
 
 import pytest
 import jinja2
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import tsujikiri.formats as tsujikiri_formats
+from tsujikiri.configurations import OutputConfig
 from tsujikiri.generator import Generator, ItemFirstEnvironment
 from tsujikiri.ir import IRBase, IRClass, IRConstructor, IREnumValue, IRField, IRFunction, IRMethod, IRModule, IRParameter
 
@@ -562,3 +564,87 @@ class TestIRMetadataInContext:
         gen = Generator(cfg)
         groups = gen._build_function_group_ctxs([fn])
         assert groups[0]["functions"][0]["is_noexcept"] is False
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: format file with no template in the scan loop (line 91->88)
+# ---------------------------------------------------------------------------
+
+class TestFormatScanNoTemplate:
+    def test_format_scan_skips_config_without_template(self, make_ir_module, luabridge3_output_config, tmp_path):
+        """A .output.yml that loads successfully but has no template is skipped gracefully."""
+        no_tpl_file = tmp_path / "notpl.output.yml"
+        no_tpl_file.write_text("format_name: notpl\nformat_version: '1.0'\n", encoding="utf-8")
+
+        real_files = list(tsujikiri_formats._FORMATS_DIR.glob("*.output.yml"))
+        mock_dir = MagicMock()
+        mock_dir.glob.return_value = [no_tpl_file] + real_files
+
+        buf = io.StringIO()
+        with patch("tsujikiri.formats._FORMATS_DIR", mock_dir):
+            Generator(luabridge3_output_config).generate(make_ir_module(), buf)
+        assert buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: generator with no cfg.template but template_extends (line 97->102)
+# ---------------------------------------------------------------------------
+
+class TestNoCfgTemplateWithExtends:
+    def test_generate_with_extends_and_no_cfg_template(self, make_ir_module):
+        """cfg.template is empty; template_extends provides the full template via inheritance."""
+        cfg = OutputConfig(
+            format_name="luabridge3",
+            template="",
+        )
+        extends = '{% extends "luabridge3.tpl" %}'
+        buf = io.StringIO()
+        Generator(cfg, template_extends=extends).generate(make_ir_module(), buf)
+        assert "getGlobalNamespace" in buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: suppressed class in _build_ir_context loop (line 137->136)
+# ---------------------------------------------------------------------------
+
+class TestSuppressedClassInContext:
+    def test_emit_false_class_excluded_from_flat_classes(self, make_ir_module, luabridge3_output_config):
+        """When _topo_sort returns a class with emit=False, it must not appear in the context."""
+        mod = make_ir_module()
+        mod.classes[0].emit = False
+
+        gen = Generator(luabridge3_output_config)
+        # Force _topo_sort to return the suppressed class so the branch at 137 is reached.
+        with patch.object(gen, "_topo_sort", return_value=list(mod.classes)):
+            buf = io.StringIO()
+            gen.generate(mod, buf)
+        assert "MyClass" not in buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: topo-sort diamond dependency (line 422->420)
+# ---------------------------------------------------------------------------
+
+class TestTopoSortDiamond:
+    def test_diamond_dependency_base_first(self, luabridge3_output_config):
+        """A -> B and A -> C: processing B decrements in_degree[A] to 1 (not 0),
+        covering the False branch of ``if in_degree[dep_qname] == 0``."""
+        base_b = IRClass(name="B", qualified_name="ns::B", namespace="ns",
+                         variable_name="classB")
+        base_c = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+                         variable_name="classC")
+        child_a = IRClass(
+            name="A", qualified_name="ns::A", namespace="ns",
+            variable_name="classA",
+            bases=[IRBase("ns::B"), IRBase("ns::C")],
+        )
+
+        class_by_name: dict = {"A": child_a, "B": base_b, "C": base_c}
+        nodes = [child_a, base_b, base_c]
+
+        gen = Generator(luabridge3_output_config)
+        result = gen._topo_sort(nodes, class_by_name)
+        names = [c.name for c in result]
+
+        assert names.index("A") > names.index("B")
+        assert names.index("A") > names.index("C")

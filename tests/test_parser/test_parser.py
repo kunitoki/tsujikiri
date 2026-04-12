@@ -7,14 +7,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from clang.cindex import CursorKind
 from tsujikiri.configurations import SourceConfig
 from tsujikiri.parser import (
     parse_translation_unit,
-    _source_file,
     _collect_attr_blocks,
-    _read_source_lines,
     _get_attributes,
     _get_default_value,
+    _parse_enum,
+    _read_source_lines,
+    _source_file,
     _SOURCE_CACHE,
 )
 
@@ -342,6 +344,11 @@ class TestCollectAttrBlocks:
         result = _collect_attr_blocks(" [[myns::tag]];")
         assert "myns::tag" in result
 
+    def test_empty_part_from_trailing_comma_ignored(self):
+        """``[[ns::a, ]]`` splits into 'ns::a' and '' — the empty part must be skipped."""
+        result = _collect_attr_blocks("[[ns::a, ]]")
+        assert result == ["ns::a"]
+
 
 class TestReadSourceLines:
     def test_oserror_returns_empty(self):
@@ -451,3 +458,67 @@ class TestDefaultParameterValues:
         assert x.default_value == "42"
         flag = next(p for p in fn.parameters if p.name == "flag")
         assert flag.default_value == "false"
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: _parse_enum skips non-ENUM_CONSTANT_DECL children (183->182)
+# ---------------------------------------------------------------------------
+
+class TestParseEnumSkipsNonConstant:
+    def test_non_enum_constant_child_is_ignored(self):
+        """If a cursor child has a kind other than ENUM_CONSTANT_DECL it must be skipped."""
+        cursor = MagicMock()
+        cursor.spelling = "TestEnum"
+        cursor.location.file = None  # _get_attributes returns [] for None file
+
+        non_const_child = MagicMock()
+        non_const_child.kind = CursorKind.UNEXPOSED_DECL
+
+        good_child = MagicMock()
+        good_child.kind = CursorKind.ENUM_CONSTANT_DECL
+        good_child.spelling = "ValueA"
+        good_child.enum_value = 0
+        good_child.location.file = None
+
+        cursor.get_children.return_value = [non_const_child, good_child]
+
+        result = _parse_enum(cursor, "ns")
+        assert len(result.values) == 1
+        assert result.values[0].name == "ValueA"
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: namespace not in filter is skipped (302->299)
+# ---------------------------------------------------------------------------
+
+class TestNamespaceNotInFilter:
+    def test_unmatched_namespace_excluded(self, tmp_path: Path) -> None:
+        """Parsing a file with two namespaces while filtering for only one must
+        exclude entities from the other namespace, exercising the False branch
+        of ``if not namespaces or entry.spelling in namespaces``."""
+        hpp = tmp_path / "multi_ns.hpp"
+        hpp.write_text(
+            "namespace wanted { int foo(); }\n"
+            "namespace unwanted { int bar(); }\n",
+            encoding="utf-8",
+        )
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        module = parse_translation_unit(src, ["wanted"], "multi_ns_test")
+        fn_names = {f.name for f in module.functions}
+        assert "foo" in fn_names
+        assert "bar" not in fn_names
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: explicit -x flag not duplicated (319->322)
+# ---------------------------------------------------------------------------
+
+class TestExplicitXArgNotDuplicated:
+    def test_parse_with_explicit_x_cpp(self, tmp_path: Path) -> None:
+        """When parse_args already contains ``-x``, it must not be prepended again."""
+        hpp = tmp_path / "xarg.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-x", "c++"])
+        module = parse_translation_unit(src, ["ns"], "xarg_test")
+        assert module is not None
+        assert any(f.name == "foo" for f in module.functions)

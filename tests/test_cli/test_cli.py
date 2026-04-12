@@ -480,6 +480,103 @@ class TestManifestCompatibility:
         assert len(version_lines) == 1
         assert version_lines[0].split(":")[-1].strip() == "0.0.0"
 
+    def test_pure_breaking_no_additive_warning(self, tmp_path):
+        """Removing a function entirely produces only a breaking change (no additive),
+        covering the False branch of ``if report.additive_changes``."""
+        v1_hpp = tmp_path / "v1.hpp"
+        v1_hpp.write_text("namespace api { int compute(int x); }\n")
+        manifest = tmp_path / "api.json"
+
+        _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
+             "--target", "luabridge3", "-",
+             "--manifest-file", str(manifest))
+
+        # v2: remove the function entirely
+        v2_hpp = tmp_path / "v2.hpp"
+        v2_hpp.write_text("namespace api { }\n")
+
+        _, stderr = _run("--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
+                         "--target", "luabridge3", "-",
+                         "--manifest-file", str(manifest))
+
+        assert "Breaking" in stderr
+        assert "WARNING" not in stderr
+
+    def test_version_bump_skipped_when_old_manifest_has_no_semver(self, tmp_path):
+        """suggest_version_bump returns None when the old manifest's version is not semver,
+        covering the False branch of ``if new_version is not None``."""
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+        manifest = tmp_path / "api.json"
+
+        # Write a manifest with a non-semver version so suggest_version_bump returns None
+        manifest.write_text(
+            json.dumps({
+                "uid": "a" * 64,
+                "version": "not-semver",
+                "module": "api",
+                "api": {"classes": [], "functions": [], "enums": []},
+            }),
+            encoding="utf-8",
+        )
+
+        _, stderr = _run("--input", str(self._input_yml(tmp_path, hpp)),
+                         "--target", "luabridge3", "-",
+                         "--manifest-file", str(manifest))
+
+        assert "Suggested version bump" not in stderr
+
+    def test_no_version_bump_message_when_versions_match(self, tmp_path):
+        """When the tampered manifest causes a uid mismatch but the comparison report
+        is empty, bump_semver returns the same version — covering the False branch
+        of ``if new_version != old_version``."""
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+        manifest = tmp_path / "api.json"
+
+        # First run to get a correct manifest (correct uid + api section)
+        _run("--input", str(self._input_yml(tmp_path, hpp)),
+             "--target", "luabridge3", "-",
+             "--manifest-file", str(manifest))
+
+        # Tamper only the uid so the next run sees uid != new_uid,
+        # but the api content is identical → compare_manifests finds no changes
+        # → bump_semver returns the same version as old_manifest["version"]
+        m = json.loads(manifest.read_text(encoding="utf-8"))
+        m["uid"] = "0" * 64
+        m["version"] = "2.0.0"
+        manifest.write_text(json.dumps(m), encoding="utf-8")
+
+        _, stderr = _run("--input", str(self._input_yml(tmp_path, hpp)),
+                         "--target", "luabridge3", "-",
+                         "--manifest-file", str(manifest))
+
+        assert "Suggested version bump" not in stderr
+
+    def test_no_version_copied_when_uid_matches_no_version_key(self, tmp_path):
+        """uid unchanged AND old manifest has no ``version`` key —
+        covering the False branch of ``elif \"version\" in old_manifest``."""
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+        manifest = tmp_path / "api.json"
+
+        # First run to get a manifest with the correct uid
+        _run("--input", str(self._input_yml(tmp_path, hpp)),
+             "--target", "luabridge3", "-",
+             "--manifest-file", str(manifest))
+
+        # Remove the "version" key so the elif branch evaluates to False
+        m = json.loads(manifest.read_text(encoding="utf-8"))
+        del m["version"]
+        manifest.write_text(json.dumps(m), encoding="utf-8")
+
+        # Second run — uid matches, no "version" key → elif is False
+        _, stderr = _run("--input", str(self._input_yml(tmp_path, hpp)),
+                         "--target", "luabridge3", "-",
+                         "--manifest-file", str(manifest))
+
+        assert "Breaking" not in stderr
+
 
 # ---------------------------------------------------------------------------
 # pretty / pretty_options
@@ -723,3 +820,37 @@ class TestValidateConfig:
             expected_exit=1,
         )
         assert "ERROR" in stderr
+
+    def test_format_override_without_transforms_passes(self, tmp_path):
+        """format_overrides entry with no ``transforms`` key — False branch of ``if override.transforms``."""
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int x(); }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["api"]},
+            "format_overrides": {
+                "luabridge3": {
+                    "filters": {"namespaces": ["api"]},
+                },
+            },
+        }
+        p = tmp_path / "no_fmt_tf.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--validate-config")
+        assert "valid" in stderr.lower()
+
+    def test_valid_transform_stage_not_flagged(self, tmp_path):
+        """A known transform stage passes validation — False branch of ``if spec.stage not in _REGISTRY``."""
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int x(); }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["api"]},
+            "transforms": [{"stage": "suppress_class", "pattern": "Foo"}],
+        }
+        p = tmp_path / "valid_stage.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--validate-config")
+        assert "valid" in stderr.lower()

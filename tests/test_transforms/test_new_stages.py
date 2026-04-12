@@ -269,6 +269,13 @@ class TestModifyConstructorStage:
         cls = _get_cls(mod)
         assert all(c.emit is True for c in cls.constructors)
 
+    def test_matching_signature_remove_false_is_noop(self):
+        """Signature matches but remove=False — emit must stay True."""
+        mod = _simple_module()
+        ModifyConstructorStage(**{"class": "Cls", "signature": "", "remove": False}).apply(mod)
+        cls = _get_cls(mod)
+        assert all(c.emit is True for c in cls.constructors)
+
 
 # ---------------------------------------------------------------------------
 # RemoveOverloadStage
@@ -374,6 +381,13 @@ class TestInjectCodeStage:
         InjectCodeStage(**{"target": "module", "position": "beginning", "code": "// first"}).apply(mod)
         InjectCodeStage(**{"target": "module", "position": "beginning", "code": "// second"}).apply(mod)
         assert len(mod.code_injections) == 2
+
+    def test_unknown_target_is_noop(self):
+        """An unrecognised target silently does nothing (final elif is False → exit)."""
+        mod = _simple_module()
+        before_injections = len(mod.code_injections)
+        InjectCodeStage(**{"target": "unknown_target", "position": "end", "code": "// noop"}).apply(mod)
+        assert len(mod.code_injections) == before_injections
 
 
 # ---------------------------------------------------------------------------

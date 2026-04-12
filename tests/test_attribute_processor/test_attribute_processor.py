@@ -384,6 +384,15 @@ class TestBuiltinDoc:
         _processor().apply(_make_module(cls))
         assert method.doc is None
 
+    def test_doc_on_node_without_doc_attr_is_noop(self):
+        """Node with no ``doc`` field — _apply_complex_builtin must not raise."""
+        class _NoDocNode:
+            pass
+
+        node = _NoDocNode()
+        _apply_complex_builtin("tsujikiri::doc", ["some text"], node)
+        assert not hasattr(node, "doc")
+
 
 # ---------------------------------------------------------------------------
 # Built-in: tsujikiri::rename_argument
