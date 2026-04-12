@@ -24,6 +24,21 @@ class TestIRParameter:
         p = IRParameter(name="x", type_spelling="int")
         assert p.name == "x"
         assert p.type_spelling == "int"
+        assert p.emit is True
+        assert p.rename is None
+        assert p.type_override is None
+        assert p.default_override is None
+        assert p.default_value is None
+        assert p.ownership == "none"
+
+    def test_default_value(self):
+        p = IRParameter(name="x", type_spelling="int", default_value="42")
+        assert p.default_value == "42"
+
+    def test_default_override_takes_priority(self):
+        p = IRParameter(name="x", type_spelling="int", default_value="1", default_override="0")
+        assert p.default_value == "1"
+        assert p.default_override == "0"
 
 
 class TestIRMethod:
@@ -38,6 +53,16 @@ class TestIRMethod:
         assert m.rename is None
         assert m.parameters == []
         assert m.source_file is None
+        assert m.doc is None
+        assert m.return_type_override is None
+        assert m.return_ownership == "none"
+        assert m.allow_thread is False
+        assert m.wrapper_code is None
+
+    def test_doc(self):
+        m = IRMethod(name="foo", spelling="foo", qualified_name="C::foo", return_type="void",
+                     doc="Returns nothing")
+        assert m.doc == "Returns nothing"
 
     def test_with_params(self):
         m = IRMethod(
@@ -66,6 +91,11 @@ class TestIRConstructor:
         assert c.emit is True
         assert c.is_overload is False
         assert c.parameters == []
+        assert c.doc is None
+
+    def test_doc(self):
+        c = IRConstructor(doc="Default constructor")
+        assert c.doc == "Default constructor"
 
     def test_with_params(self):
         c = IRConstructor(parameters=[IRParameter("x", "double")], is_overload=True)
@@ -80,6 +110,15 @@ class TestIRField:
         assert f.is_const is False
         assert f.is_static is False
         assert f.rename is None
+        assert f.doc is None
+
+    def test_doc(self):
+        f = IRField(name="x_", type_spelling="int", doc="The x coordinate")
+        assert f.doc == "The x coordinate"
+
+    def test_type_override(self):
+        f = IRField(name="label", type_spelling="juce::String", type_override="std::string")
+        assert f.type_override == "std::string"
 
     def test_const_field(self):
         f = IRField(name="MAX", type_spelling="const int", is_const=True)
@@ -92,6 +131,16 @@ class TestIREnumValue:
         assert v.name == "Red"
         assert v.value == 0
         assert v.emit is True
+        assert v.rename is None
+        assert v.doc is None
+
+    def test_rename(self):
+        v = IREnumValue(name="Red", value=0, rename="red")
+        assert v.rename == "red"
+
+    def test_doc(self):
+        v = IREnumValue(name="Red", value=0, doc="The red color")
+        assert v.doc == "The red color"
 
 
 class TestIREnum:
@@ -99,6 +148,16 @@ class TestIREnum:
         e = IREnum(name="Color", qualified_name="ns::Color")
         assert e.emit is True
         assert e.values == []
+        assert e.rename is None
+        assert e.doc is None
+
+    def test_rename(self):
+        e = IREnum(name="Color", qualified_name="ns::Color", rename="Colour")
+        assert e.rename == "Colour"
+
+    def test_doc(self):
+        e = IREnum(name="Color", qualified_name="ns::Color", doc="Color enumeration")
+        assert e.doc == "Color enumeration"
 
     def test_with_values(self):
         e = IREnum(
@@ -114,6 +173,7 @@ class TestIRClass:
         c = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns")
         assert c.emit is True
         assert c.rename is None
+        assert c.doc is None
         assert c.bases == []
         assert c.inner_classes == []
         assert c.constructors == []
@@ -123,6 +183,10 @@ class TestIRClass:
         assert c.variable_name == ""
         assert c.parent_class is None
         assert c.source_file is None
+
+    def test_doc(self):
+        c = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns", doc="A foo class")
+        assert c.doc == "A foo class"
 
     def test_with_base(self):
         c = IRClass(name="Circle", qualified_name="ns::Circle", namespace="ns",
@@ -154,6 +218,26 @@ class TestIRFunction:
         assert f.is_overload is False
         assert f.rename is None
         assert f.parameters == []
+        assert f.return_type_override is None
+        assert f.return_ownership == "none"
+        assert f.allow_thread is False
+        assert f.wrapper_code is None
+        assert f.doc is None
+
+    def test_extended_fields(self):
+        f = IRFunction(
+            name="compute", qualified_name="ns::compute", namespace="ns", return_type="double",
+            return_type_override="float",
+            return_ownership="cpp",
+            allow_thread=True,
+            wrapper_code="return 42.0;",
+            doc="Computes something",
+        )
+        assert f.return_type_override == "float"
+        assert f.return_ownership == "cpp"
+        assert f.allow_thread is True
+        assert f.wrapper_code == "return 42.0;"
+        assert f.doc == "Computes something"
 
 
 class TestIRModule:

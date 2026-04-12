@@ -157,18 +157,26 @@ class Generator:
 
     def _build_enum_ctx(self, enum: IREnum) -> Dict[str, Any]:
         return {
-            "name": enum.name,
+            "name": enum.rename or enum.name,
             "qualified_name": enum.qualified_name,
+            "doc": enum.doc,
             "attributes": list(enum.attributes),
             "values": [
-                {"name": v.name, "number": str(v.value), "attributes": list(v.attributes)}
+                {
+                    "name": v.rename or v.name,
+                    "original_name": v.name,
+                    "number": str(v.value),
+                    "doc": v.doc,
+                    "attributes": list(v.attributes),
+                }
                 for v in enum.values
                 if v.emit
             ],
         }
 
     def _build_function_group_ctxs(self, functions: List[IRFunction]) -> List[Dict[str, Any]]:
-        active = [fn for fn in functions if fn.emit and not self._is_unsupported(fn.return_type)]
+        effective_return_fn = lambda fn: fn.return_type_override or fn.return_type  # noqa: E731
+        active = [fn for fn in functions if fn.emit and not self._is_unsupported(effective_return_fn(fn))]
         groups: Dict[str, List[IRFunction]] = {}
         order: List[str] = []
         for fn in active:
@@ -185,19 +193,32 @@ class Generator:
             fns = []
             for i, fn in enumerate(group):
                 is_last = i == len(group) - 1
+                eff_return = effective_return_fn(fn)
                 fns.append({
                     "name": fn.rename or fn.name,
                     "spelling": fn.qualified_name,
                     "params": [
-                        {"name": p.name, "type": self._map_type(p.type_spelling), "raw_type": p.type_spelling}
+                        {
+                            "name": p.rename or p.name,
+                            "original_name": p.name,
+                            "type": self._map_type(p.type_override or p.type_spelling),
+                            "raw_type": p.type_override or p.type_spelling,
+                            "ownership": p.ownership,
+                            "default": p.default_override or p.default_value,
+                        }
                         for p in fn.parameters
+                        if p.emit
                     ],
-                    "return_type": self._map_type(fn.return_type),
-                    "raw_return_type": fn.return_type,
+                    "return_type": self._map_type(eff_return),
+                    "raw_return_type": eff_return,
+                    "return_ownership": fn.return_ownership,
+                    "allow_thread": fn.allow_thread,
+                    "wrapper_code": fn.wrapper_code,
                     "overload_kind": "overload",
                     "overload_separator": "" if is_last else ",",
                     "overload_index": i,
                     "is_noexcept": fn.is_noexcept,
+                    "doc": fn.doc,
                     "attributes": list(fn.attributes),
                 })
             result.append({
@@ -209,7 +230,13 @@ class Generator:
 
     def _build_class_ctx(self, ir_class: IRClass) -> Dict[str, Any]:
         name = ir_class.rename or ir_class.name
-        base_name = ir_class.bases[0].qualified_name if ir_class.bases else ""
+
+        # Only emit=True public bases for deriveClass<> template usage
+        public_bases = [
+            b for b in ir_class.bases
+            if b.emit and b.access == "public"
+        ]
+        base_name = public_bases[0].qualified_name if public_bases else ""
 
         # Constructor group
         ctors = [c for c in ir_class.constructors if c.emit]
@@ -224,7 +251,7 @@ class Generator:
                             "type": self._map_type(p.type_override or p.type_spelling),
                             "raw_type": p.type_override or p.type_spelling,
                             "ownership": p.ownership,
-                            "default": p.default_override,
+                            "default": p.default_override or p.default_value,
                         }
                         for p in ctor.parameters
                         if p.emit
@@ -232,6 +259,7 @@ class Generator:
                     "overload_index": i,
                     "is_noexcept": ctor.is_noexcept,
                     "is_explicit": ctor.is_explicit,
+                    "doc": ctor.doc,
                     "code_injections": [{"position": c.position, "code": c.code} for c in ctor.code_injections],
                 }
                 for i, ctor in enumerate(ctors)
@@ -268,7 +296,7 @@ class Generator:
                             "type": self._map_type(p.type_override or p.type_spelling),
                             "raw_type": p.type_override or p.type_spelling,
                             "ownership": p.ownership,
-                            "default": p.default_override,
+                            "default": p.default_override or p.default_value,
                         }
                         for p in m.parameters
                         if p.emit
@@ -285,6 +313,7 @@ class Generator:
                     "is_pure_virtual": m.is_pure_virtual,
                     "is_noexcept": m.is_noexcept,
                     "overload_index": i,
+                    "doc": m.doc,
                     "attributes": list(m.attributes),
                     "code_injections": [{"position": c.position, "code": c.code} for c in m.code_injections],
                 })
@@ -299,20 +328,32 @@ class Generator:
         fields = [
             {
                 "name": f.rename or f.name,
-                "type": self._map_type(f.type_spelling),
-                "raw_type": f.type_spelling,
+                "type": self._map_type(f.type_override or f.type_spelling),
+                "raw_type": f.type_override or f.type_spelling,
                 "is_const": f.is_const,
                 "read_only": f.read_only or f.is_const,
+                "doc": f.doc,
             }
             for f in ir_class.fields
-            if f.emit and not self._is_unsupported(f.type_spelling)
+            if f.emit and not self._is_unsupported(f.type_override or f.type_spelling)
         ]
 
         return {
             "name": name,
             "qualified_name": ir_class.qualified_name,
+            "doc": ir_class.doc,
             "attributes": list(ir_class.attributes),
-            "bases": [{"qualified_name": b.qualified_name, "access": b.access} for b in ir_class.bases],
+            "bases": [
+                {"qualified_name": b.qualified_name, "access": b.access, "emit": b.emit}
+                for b in ir_class.bases
+            ],
+            "public_bases": [
+                {
+                    "qualified_name": b.qualified_name,
+                    "short_name": b.qualified_name.split("::")[-1],
+                }
+                for b in public_bases
+            ],
             "base_name": base_name,
             "base_short_name": base_name.split("::")[-1] if base_name else "",
             "variable_name": ir_class.variable_name,

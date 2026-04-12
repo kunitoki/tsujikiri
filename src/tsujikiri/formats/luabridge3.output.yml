@@ -76,8 +76,8 @@ template: |
   {%- endfor %}
   {%- for cls in classes %}
   {%- block class scoped %}
-  {%- if cls.base_name %}
-        .deriveClass<{{ cls.qualified_name }}, {{ cls.base_name }}>("{{ cls.name }}")
+  {%- if cls.public_bases %}
+        .deriveClass<{{ cls.qualified_name }}, {{ cls.public_bases | map(attribute='qualified_name') | join(', ') }}>("{{ cls.name }}")
   {%- else %}
         .beginClass<{{ cls.qualified_name }}>("{{ cls.name }}")
   {%- endif %}

@@ -55,6 +55,8 @@ Class-level stages use `class_is_regex: true` for the class pattern and `is_rege
 
 ## Stage Reference
 
+### Class and Method Stages
+
 | Stage | Purpose | Required Keys |
 |-------|---------|---------------|
 | `rename_method` | Change the binding name of a method | `class`, `from`, `to` |
@@ -62,6 +64,8 @@ Class-level stages use `class_is_regex: true` for the class pattern and `is_rege
 | `suppress_method` | Set `emit=False` on matching methods | `class`, `pattern` |
 | `suppress_class` | Set `emit=False` on matching classes | `pattern` |
 | `inject_method` | Append a synthetic method to a class | `class`, `name` |
+| `inject_constructor` | Append a synthetic constructor to a class | `class` |
+| `suppress_base` | Hide a base class from the binding output | `class`, `base` |
 | `add_type_mapping` | Rewrite a C++ type spelling globally | `from`, `to` |
 | `modify_method` | Multi-field edit on matching methods | `class`, `method` |
 | `modify_argument` | Edit a single parameter of a method | `class`, `method`, `argument` |
@@ -70,6 +74,25 @@ Class-level stages use `class_is_regex: true` for the class pattern and `is_rege
 | `remove_overload` | Remove one overload of a method | `class`, `method`, `signature` |
 | `inject_code` | Insert raw code at a position in output | `target`, `position`, `code` |
 | `set_type_hint` | Override class-level type trait metadata | `class` |
+
+### Enum Stages
+
+| Stage | Purpose | Required Keys |
+|-------|---------|---------------|
+| `rename_enum` | Change the binding name of an enum | `from`, `to` |
+| `rename_enum_value` | Change the binding name of an enum value | `enum`, `from`, `to` |
+| `suppress_enum` | Set `emit=False` on matching enums | `pattern` |
+| `suppress_enum_value` | Set `emit=False` on matching enum values | `enum`, `pattern` |
+| `modify_enum` | Rename or suppress an enum | `enum` |
+
+### Free Function Stages
+
+| Stage | Purpose | Required Keys |
+|-------|---------|---------------|
+| `rename_function` | Change the binding name of a free function | `from`, `to` |
+| `suppress_function` | Set `emit=False` on matching free functions | `pattern` |
+| `modify_function` | Multi-field edit on matching free functions | `function` |
+| `inject_function` | Append a synthetic free function to the module | `name` |
 
 ---
 
@@ -703,6 +726,365 @@ transforms:
   - stage: set_type_hint
     class: AudioEngine
     force_abstract: true    # no .addConstructor() emitted; still bindable as base for deriveClass
+```
+
+---
+
+## `inject_constructor`
+
+Appends a synthetic `IRConstructor` to a class. Useful when you want to expose a construction path that doesn't correspond directly to an existing C++ constructor (combined with `modify_method` or a wrapper).
+
+```yaml
+- stage: inject_constructor
+  class: MyClass
+  parameters:
+    - name: value
+      type: int
+    - name: label
+      type: "const char *"
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `class` | string | — | Target class name (required; plain name or regex) |
+| `class_is_regex` | bool | `false` | Treat `class` as regex |
+| `parameters` | list | `[]` | Each item has `name` (string) and `type` (string) |
+
+When the class already has constructors, all existing constructors are marked as overloads too (so the binding system generates appropriate overload sets).
+
+**Example — inject a default constructor not present in the original C++:**
+```yaml
+transforms:
+  - stage: inject_constructor
+    class: Circle
+    parameters: []    # default constructor (no parameters)
+```
+
+---
+
+## `suppress_base`
+
+Removes a specific base class from a class's binding output. The base still exists in the C++ type system; it is simply not listed in the generated binding. This is useful when a base class is an implementation detail or provides non-scriptable functionality.
+
+```yaml
+- stage: suppress_base
+  class: Circle
+  base: ".*Protected"
+  is_regex: true
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `class` | string | `"*"` | Class name pattern |
+| `class_is_regex` | bool | `false` | Treat `class` as regex |
+| `base` | string | — | Base class pattern matched against its `qualified_name` (required) |
+| `is_regex` | bool | `false` | Treat `base` as regex |
+
+The `base` pattern is matched against the base class's **qualified name** (e.g. `mylib::ShapeBase`), not its short name.
+
+**Example — suppress an internal non-scriptable base:**
+```yaml
+transforms:
+  - stage: suppress_base
+    class: "*"
+    base: ".*::detail::.*"
+    is_regex: true
+```
+
+**Example — suppress a specific named base on one class:**
+```yaml
+transforms:
+  - stage: suppress_base
+    class: AudioEngine
+    base: "mylib::RefCounted"
+```
+
+---
+
+## `rename_enum`
+
+Changes the binding-visible name of an enum. The qualified C++ name is preserved for template use. Only the string registered in the binding changes.
+
+```yaml
+- stage: rename_enum
+  from: Color
+  to: Colour
+  is_regex: false
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `from` | string | — | Enum name to match (required) |
+| `to` | string | — | New binding name (required) |
+| `is_regex` | bool | `false` | Treat `from` as regex |
+
+**Example — rename all enums to remove a common prefix:**
+```yaml
+transforms:
+  - stage: rename_enum
+    from: "Juce(.*)"
+    to: "\\1"
+    is_regex: true
+```
+
+---
+
+## `rename_enum_value`
+
+Changes the binding-visible name of one or more enum values. The original C++ enumerator name is preserved in `original_name` so templates that reference the C++ symbol still work correctly.
+
+```yaml
+- stage: rename_enum_value
+  enum: Color
+  from: Red
+  to: red
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `enum` | string | `"*"` | Enum name to target (plain, `"*"`, or regex) |
+| `enum_is_regex` | bool | `false` | Treat `enum` as regex |
+| `from` | string | — | Enum value name to match (required) |
+| `to` | string | — | New binding name (required) |
+| `is_regex` | bool | `false` | Treat `from` as regex |
+
+**Example — lowercase all values of the Color enum:**
+```yaml
+transforms:
+  - stage: rename_enum_value
+    enum: Color
+    from: "(.*)"
+    to: "\\L\\1"    # note: Jinja2 doesn't expand \\L; this is an example of intent
+    is_regex: true
+```
+
+**Example — rename a specific value:**
+```yaml
+transforms:
+  - stage: rename_enum_value
+    enum: Status
+    from: StatusOK
+    to: ok
+```
+
+---
+
+## `suppress_enum`
+
+Sets `emit=False` on matching enums. The enum stays in the IR (transforms can still see it) but the generator will skip it.
+
+```yaml
+- stage: suppress_enum
+  pattern: ".*Detail$"
+  is_regex: true
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `pattern` | string | — | Enum name pattern (required) |
+| `is_regex` | bool | `false` | Treat `pattern` as regex |
+
+**Example — suppress all internal enums:**
+```yaml
+transforms:
+  - stage: suppress_enum
+    pattern: ".*Internal.*"
+    is_regex: true
+```
+
+---
+
+## `suppress_enum_value`
+
+Sets `emit=False` on matching values within an enum. The value stays in the IR but is excluded from the generated output.
+
+```yaml
+- stage: suppress_enum_value
+  enum: Color
+  pattern: "Reserved.*"
+  is_regex: true
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `enum` | string | `"*"` | Enum name to target (plain, `"*"`, or regex) |
+| `enum_is_regex` | bool | `false` | Treat `enum` as regex |
+| `pattern` | string | — | Enum value name pattern (required) |
+| `is_regex` | bool | `false` | Treat `pattern` as regex |
+
+**Example — suppress all `COUNT` sentinel values across all enums:**
+```yaml
+transforms:
+  - stage: suppress_enum_value
+    enum: "*"
+    pattern: ".*_COUNT"
+    is_regex: true
+```
+
+---
+
+## `modify_enum`
+
+A combined editor for an enum: rename it or suppress it in one stage. For more targeted operations, prefer `rename_enum` and `suppress_enum`.
+
+```yaml
+- stage: modify_enum
+  enum: Color
+  rename: Colour       # optional: new binding name
+  remove: false        # optional: set emit=False
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `enum` | string | `"*"` | Enum name to target |
+| `enum_is_regex` | bool | `false` | Treat `enum` as regex |
+| `rename` | string | — | New binding name |
+| `remove` | bool | `false` | Set `emit=False` |
+
+---
+
+## `rename_function`
+
+Changes the binding-visible name of a free function. The qualified C++ name is preserved for template use.
+
+```yaml
+- stage: rename_function
+  from: computeArea
+  to: compute_area
+  is_regex: false
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `from` | string | — | Function name to match (required) |
+| `to` | string | — | New binding name (required) |
+| `is_regex` | bool | `false` | Treat `from` as regex |
+
+**Example — strip a common verb prefix from all free functions:**
+```yaml
+transforms:
+  - stage: rename_function
+    from: "do(.*)"
+    to: "\\1"
+    is_regex: true
+```
+
+---
+
+## `suppress_function`
+
+Sets `emit=False` on matching free functions.
+
+```yaml
+- stage: suppress_function
+  pattern: "internal_.*"
+  is_regex: true
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `pattern` | string | — | Function name pattern (required) |
+| `is_regex` | bool | `false` | Treat `pattern` as regex |
+
+**Example — suppress all debug functions:**
+```yaml
+transforms:
+  - stage: suppress_function
+    pattern: "debug.*"
+    is_regex: true
+```
+
+---
+
+## `modify_function`
+
+A comprehensive editor for one or more free functions. Mirrors `modify_method` but operates on module-level functions.
+
+```yaml
+- stage: modify_function
+  function: computeArea
+  function_is_regex: false
+  rename: compute_area         # optional: new binding name
+  remove: false                # optional: set emit=False
+  return_type: "float"         # optional: override return type in output
+  return_ownership: "cpp"      # optional: "none" | "cpp" | "script"
+  allow_thread: true           # optional: GIL-release hint
+  wrapper_code: "+[]() { return 0.0f; }"  # optional: lambda instead of &qualifiedName
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `function` | string | `"*"` | Function name pattern |
+| `function_is_regex` | bool | `false` | Treat `function` as regex |
+| `rename` | string | — | New binding name |
+| `remove` | bool | `false` | Set `emit=False` |
+| `return_type` | string | — | Override return type in output |
+| `return_ownership` | string | — | `"none"` \| `"cpp"` \| `"script"` |
+| `allow_thread` | bool | — | Template hint to release interpreter lock |
+| `wrapper_code` | string | — | Replace function pointer with this lambda/callable |
+
+**Example — wrap a C-style function that returns a raw pointer:**
+```yaml
+transforms:
+  - stage: modify_function
+    function: getEngine
+    return_type: "AudioEngine&"
+    wrapper_code: "[]() -> AudioEngine& { return *getEngine(); }"
+```
+
+---
+
+## `inject_function`
+
+Appends a synthetic `IRFunction` to the module. The caller is responsible for ensuring the corresponding C++ symbol exists.
+
+```yaml
+- stage: inject_function
+  name: create_circle
+  namespace: mylib
+  return_type: "mylib::Circle*"
+  parameters:
+    - name: radius
+      type: double
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `name` | string | — | Function name (required) |
+| `namespace` | string | `""` | Namespace for the qualified name (`namespace::name`) |
+| `return_type` | string | `"void"` | C++ return type spelling |
+| `parameters` | list | `[]` | Each item has `name` (string) and `type` (string) |
+
+**Example — inject a factory function not present in the original API:**
+```yaml
+transforms:
+  - stage: inject_function
+    name: create_default_engine
+    namespace: audio
+    return_type: "audio::AudioEngine*"
+    parameters: []
 ```
 
 ---

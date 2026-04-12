@@ -26,6 +26,7 @@ class IRParameter:
     rename: Optional[str] = None             # binding-visible name override
     type_override: Optional[str] = None      # replaces type_spelling in output only
     default_override: Optional[str] = None   # replaces default expression in output
+    default_value: Optional[str] = None      # raw C++ default extracted by parser; used as fallback
     ownership: str = "none"                  # "none" | "cpp" | "script"
 
 
@@ -33,6 +34,7 @@ class IRParameter:
 class IRBase:
     qualified_name: str
     access: str = "public"   # "public", "protected", or "private"
+    emit: bool = True        # False = suppressed by suppress_base transform
 
 
 @dataclass
@@ -56,6 +58,7 @@ class IRMethod:
     return_ownership: str = "none"               # "none" | "cpp" | "script"
     allow_thread: bool = False                   # hint: release GIL around call
     wrapper_code: Optional[str] = None           # if set, template emits lambda instead of &Class::method
+    doc: Optional[str] = None                    # documentation string from [[tsujikiri::doc("…")]]
     code_injections: List[IRCodeInjection] = field(default_factory=list)
 
 
@@ -66,6 +69,7 @@ class IRConstructor:
     is_noexcept: bool = False
     is_explicit: bool = False
     emit: bool = True
+    doc: Optional[str] = None               # documentation string
     attributes: List[str] = field(default_factory=list)
     code_injections: List[IRCodeInjection] = field(default_factory=list)
 
@@ -79,6 +83,8 @@ class IRField:
     emit: bool = True
     rename: Optional[str] = None
     read_only: bool = False   # force read-only even if not const in C++
+    type_override: Optional[str] = None     # replaces type_spelling in output only
+    doc: Optional[str] = None               # documentation string
     attributes: List[str] = field(default_factory=list)
 
 
@@ -87,6 +93,8 @@ class IREnumValue:
     name: str
     value: int
     emit: bool = True
+    rename: Optional[str] = None            # binding-visible name override
+    doc: Optional[str] = None               # documentation string from [[tsujikiri::doc("…")]]
     attributes: List[str] = field(default_factory=list)
 
 
@@ -96,6 +104,8 @@ class IREnum:
     qualified_name: str
     values: List[IREnumValue] = field(default_factory=list)
     emit: bool = True
+    rename: Optional[str] = None            # binding-visible name override
+    doc: Optional[str] = None               # documentation string
     attributes: List[str] = field(default_factory=list)
 
 
@@ -114,6 +124,7 @@ class IRClass:
     is_abstract: bool = False           # True if any method is pure virtual
     emit: bool = True
     rename: Optional[str] = None
+    doc: Optional[str] = None               # documentation string
     variable_name: str = ""         # camelCase binding variable name
     parent_class: Optional[str] = None   # for inner classes
     source_file: Optional[str] = None
@@ -136,6 +147,11 @@ class IRFunction:
     emit: bool = True
     rename: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
+    return_type_override: Optional[str] = None   # overrides return_type in output only (mirrors IRMethod)
+    return_ownership: str = "none"               # "none" | "cpp" | "script" (mirrors IRMethod)
+    allow_thread: bool = False                   # hint: release GIL around call (mirrors IRMethod)
+    wrapper_code: Optional[str] = None           # if set, template emits lambda instead of &qualified_name
+    doc: Optional[str] = None                    # documentation string
 
 
 @dataclass

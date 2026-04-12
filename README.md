@@ -13,7 +13,7 @@
 
 tsujikiri parses C++ headers via **libclang** and generates binding code through a **template-driven pipeline**. Define what to expose, plug in a target format, and get ready-to-compile bindings.
 
-Built-in support for [LuaBridge3](https://github.com/kunitoki/LuaBridge3) (Lua bindings) and [LuaLS](https://luals.github.io/) (Lua Language Server annotations). Custom formats are first-class.
+Built-in support for [LuaBridge3](https://github.com/kunitoki/LuaBridge3) (Lua bindings), [LuaLS](https://luals.github.io/) (Lua Language Server annotations), [pybind11](https://pybind11.readthedocs.io/) (Python bindings), and Python type stubs (`.pyi`). Custom formats are first-class.
 
 ---
 
@@ -85,13 +85,19 @@ generation:
 
 ```bash
 # Print to stdout
-tsujikiri -i myproject.input.yml -o luabridge3
+tsujikiri -i myproject.input.yml --target luabridge3 -
 
 # Write to file
-tsujikiri -i myproject.input.yml -o luabridge3 -O bindings.cpp
+tsujikiri -i myproject.input.yml --target luabridge3 bindings.cpp
+
+# Generate multiple outputs in one pass
+tsujikiri -i myproject.input.yml \
+  --target luabridge3 bindings.cpp \
+  --target pybind11 py_bindings.cpp \
+  --target pyi mymodule.pyi
 
 # Dry-run: parse and filter, print summary
-tsujikiri -i myproject.input.yml -o luabridge3 --dry-run
+tsujikiri -i myproject.input.yml --target luabridge3 - --dry-run
 
 # List available formats
 tsujikiri --list-formats
@@ -121,87 +127,6 @@ void register_myproject(lua_State* L)
 
 ---
 
-## Input Configuration Reference
-
-```yaml
-source:
-  path: "myheader.hpp"            # C++ header to parse
-  parse_args: ["-std=c++17"]      # Extra clang flags
-  include_paths: []               # Additional include directories
-
-filters:
-  namespaces: []                  # Restrict parsing to these namespaces
-  classes:
-    whitelist: []                 # Include only matching class names (supports regex)
-    blacklist: []                 # Exclude matching class names
-  methods:
-    global_blacklist: []          # Exclude methods from all classes
-    per_class:                    # Per-class method exclusion
-      MyClass: ["internalHelper"]
-  fields:
-    global_blacklist: []
-  constructors:
-    include: false                # Whether to emit constructors
-    signatures: []                # Filter by parameter type signature
-  functions:
-    blacklist: []                 # Exclude free functions
-
-transforms:
-  - stage: rename_method
-    class: MyClass
-    from: getValueForKey
-    to: get
-
-  - stage: rename_class
-    from: SomeInternal
-    to: PublicName
-
-  - stage: suppress_method
-    class: "*"
-    pattern: "operator.*"
-    is_regex: true
-
-  - stage: inject_method
-    class: MyClass
-    snippet: ".addFunction(\"create\", &MyClass::create)"
-
-  - stage: add_type_mapping
-    from: "std::string_view"
-    to: "std::string"
-
-generation:
-  includes: ["<mylib.h>"]         # Extra #include lines in output
-  prefix: ""                      # Literal text prepended to output
-  postfix: ""                     # Literal text appended to output
-
-format_overrides:                 # Per-format overrides (filters, transforms, generation)
-  luabridge3:
-    generation:
-      includes: ["<LuaBridge/LuaBridge.h>"]
-    transforms:
-      - stage: suppress_method
-        class: "*"
-        pattern: "clone"
-
-pretty: false                     # Run clang-format (or language equivalent) on output
-pretty_options: []                # Extra args forwarded to the pretty printer CLI
-```
-
-### Transform stages
-
-| Stage | Effect |
-|---|---|
-| `rename_method` | Change the emitted name of a method |
-| `rename_class` | Change the emitted name of a class |
-| `suppress_method` | Remove a method from output |
-| `suppress_class` | Remove a class from output |
-| `inject_method` | Inject raw template snippet into a class block |
-| `add_type_mapping` | Rewrite a C++ type spelling in all signatures |
-
-All `pattern` fields accept plain strings or regex (`is_regex: true`). Use `"*"` to match all classes.
-
----
-
 ## Built-in Formats
 
 ### `luabridge3`
@@ -209,7 +134,7 @@ All `pattern` fields accept plain strings or regex (`is_regex: true`). Use `"*"`
 Generates C++ registration code for [LuaBridge3](https://github.com/kunitoki/LuaBridge3).
 
 ```bash
-tsujikiri -i project.input.yml -o luabridge3 -O bindings/lua_bindings.cpp
+tsujikiri -i project.input.yml --target luabridge3 bindings/lua_bindings.cpp
 ```
 
 Handles: classes, constructors, instance/static methods, overloaded methods, properties, enums, free functions, inheritance.
@@ -219,10 +144,30 @@ Handles: classes, constructors, instance/static methods, overloaded methods, pro
 Generates [Lua Language Server](https://luals.github.io/) annotation stubs.
 
 ```bash
-tsujikiri -i project.input.yml -o luals -O types/myproject.lua
+tsujikiri -i project.input.yml --target luals types/myproject.lua
 ```
 
 Emits `---@class`, `---@field`, `---@param`, `---@return` annotations with C++→Lua type mappings.
+
+### `pybind11`
+
+Generates C++ registration code for [pybind11](https://pybind11.readthedocs.io/).
+
+```bash
+tsujikiri -i project.input.yml --target pybind11 src/py_bindings.cpp
+```
+
+Handles: classes with multiple inheritance, constructors, instance/static methods, overloaded methods (via `py::overload_cast`), read-write/read-only properties, enums (via `py::enum_`), free functions, doc strings.
+
+### `pyi`
+
+Generates Python type stub files (`.pyi`) for use alongside `pybind11` bindings.
+
+```bash
+tsujikiri -i project.input.yml --target pyi mymodule.pyi
+```
+
+Emits Python-typed stubs with `@overload`, `@staticmethod`, class inheritance, enum stubs as `class Foo(int)`, and C++→Python type mappings.
 
 ---
 
@@ -253,7 +198,7 @@ templates:
 Point tsujikiri at your format directory:
 
 ```bash
-tsujikiri -i project.input.yml -o myformat -F ./my_formats/ -O out/bindings.cpp
+tsujikiri -i project.input.yml --target myformat out/bindings.cpp -F ./my_formats/
 ```
 
 ---
@@ -264,14 +209,21 @@ tsujikiri -i project.input.yml -o myformat -F ./my_formats/ -O out/bindings.cpp
 tsujikiri [OPTIONS]
 
 Options:
-  -i, --input FILE          Input config YAML (required)
-  -o, --output FORMAT|FILE  Built-in format name or path to .output.yml
-  -O, --output-file FILE    Write output to file instead of stdout
-  -c, --classname CLASS     Generate bindings for a single class only
-  -F, --formats-dir DIR     Extra directory to search for .output.yml files (repeatable)
-      --list-formats        Print available formats and exit
-      --dry-run             Parse and filter only; print IR summary without generating
-  -h, --help                Show this message and exit
+  -i, --input FILE            Input config YAML (required)
+  -t, --target FORMAT FILE    Output target: FORMAT is a built-in name or path to
+                              .output.yml; FILE is the output path ('-' for stdout).
+                              Repeatable for multiple simultaneous outputs.
+  -c, --classname CLASS       Generate bindings for a single class only
+  -F, --formats-dir DIR       Extra directory to search for .output.yml files (repeatable)
+      --list-formats          Print available formats and exit
+      --dry-run               Parse and filter only; print IR summary without generating
+  -M, --manifest-file FILE    Write API manifest JSON to FILE; compare if FILE exists
+      --check-compat          Exit 1 if manifest shows breaking API changes
+      --embed-version         Embed the API version hash in the generated code
+      --trace-transforms      Print transform stages and their targets to stderr
+      --dump-ir [FILE]        Dump the post-transform IR as JSON (default: stdout)
+      --validate-config       Validate input config (regex patterns, stage names) and exit
+  -h, --help                  Show this message and exit
 ```
 
 ---

@@ -8,10 +8,14 @@ import pytest
 
 from tsujikiri.generator import Generator
 from tsujikiri.ir import (
+    IRBase,
     IRClass,
     IRCodeInjection,
     IRConstructor,
+    IREnum,
+    IREnumValue,
     IRField,
+    IRFunction,
     IRMethod,
     IRModule,
     IRParameter,
@@ -440,3 +444,279 @@ class TestReadOnlyFieldRendering:
         mod = IRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
         out = _generate(mod, luals_output_config)
         assert "(readonly)" not in out
+
+
+# ---------------------------------------------------------------------------
+# Generator context: doc fields
+# ---------------------------------------------------------------------------
+
+class TestDocInContext:
+    def test_class_doc_in_context(self, luabridge3_output_config):
+        cls = _simple_class()
+        cls.doc = "A great class"
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert ctx["doc"] == "A great class"
+
+    def test_class_no_doc_is_none(self, luabridge3_output_config):
+        cls = _simple_class()
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert ctx["doc"] is None
+
+    def test_method_doc_in_context(self, luabridge3_output_config):
+        method = IRMethod(
+            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
+            return_type="void", doc="Does foo",
+        )
+        cls = _simple_class(methods=[method])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert ctx["method_groups"][0]["methods"][0]["doc"] == "Does foo"
+
+    def test_field_doc_in_context(self, luabridge3_output_config):
+        field = IRField(name="x", type_spelling="int", doc="The x value")
+        cls = _simple_class(fields=[field])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert ctx["fields"][0]["doc"] == "The x value"
+
+    def test_constructor_doc_in_context(self, luabridge3_output_config):
+        ctor = IRConstructor(parameters=[], doc="Default ctor")
+        cls = _simple_class(ctors=[ctor])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert ctx["constructor_group"]["constructors"][0]["doc"] == "Default ctor"
+
+    def test_enum_doc_in_context(self, luabridge3_output_config):
+        enum = IREnum(name="Color", qualified_name="ns::Color", doc="Color enum",
+                      values=[IREnumValue("Red", 0, doc="The red")])
+        mod = IRModule(name="m", enums=[enum])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_ir_context(mod)
+        enum_ctx = ctx["enums"][0]
+        assert enum_ctx["doc"] == "Color enum"
+        assert enum_ctx["values"][0]["doc"] == "The red"
+
+    def test_function_doc_in_context(self, luabridge3_output_config):
+        fn = IRFunction(name="compute", qualified_name="ns::compute",
+                        namespace="ns", return_type="void", doc="Computes")
+        mod = IRModule(name="m", functions=[fn])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_ir_context(mod)
+        assert ctx["function_groups"][0]["functions"][0]["doc"] == "Computes"
+
+
+# ---------------------------------------------------------------------------
+# Generator context: enum rename
+# ---------------------------------------------------------------------------
+
+class TestEnumRenameInContext:
+    def test_enum_rename_used_in_context(self, luabridge3_output_config):
+        enum = IREnum(name="Color", qualified_name="ns::Color", rename="Colour",
+                      values=[IREnumValue("Red", 0)])
+        mod = IRModule(name="m", enums=[enum])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_ir_context(mod)
+        assert ctx["enums"][0]["name"] == "Colour"
+
+    def test_enum_value_rename_used_in_context(self, luabridge3_output_config):
+        val = IREnumValue("Red", 0, rename="red")
+        enum = IREnum(name="Color", qualified_name="ns::Color", values=[val])
+        mod = IRModule(name="m", enums=[enum])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_ir_context(mod)
+        assert ctx["enums"][0]["values"][0]["name"] == "red"
+
+
+# ---------------------------------------------------------------------------
+# Generator context: public_bases
+# ---------------------------------------------------------------------------
+
+class TestPublicBasesInContext:
+    def test_only_public_emit_bases_in_public_bases(self, luabridge3_output_config):
+        cls = _simple_class()
+        cls.bases = [
+            IRBase("ns::A", "public"),
+            IRBase("ns::B", "protected"),
+            IRBase("ns::C", "private"),
+        ]
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert len(ctx["public_bases"]) == 1
+        assert ctx["public_bases"][0]["qualified_name"] == "ns::A"
+
+    def test_suppressed_public_base_excluded(self, luabridge3_output_config):
+        base = IRBase("ns::A", "public")
+        base.emit = False
+        cls = _simple_class()
+        cls.bases = [base]
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert ctx["public_bases"] == []
+        assert ctx["base_name"] == ""
+
+    def test_multiple_public_bases(self, luabridge3_output_config):
+        cls = _simple_class()
+        cls.bases = [IRBase("ns::A", "public"), IRBase("ns::B", "public")]
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert len(ctx["public_bases"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# Generator context: default_value fallback
+# ---------------------------------------------------------------------------
+
+class TestDefaultValueFallbackInContext:
+    def test_default_override_takes_priority(self, luabridge3_output_config):
+        p = IRParameter("x", "int", default_value="1", default_override="0")
+        method = IRMethod(name="f", spelling="f", qualified_name="ns::C::f",
+                          return_type="void", parameters=[p])
+        cls = _simple_class(methods=[method])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert ctx["method_groups"][0]["methods"][0]["params"][0]["default"] == "0"
+
+    def test_default_value_used_when_no_override(self, luabridge3_output_config):
+        p = IRParameter("x", "int", default_value="42")
+        method = IRMethod(name="f", spelling="f", qualified_name="ns::C::f",
+                          return_type="void", parameters=[p])
+        cls = _simple_class(methods=[method])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert ctx["method_groups"][0]["methods"][0]["params"][0]["default"] == "42"
+
+    def test_no_default_is_none(self, luabridge3_output_config):
+        p = IRParameter("x", "int")
+        method = IRMethod(name="f", spelling="f", qualified_name="ns::C::f",
+                          return_type="void", parameters=[p])
+        cls = _simple_class(methods=[method])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert ctx["method_groups"][0]["methods"][0]["params"][0]["default"] is None
+
+
+# ---------------------------------------------------------------------------
+# Generator context: function extended fields
+# ---------------------------------------------------------------------------
+
+class TestFunctionExtendedContextFields:
+    def test_return_type_override_in_function_ctx(self, luabridge3_output_config):
+        fn = IRFunction(name="f", qualified_name="ns::f", namespace="ns",
+                        return_type="int", return_type_override="double")
+        mod = IRModule(name="m", functions=[fn])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_ir_context(mod)
+        fn_ctx = ctx["function_groups"][0]["functions"][0]
+        assert fn_ctx["return_type"] == "double"
+        assert fn_ctx["raw_return_type"] == "double"
+
+    def test_allow_thread_in_function_ctx(self, luabridge3_output_config):
+        fn = IRFunction(name="f", qualified_name="ns::f", namespace="ns",
+                        return_type="void", allow_thread=True)
+        mod = IRModule(name="m", functions=[fn])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_ir_context(mod)
+        assert ctx["function_groups"][0]["functions"][0]["allow_thread"] is True
+
+    def test_wrapper_code_in_function_ctx(self, luabridge3_output_config):
+        fn = IRFunction(name="f", qualified_name="ns::f", namespace="ns",
+                        return_type="void", wrapper_code="+[](){}")
+        mod = IRModule(name="m", functions=[fn])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_ir_context(mod)
+        assert ctx["function_groups"][0]["functions"][0]["wrapper_code"] == "+[](){}"
+
+    def test_function_param_rename_in_context(self, luabridge3_output_config):
+        p = IRParameter("rawName", "int")
+        p.rename = "nice"
+        fn = IRFunction(name="f", qualified_name="ns::f", namespace="ns",
+                        return_type="void", parameters=[p])
+        mod = IRModule(name="m", functions=[fn])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_ir_context(mod)
+        param_ctx = ctx["function_groups"][0]["functions"][0]["params"][0]
+        assert param_ctx["name"] == "nice"
+        assert param_ctx["original_name"] == "rawName"
+
+    def test_field_type_override_in_context(self, luabridge3_output_config):
+        field = IRField(name="label", type_spelling="juce::String",
+                        type_override="std::string")
+        cls = _simple_class(fields=[field])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        assert ctx["fields"][0]["type"] == "std::string"
+        assert ctx["fields"][0]["raw_type"] == "std::string"
+
+
+# ---------------------------------------------------------------------------
+# Template rendering: multiple inheritance (luabridge3)
+# ---------------------------------------------------------------------------
+
+class TestMultipleInheritanceLuaBridge3:
+    def test_single_public_base_uses_derive_class(self, luabridge3_output_config):
+        cls = _simple_class()
+        cls.bases = [IRBase("ns::Base", "public")]
+        mod = IRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
+        out = _generate(mod, luabridge3_output_config)
+        assert ".deriveClass<ns::MyClass, ns::Base>" in out
+
+    def test_two_public_bases_in_derive_class(self, luabridge3_output_config):
+        cls = _simple_class()
+        cls.bases = [IRBase("ns::A", "public"), IRBase("ns::B", "public")]
+        mod = IRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
+        out = _generate(mod, luabridge3_output_config)
+        assert ".deriveClass<ns::MyClass, ns::A, ns::B>" in out
+
+    def test_protected_base_excluded(self, luabridge3_output_config):
+        cls = _simple_class()
+        cls.bases = [IRBase("ns::Hidden", "protected")]
+        mod = IRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
+        out = _generate(mod, luabridge3_output_config)
+        assert ".beginClass<ns::MyClass>" in out
+        assert "deriveClass" not in out
+
+    def test_suppressed_base_excluded(self, luabridge3_output_config):
+        base = IRBase("ns::A", "public")
+        base.emit = False
+        cls = _simple_class()
+        cls.bases = [base]
+        mod = IRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
+        out = _generate(mod, luabridge3_output_config)
+        assert ".beginClass<ns::MyClass>" in out
+
+
+# ---------------------------------------------------------------------------
+# Template rendering: doc strings (luals)
+# ---------------------------------------------------------------------------
+
+class TestDocStringLuaLS:
+    def test_class_doc_emitted(self, luals_output_config):
+        cls = _simple_class()
+        cls.doc = "Represents a widget"
+        mod = IRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
+        out = _generate(mod, luals_output_config)
+        assert "---Represents a widget" in out
+
+    def test_field_doc_emitted(self, luals_output_config):
+        field = IRField(name="x", type_spelling="int", doc="The x coordinate")
+        cls = _simple_class(fields=[field])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
+        out = _generate(mod, luals_output_config)
+        assert "---The x coordinate" in out
+
+    def test_enum_doc_emitted(self, luals_output_config):
+        enum = IREnum(name="Color", qualified_name="ns::Color", doc="Color options",
+                      values=[IREnumValue("Red", 0)])
+        mod = IRModule(name="m", enums=[enum])
+        out = _generate(mod, luals_output_config)
+        assert "---Color options" in out
+
+    def test_no_doc_no_extra_comment(self, luals_output_config):
+        cls = _simple_class()
+        mod = IRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
+        out = _generate(mod, luals_output_config)
+        # Only the standard header comment should appear
+        lines = [l for l in out.splitlines() if l.startswith("---")]
+        assert all("@" in l or l == "---" for l in lines)

@@ -55,3 +55,14 @@ class TestResolveFormatPath:
         fmt_file.write_text("format_name: myfmt\ntemplates: {}\n", encoding="utf-8")
         result = resolve_format_path("myfmt", extra_dirs=[tmp_path])
         assert result == fmt_file
+
+    def test_extra_dir_not_found_in_first_tries_second(self, tmp_path):
+        """First extra dir lacks the file; second has it — covers the False branch of ``candidate.exists()``."""
+        dir1 = tmp_path / "dir1"
+        dir2 = tmp_path / "dir2"
+        dir1.mkdir()
+        dir2.mkdir()
+        fmt_file = dir2 / "myfmt2.output.yml"
+        fmt_file.write_text("format_name: myfmt2\n", encoding="utf-8")
+        result = resolve_format_path("myfmt2", extra_dirs=[dir1, dir2])
+        assert result == fmt_file

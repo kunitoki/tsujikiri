@@ -10,7 +10,7 @@ tsujikiri reads a YAML configuration file (`.input.yml`) that describes which C+
 
 It parses each header using **libclang**, building an **Intermediate Representation (IR)** — a pure Python data model of all classes, methods, fields, constructors, enums, and free functions. The IR is then processed through three configurable phases — filtering, attribute processing, and transforms — before being rendered via a **Jinja2 template** into the final output.
 
-Built-in support for [LuaBridge3](https://github.com/kunitoki/LuaBridge3) (Lua bindings) and [Lua Language Server](https://luals.github.io/) (LuaLS type stubs). Custom formats are first-class citizens — define a `.output.yml` file with your Jinja2 template and point tsujikiri at it.
+Built-in support for [LuaBridge3](https://github.com/kunitoki/LuaBridge3) (Lua bindings), [Lua Language Server](https://luals.github.io/) (LuaLS type stubs), [pybind11](https://pybind11.readthedocs.io/) (Python bindings), and Python type stubs (`.pyi`). Custom formats are first-class citizens — define a `.output.yml` file with your Jinja2 template and point tsujikiri at it.
 
 ---
 
@@ -25,7 +25,7 @@ Intermediate Representation (IR)
        ├──▶  FilterEngine          namespaces / classes / methods / fields
        │     ↳ filtering.md
        │
-       ├──▶  AttributeProcessor    [[tsujikiri::skip]], [[tsujikiri::keep]], [[tsujikiri::rename(...)]]
+       ├──▶  AttributeProcessor    [[tsujikiri::skip]], [[tsujikiri::keep]], [[tsujikiri::rename(...)]], [[tsujikiri::doc(...)]], etc.
        │     ↳ attributes.md
        │
        ├──▶  TransformPipeline     rename, suppress, inject, remap, modify
@@ -62,9 +62,9 @@ manifest-and-versioning
 | [Getting Started](getting-started.md) | Installation, your first binding (step-by-step), complete CLI reference |
 | [Input File Reference](input-file-reference.md) | Every key in `.input.yml` — `source`, `sources`, `filters`, `transforms`, `generation`, `attributes`, `format_overrides` — with types, defaults, and examples |
 | [Filtering](filtering.md) | How the filter system works; all filter types: `namespaces`, `sources`, `classes` (whitelist/blacklist/internal), `methods`, `fields`, `constructors`, `functions`, `enums` |
-| [Transforms](transforms.md) | All 13 built-in transform stages with full key reference and practical examples: `rename_method`, `rename_class`, `suppress_method`, `suppress_class`, `inject_method`, `add_type_mapping`, `modify_method`, `modify_argument`, `modify_field`, `modify_constructor`, `remove_overload`, `inject_code`, `set_type_hint` |
-| [Output Formats](output-formats.md) | Built-in `luabridge3` and `luals` formats in depth; complete Jinja2 template context reference; creating custom formats; extending built-in templates |
-| [Attributes](attributes.md) | C++ `[[tsujikiri::skip]]`, `[[tsujikiri::keep]]`, `[[tsujikiri::rename(...)]]`; custom attribute handlers; when to use attributes vs YAML |
+| [Transforms](transforms.md) | All 24 built-in transform stages with full key reference and practical examples: class/method stages (`rename_method`, `rename_class`, `suppress_method`, `suppress_class`, `inject_method`, `inject_constructor`, `suppress_base`, `add_type_mapping`, `modify_method`, `modify_argument`, `modify_field`, `modify_constructor`, `remove_overload`, `inject_code`, `set_type_hint`), enum stages (`rename_enum`, `rename_enum_value`, `suppress_enum`, `suppress_enum_value`, `modify_enum`), free function stages (`rename_function`, `suppress_function`, `modify_function`, `inject_function`) |
+| [Output Formats](output-formats.md) | Built-in `luabridge3`, `luals`, `pybind11`, and `pyi` formats in depth; complete Jinja2 template context reference; creating custom formats; extending built-in templates |
+| [Attributes](attributes.md) | C++ `[[tsujikiri::skip]]`, `[[tsujikiri::keep]]`, `[[tsujikiri::rename(...)]]`, `[[tsujikiri::doc(...)]]`, `[[tsujikiri::readonly]]`, `[[tsujikiri::thread_safe]]`, `[[tsujikiri::rename_argument(...)]]`, `[[tsujikiri::type_map(...)]]`; custom attribute handlers; when to use attributes vs YAML |
 | [Manifest and Versioning](manifest-and-versioning.md) | API manifest JSON; detecting breaking vs additive changes; `--check-compat`; semantic versioning integration; `--embed-version`; CI workflow |
 
 ---
@@ -112,7 +112,7 @@ generation:
 
 **Command:**
 ```bash
-tsujikiri -i myproject.input.yml -o luabridge3 -O src/bindings.cpp
+tsujikiri -i myproject.input.yml --target luabridge3 src/bindings.cpp
 ```
 
 **Output** (excerpt):
@@ -139,11 +139,17 @@ See [Getting Started](getting-started.md) for the full walkthrough.
 
 ## Installation
 
+Using pip:
 ```bash
 pip install tsujikiri
 ```
 
-**Requirements:** Python ≥ 3.12, libclang 16.
+Using uv:
+```bash
+uv pip install tsujikiri
+```
+
+**Requirements:** Python ≥ 3.12.
 
 ---
 

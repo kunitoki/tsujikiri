@@ -92,11 +92,11 @@ The `uid` field is a SHA-256 hash of the `api` section serialised with sorted ke
 
 ```bash
 # First run — generate bindings and save the initial manifest
-tsujikiri -i project.input.yml -o luabridge3 -O src/bindings.cpp \
+tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
           -M api.manifest.json
 
 # Subsequent runs — compare with existing manifest, then save updated one
-tsujikiri -i project.input.yml -o luabridge3 -O src/bindings.cpp \
+tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
           -M api.manifest.json
 ```
 
@@ -154,7 +154,7 @@ ERROR: Breaking API changes detected:
 ## `--check-compat` — Fail on Breaking Changes
 
 ```bash
-tsujikiri -i project.input.yml -o luabridge3 -O src/bindings.cpp \
+tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
           -M api.manifest.json --check-compat
 ```
 
@@ -190,7 +190,7 @@ To seed the initial version, manually edit the saved manifest JSON and set `"ver
 ## `--embed-version` — Version Hash in Generated Code
 
 ```bash
-tsujikiri -i project.input.yml -o luabridge3 -O src/bindings.cpp \
+tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
           -M api.manifest.json --embed-version
 ```
 
@@ -246,7 +246,7 @@ MANIFEST="api.manifest.json"
 OUTPUT="src/lua_bindings.cpp"
 
 echo "--- Generating bindings ---"
-tsujikiri -i "$INPUT" -o luabridge3 -O "$OUTPUT" -M "$MANIFEST" \
+tsujikiri -i "$INPUT" --target luabridge3 "$OUTPUT" -M "$MANIFEST" \
   --check-compat \
   --embed-version
 
@@ -256,7 +256,7 @@ tsujikiri -i "$INPUT" -o luabridge3 -O "$OUTPUT" -M "$MANIFEST" \
 #   c) No changes at all
 
 echo "--- Generating LuaLS annotations ---"
-tsujikiri -i "$INPUT" -o luals -O "types/myproject.lua"
+tsujikiri -i "$INPUT" --target luals "types/myproject.lua"
 
 echo "--- Committing updated bindings ---"
 git add "$OUTPUT" "$MANIFEST" "types/myproject.lua"

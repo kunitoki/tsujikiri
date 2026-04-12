@@ -7,14 +7,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from clang.cindex import CursorKind
 from tsujikiri.configurations import SourceConfig
 from tsujikiri.parser import (
     parse_translation_unit,
-    _source_file,
     _collect_attr_blocks,
-    _read_source_lines,
     _get_attributes,
-    _SOURCE_CACHE
+    _get_default_value,
+    _parse_enum,
+    _read_source_lines,
+    _source_file,
+    _SOURCE_CACHE,
 )
 
 HERE = Path(__file__).parent
@@ -341,6 +344,11 @@ class TestCollectAttrBlocks:
         result = _collect_attr_blocks(" [[myns::tag]];")
         assert "myns::tag" in result
 
+    def test_empty_part_from_trailing_comma_ignored(self):
+        """``[[ns::a, ]]`` splits into 'ns::a' and '' — the empty part must be skipped."""
+        result = _collect_attr_blocks("[[ns::a, ]]")
+        assert result == ["ns::a"]
+
 
 class TestReadSourceLines:
     def test_oserror_returns_empty(self):
@@ -383,3 +391,134 @@ class TestGetAttributesHelpers:
         shape = next(c for c in parsed_module.classes if c.name == "Shape")
         setScale = next(m for m in shape.methods if m.name == "setScale")
         assert any("mygame::no_export" in a for a in setScale.attributes)
+
+
+# ---------------------------------------------------------------------------
+# Default parameter value extraction (defaults.hpp)
+# ---------------------------------------------------------------------------
+
+class TestGetDefaultValue:
+    def test_no_tokens_returns_none(self):
+        cursor = MagicMock()
+        cursor.get_tokens.return_value = []
+        assert _get_default_value(cursor) is None
+
+    def test_no_equals_returns_none(self):
+        cursor = MagicMock()
+        tok = MagicMock()
+        tok.spelling = "x"
+        cursor.get_tokens.return_value = [tok]
+        assert _get_default_value(cursor) is None
+
+    def test_equals_with_no_following_token_returns_none(self):
+        cursor = MagicMock()
+        eq = MagicMock()
+        eq.spelling = "="
+        cursor.get_tokens.return_value = [eq]
+        assert _get_default_value(cursor) is None
+
+
+class TestDefaultParameterValues:
+    def _cls(self, defaults_parsed_module):
+        return next(c for c in defaults_parsed_module.classes if c.name == "Defaults")
+
+    def test_integer_default_on_compute(self, defaults_parsed_module):
+        cls = self._cls(defaults_parsed_module)
+        compute = next(m for m in cls.methods if m.name == "compute")
+        x = next(p for p in compute.parameters if p.name == "x")
+        assert x.default_value == "0"
+
+    def test_second_integer_default_on_compute(self, defaults_parsed_module):
+        cls = self._cls(defaults_parsed_module)
+        compute = next(m for m in cls.methods if m.name == "compute")
+        y = next(p for p in compute.parameters if p.name == "y")
+        assert y.default_value == "1"
+
+    def test_float_default_on_scale(self, defaults_parsed_module):
+        cls = self._cls(defaults_parsed_module)
+        scale = next(m for m in cls.methods if m.name == "scale")
+        factor = next(p for p in scale.parameters if p.name == "factor")
+        assert factor.default_value == "1.0"
+
+    def test_bool_default_on_scale(self, defaults_parsed_module):
+        cls = self._cls(defaults_parsed_module)
+        scale = next(m for m in cls.methods if m.name == "scale")
+        normalize = next(p for p in scale.parameters if p.name == "normalize")
+        assert normalize.default_value == "true"
+
+    def test_no_default_returns_none(self, defaults_parsed_module):
+        cls = self._cls(defaults_parsed_module)
+        no_default = next(m for m in cls.methods if m.name == "noDefault")
+        for p in no_default.parameters:
+            assert p.default_value is None
+
+    def test_free_function_defaults(self, defaults_parsed_module):
+        fn = next(f for f in defaults_parsed_module.functions if f.name == "freeWithDefault")
+        x = next(p for p in fn.parameters if p.name == "x")
+        assert x.default_value == "42"
+        flag = next(p for p in fn.parameters if p.name == "flag")
+        assert flag.default_value == "false"
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: _parse_enum skips non-ENUM_CONSTANT_DECL children (183->182)
+# ---------------------------------------------------------------------------
+
+class TestParseEnumSkipsNonConstant:
+    def test_non_enum_constant_child_is_ignored(self):
+        """If a cursor child has a kind other than ENUM_CONSTANT_DECL it must be skipped."""
+        cursor = MagicMock()
+        cursor.spelling = "TestEnum"
+        cursor.location.file = None  # _get_attributes returns [] for None file
+
+        non_const_child = MagicMock()
+        non_const_child.kind = CursorKind.UNEXPOSED_DECL
+
+        good_child = MagicMock()
+        good_child.kind = CursorKind.ENUM_CONSTANT_DECL
+        good_child.spelling = "ValueA"
+        good_child.enum_value = 0
+        good_child.location.file = None
+
+        cursor.get_children.return_value = [non_const_child, good_child]
+
+        result = _parse_enum(cursor, "ns")
+        assert len(result.values) == 1
+        assert result.values[0].name == "ValueA"
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: namespace not in filter is skipped (302->299)
+# ---------------------------------------------------------------------------
+
+class TestNamespaceNotInFilter:
+    def test_unmatched_namespace_excluded(self, tmp_path: Path) -> None:
+        """Parsing a file with two namespaces while filtering for only one must
+        exclude entities from the other namespace, exercising the False branch
+        of ``if not namespaces or entry.spelling in namespaces``."""
+        hpp = tmp_path / "multi_ns.hpp"
+        hpp.write_text(
+            "namespace wanted { int foo(); }\n"
+            "namespace unwanted { int bar(); }\n",
+            encoding="utf-8",
+        )
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        module = parse_translation_unit(src, ["wanted"], "multi_ns_test")
+        fn_names = {f.name for f in module.functions}
+        assert "foo" in fn_names
+        assert "bar" not in fn_names
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: explicit -x flag not duplicated (319->322)
+# ---------------------------------------------------------------------------
+
+class TestExplicitXArgNotDuplicated:
+    def test_parse_with_explicit_x_cpp(self, tmp_path: Path) -> None:
+        """When parse_args already contains ``-x``, it must not be prepended again."""
+        hpp = tmp_path / "xarg.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-x", "c++"])
+        module = parse_translation_unit(src, ["ns"], "xarg_test")
+        assert module is not None
+        assert any(f.name == "foo" for f in module.functions)

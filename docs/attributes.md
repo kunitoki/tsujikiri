@@ -119,6 +119,98 @@ filters:
 
 The generated binding will use `Vector3`, `length_sq`, and `x` as the names — even though no transforms are configured. The attribute-based rename is applied in the same pass as `[[skip]]` and `[[keep]]`.
 
+### `[[tsujikiri::readonly]]`
+
+Forces a field to be exposed as read-only, even if the C++ field is not `const`.
+
+Applies to: **Fields**.
+
+```cpp
+class Circle {
+public:
+    // Exposed as read-only even though the field is mutable in C++:
+    [[tsujikiri::readonly]]
+    double radius_ = 1.0;
+};
+```
+
+In `luabridge3`, read-only fields are emitted with a `nullptr` setter:
+```cpp
+.addProperty("radius_", &mylib::Circle::radius_, nullptr)
+```
+
+In `pybind11`, they use `.def_readonly(...)` instead of `.def_readwrite(...)`.
+
+### `[[tsujikiri::thread_safe]]`
+
+Marks a method or free function as thread-safe, setting `allow_thread=True` on the IR node. This is a template hint — the built-in formats do not use it directly, but custom formats can use it to emit GIL-release annotations or other thread safety wrappers.
+
+Applies to: **Methods**, **Free functions**.
+
+```cpp
+class Processor {
+public:
+    [[tsujikiri::thread_safe]]
+    void process(const float* data, int count);
+};
+```
+
+### `[[tsujikiri::doc("text")]]`
+
+Attaches a documentation string to a node. The text is available as `node.doc` in Jinja2 templates. Both `pybind11` and `pyi` built-in formats use this to emit Python docstrings.
+
+Applies to: **Classes**, **Methods**, **Constructors**, **Fields**, **Enums**, **Enum values**, **Free functions**.
+
+```cpp
+/// [[tsujikiri::doc("A 2D geometric shape.")]]
+class Shape {
+public:
+    /// [[tsujikiri::doc("Compute the area of the shape.")]]
+    virtual double area() const = 0;
+
+    /// [[tsujikiri::doc("The shape's scale factor.")]]
+    [[tsujikiri::readonly]]
+    double scale_ = 1.0;
+};
+```
+
+Generated pybind11 output:
+```cpp
+py::class_<mylib::Shape>(m, "Shape", "A 2D geometric shape.")
+    .def("area", &mylib::Shape::area, "Compute the area of the shape.")
+    .def_readonly("scale_", &mylib::Shape::scale_, "The shape's scale factor.");
+```
+
+### `[[tsujikiri::rename_argument("old", "new")]]`
+
+Renames a parameter by name on the annotated method or function. Equivalent to a `modify_argument` transform but expressed in the C++ source.
+
+Applies to: **Methods**, **Free functions**.
+
+```cpp
+class Circle {
+public:
+    // Expose the parameter as "radius" instead of the C++ name "r"
+    [[tsujikiri::rename_argument("r", "radius")]]
+    void setRadius(double r);
+};
+```
+
+### `[[tsujikiri::type_map("CppType", "TargetType")]]`
+
+Overrides the type of a matching parameter or return value on the annotated method or function. Also applies to fields when the field's type matches. Equivalent to a targeted `add_type_mapping` but scoped to a single declaration.
+
+Applies to: **Methods**, **Free functions**, **Fields**.
+
+```cpp
+class Processor {
+public:
+    // Map juce::String to std::string only for this method's signature:
+    [[tsujikiri::type_map("juce::String", "std::string")]]
+    void setName(juce::String name);
+};
+```
+
 ---
 
 ## Custom Attribute Handlers

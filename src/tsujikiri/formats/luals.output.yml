@@ -46,11 +46,18 @@ template: |
   {%- endblock %}
   {%- for cls in classes %}
   {%- block class scoped %}
+  {%- if cls.doc %}
+
+  ---{{ cls.doc }}
+  {%- endif %}
 
   ---@class {{ cls.name }} {% if cls.base_name %}: {{ cls.base_short_name }}{% endif %}
   {%- block class_fields scoped %}
   {%- for field in cls.fields %}
   {%- block class_field_annotation scoped %}
+  {%- if field.doc %}
+  ---{{ field.doc }}
+  {%- endif %}
   ---@field {{ field.name }} {{ field.type }}{% if field.read_only %} (readonly){% endif %}
   {%- endblock %}
   {%- endfor %}
@@ -126,6 +133,10 @@ template: |
   {%- endfor %}
   {%- for enum in enums %}
   {%- block enum scoped %}
+  {%- if enum.doc %}
+
+  ---{{ enum.doc }}
+  {%- endif %}
 
   ---@enum {{ enum.name }}
   local {{ enum.name }} = {
