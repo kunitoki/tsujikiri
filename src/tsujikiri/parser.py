@@ -40,9 +40,28 @@ def _source_file(cursor) -> Optional[str]:
     return None
 
 
+def _get_default_value(cursor) -> Optional[str]:
+    """Return the raw C++ default expression for a parameter cursor, or None.
+
+    libclang does not expose a dedicated default-value API, so we scan the
+    parameter cursor's token stream for a ``=`` token and collect everything
+    that follows it within the cursor's extent.
+    """
+    tokens = list(cursor.get_tokens())
+    for i, tok in enumerate(tokens):
+        if tok.spelling == "=":
+            rest = [t.spelling for t in tokens[i + 1:]]
+            return " ".join(rest).strip() if rest else None
+    return None
+
+
 def _parse_parameters(cursor) -> List[IRParameter]:
     return [
-        IRParameter(name=arg.spelling, type_spelling=arg.type.spelling)
+        IRParameter(
+            name=arg.spelling,
+            type_spelling=arg.type.spelling,
+            default_value=_get_default_value(arg),
+        )
         for arg in cursor.get_arguments()
     ]
 

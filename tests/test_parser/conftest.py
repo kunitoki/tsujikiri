@@ -28,3 +28,11 @@ def nested_parsed_module():
     from tsujikiri.parser import parse_translation_unit
     src = SourceConfig(path=str(HERE / "nested_types.hpp"), parse_args=["-std=c++17"])
     return parse_translation_unit(src, ["mylib"], "nested")
+
+
+@pytest.fixture(scope="module")
+def defaults_parsed_module():
+    from tsujikiri.configurations import SourceConfig
+    from tsujikiri.parser import parse_translation_unit
+    src = SourceConfig(path=str(HERE / "defaults.hpp"), parse_args=["-std=c++17"])
+    return parse_translation_unit(src, ["mylib"], "defaults")

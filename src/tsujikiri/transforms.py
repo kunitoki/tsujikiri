@@ -23,7 +23,17 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Type
 
 from tsujikiri.configurations import TransformSpec
-from tsujikiri.ir import IRClass, IRCodeInjection, IRConstructor, IRField, IRMethod, IRModule, IRParameter
+from tsujikiri.ir import (
+    IRClass,
+    IRCodeInjection,
+    IRConstructor,
+    IREnum,
+    IRField,
+    IRFunction,
+    IRMethod,
+    IRModule,
+    IRParameter,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -536,6 +546,337 @@ class SetTypeHintStage(TransformStage):
 
 
 # ---------------------------------------------------------------------------
+# Enum helper
+# ---------------------------------------------------------------------------
+
+def _find_enums(module: IRModule, enum_pattern: str, is_regex: bool = False) -> List[IREnum]:
+    """Yield all enums (top-level and nested inside classes) matching the pattern."""
+    result: List[IREnum] = []
+
+    def _walk_class(cls: IRClass) -> None:
+        for enum in cls.enums:
+            if _matches(enum.name, enum_pattern, is_regex):
+                result.append(enum)
+        for inner in cls.inner_classes:
+            _walk_class(inner)
+
+    for enum in module.enums:
+        if _matches(enum.name, enum_pattern, is_regex):
+            result.append(enum)
+    for cls in module.classes:
+        _walk_class(cls)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Enum stages
+# ---------------------------------------------------------------------------
+
+class RenameEnumStage(TransformStage):
+    """Rename an enum for the binding output.
+
+    YAML::
+      stage: rename_enum
+      from: Color
+      to: Colour
+      is_regex: false
+    """
+    name = "rename_enum"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.from_name: str = kwargs["from"]
+        self.to_name: str = kwargs["to"]
+        self.is_regex: bool = kwargs.get("is_regex", False)
+
+    def apply(self, module: IRModule) -> None:
+        for enum in _find_enums(module, self.from_name, self.is_regex):
+            enum.rename = self.to_name
+
+
+class RenameEnumValueStage(TransformStage):
+    """Rename a specific enum value for the binding output.
+
+    YAML::
+      stage: rename_enum_value
+      enum: Color          # plain name, '*', or regex; '*' = all enums
+      from: Red
+      to: red
+      is_regex: false
+    """
+    name = "rename_enum_value"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.enum_pattern: str = kwargs.get("enum", "*")
+        self.enum_is_regex: bool = kwargs.get("enum_is_regex", False)
+        self.from_name: str = kwargs["from"]
+        self.to_name: str = kwargs["to"]
+        self.is_regex: bool = kwargs.get("is_regex", False)
+
+    def apply(self, module: IRModule) -> None:
+        for enum in _find_enums(module, self.enum_pattern, self.enum_is_regex):
+            for val in enum.values:
+                if _matches(val.name, self.from_name, self.is_regex):
+                    val.rename = self.to_name
+
+
+class SuppressEnumStage(TransformStage):
+    """Set emit=False on matching enums.
+
+    YAML::
+      stage: suppress_enum
+      pattern: ".*Detail$"
+      is_regex: true
+    """
+    name = "suppress_enum"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.pattern: str = kwargs["pattern"]
+        self.is_regex: bool = kwargs.get("is_regex", False)
+
+    def apply(self, module: IRModule) -> None:
+        for enum in _find_enums(module, self.pattern, self.is_regex):
+            enum.emit = False
+
+
+class SuppressEnumValueStage(TransformStage):
+    """Set emit=False on matching enum values.
+
+    YAML::
+      stage: suppress_enum_value
+      enum: Color          # plain name, '*', or regex
+      pattern: "Reserved.*"
+      is_regex: true
+    """
+    name = "suppress_enum_value"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.enum_pattern: str = kwargs.get("enum", "*")
+        self.enum_is_regex: bool = kwargs.get("enum_is_regex", False)
+        self.pattern: str = kwargs["pattern"]
+        self.is_regex: bool = kwargs.get("is_regex", False)
+
+    def apply(self, module: IRModule) -> None:
+        for enum in _find_enums(module, self.enum_pattern, self.enum_is_regex):
+            for val in enum.values:
+                if _matches(val.name, self.pattern, self.is_regex):
+                    val.emit = False
+
+
+class ModifyEnumStage(TransformStage):
+    """Modify an enum's properties.
+
+    YAML::
+      stage: modify_enum
+      enum: Color
+      rename: Colour       # optional: new binding name
+      remove: false        # optional: set emit=False
+    """
+    name = "modify_enum"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.enum_pattern: str = kwargs.get("enum", "*")
+        self.enum_is_regex: bool = kwargs.get("enum_is_regex", False)
+        self.rename: Optional[str] = kwargs.get("rename")
+        self.remove: bool = kwargs.get("remove", False)
+
+    def apply(self, module: IRModule) -> None:
+        for enum in _find_enums(module, self.enum_pattern, self.enum_is_regex):
+            if self.rename is not None:
+                enum.rename = self.rename
+            if self.remove:
+                enum.emit = False
+
+
+# ---------------------------------------------------------------------------
+# Free-function stages
+# ---------------------------------------------------------------------------
+
+class RenameFunctionStage(TransformStage):
+    """Rename a free function for the binding output.
+
+    YAML::
+      stage: rename_function
+      from: computeArea
+      to: compute_area
+      is_regex: false
+    """
+    name = "rename_function"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.from_name: str = kwargs["from"]
+        self.to_name: str = kwargs["to"]
+        self.is_regex: bool = kwargs.get("is_regex", False)
+
+    def apply(self, module: IRModule) -> None:
+        for fn in module.functions:
+            if _matches(fn.name, self.from_name, self.is_regex):
+                fn.rename = self.to_name
+
+
+class SuppressFunctionStage(TransformStage):
+    """Set emit=False on matching free functions.
+
+    YAML::
+      stage: suppress_function
+      pattern: "internal_.*"
+      is_regex: true
+    """
+    name = "suppress_function"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.pattern: str = kwargs["pattern"]
+        self.is_regex: bool = kwargs.get("is_regex", False)
+
+    def apply(self, module: IRModule) -> None:
+        for fn in module.functions:
+            if _matches(fn.name, self.pattern, self.is_regex):
+                fn.emit = False
+
+
+class ModifyFunctionStage(TransformStage):
+    """Comprehensively modify a free function.
+
+    YAML::
+      stage: modify_function
+      function: computeArea      # plain name, '*', or regex
+      function_is_regex: false   # optional, default false
+      rename: compute_area       # optional: new binding name
+      remove: false              # optional: set emit=False
+      return_type: "float"       # optional: override return type in output
+      return_ownership: "cpp"    # optional: "none" | "cpp" | "script"
+      allow_thread: true         # optional: GIL-release hint
+      wrapper_code: "return 0;"  # optional: emit lambda instead of &qualified_name
+    """
+    name = "modify_function"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.function_pattern: str = kwargs.get("function", "*")
+        self.function_is_regex: bool = kwargs.get("function_is_regex", False)
+        self.rename: Optional[str] = kwargs.get("rename")
+        self.remove: bool = kwargs.get("remove", False)
+        self.return_type: Optional[str] = kwargs.get("return_type")
+        self.return_ownership: Optional[str] = kwargs.get("return_ownership")
+        self.allow_thread: Optional[bool] = kwargs.get("allow_thread")
+        self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
+
+    def apply(self, module: IRModule) -> None:
+        for fn in module.functions:
+            if _matches(fn.name, self.function_pattern, self.function_is_regex):
+                if self.rename is not None:
+                    fn.rename = self.rename
+                if self.remove:
+                    fn.emit = False
+                if self.return_type is not None:
+                    fn.return_type_override = self.return_type
+                if self.return_ownership is not None:
+                    fn.return_ownership = self.return_ownership
+                if self.allow_thread is not None:
+                    fn.allow_thread = self.allow_thread
+                if self.wrapper_code is not None:
+                    fn.wrapper_code = self.wrapper_code
+
+
+# ---------------------------------------------------------------------------
+# Injection stages
+# ---------------------------------------------------------------------------
+
+class InjectConstructorStage(TransformStage):
+    """Append a synthetic IRConstructor to a class.
+
+    YAML::
+      stage: inject_constructor
+      class: MyClass
+      parameters:
+        - name: value
+          type: int
+    """
+    name = "inject_constructor"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.class_pattern: str = kwargs["class"]
+        self.class_is_regex: bool = kwargs.get("class_is_regex", False)
+        self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
+
+    def apply(self, module: IRModule) -> None:
+        for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
+            params = [
+                IRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
+                for p in self.parameters
+            ]
+            is_overload = len(cls.constructors) > 0
+            # Mark existing constructors as overloads too
+            if is_overload:
+                for existing in cls.constructors:
+                    existing.is_overload = True
+            ctor = IRConstructor(parameters=params, is_overload=is_overload)
+            cls.constructors.append(ctor)
+
+
+class InjectFunctionStage(TransformStage):
+    """Append a synthetic IRFunction to the module.
+
+    YAML::
+      stage: inject_function
+      name: create
+      namespace: mylib
+      return_type: "MyClass*"
+      parameters:
+        - name: value
+          type: int
+    """
+    name = "inject_function"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.fn_name: str = kwargs["name"]
+        self.namespace: str = kwargs.get("namespace", "")
+        self.return_type: str = kwargs.get("return_type", "void")
+        self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
+
+    def apply(self, module: IRModule) -> None:
+        params = [
+            IRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
+            for p in self.parameters
+        ]
+        qualified = f"{self.namespace}::{self.fn_name}" if self.namespace else self.fn_name
+        fn = IRFunction(
+            name=self.fn_name,
+            qualified_name=qualified,
+            namespace=self.namespace,
+            return_type=self.return_type,
+            parameters=params,
+        )
+        module.functions.append(fn)
+
+
+# ---------------------------------------------------------------------------
+# Base-class suppression
+# ---------------------------------------------------------------------------
+
+class SuppressBaseStage(TransformStage):
+    """Suppress a base class from appearing in the binding output.
+
+    YAML::
+      stage: suppress_base
+      class: Circle        # plain name, '*', or regex
+      base: ".*Protected"  # matches against the base's qualified_name
+      is_regex: true
+    """
+    name = "suppress_base"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.class_pattern: str = kwargs.get("class", "*")
+        self.class_is_regex: bool = kwargs.get("class_is_regex", False)
+        self.base_pattern: str = kwargs["base"]
+        self.base_is_regex: bool = kwargs.get("is_regex", False)
+
+    def apply(self, module: IRModule) -> None:
+        for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
+            for base in cls.bases:
+                if _matches(base.qualified_name, self.base_pattern, self.base_is_regex):
+                    base.emit = False
+
+
+# ---------------------------------------------------------------------------
 # Register all built-in stages
 # ---------------------------------------------------------------------------
 
@@ -553,5 +894,20 @@ for _stage_cls in [
     RemoveOverloadStage,
     InjectCodeStage,
     SetTypeHintStage,
+    # Enum stages
+    RenameEnumStage,
+    RenameEnumValueStage,
+    SuppressEnumStage,
+    SuppressEnumValueStage,
+    ModifyEnumStage,
+    # Free-function stages
+    RenameFunctionStage,
+    SuppressFunctionStage,
+    ModifyFunctionStage,
+    # Injection stages
+    InjectConstructorStage,
+    InjectFunctionStage,
+    # Base-class suppression
+    SuppressBaseStage,
 ]:
     register_stage(_stage_cls.name, _stage_cls)

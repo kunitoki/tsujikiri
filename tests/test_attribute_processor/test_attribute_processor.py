@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from tsujikiri.attribute_processor import AttributeProcessor, _parse_attribute
+from tsujikiri.attribute_processor import (
+    AttributeProcessor,
+    _apply_complex_builtin,
+    _parse_attribute,
+)
 from tsujikiri.configurations import AttributeHandlerConfig
 from tsujikiri.ir import (
     IRClass,
@@ -298,3 +302,176 @@ class TestInnerClasses:
         module = _make_module(outer)
         _processor().apply(module)
         assert inner_method.emit is False
+
+
+# ---------------------------------------------------------------------------
+# Built-in: tsujikiri::readonly
+# ---------------------------------------------------------------------------
+
+class TestBuiltinReadonly:
+    def test_sets_read_only_on_field(self):
+        field = IRField(name="x", type_spelling="int", attributes=["tsujikiri::readonly"])
+        cls = _make_class(fields=[field])
+        _processor().apply(_make_module(cls))
+        assert field.read_only is True
+
+    def test_no_effect_on_method(self):
+        # Method has no read_only attribute — handler is silently a no-op
+        method = _make_method(attrs=["tsujikiri::readonly"])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.emit is True  # not suppressed; just no-op
+
+    def test_apply_complex_builtin_readonly_no_attr(self):
+        # Node without read_only → no AttributeError
+        method = _make_method()
+        _apply_complex_builtin("tsujikiri::readonly", [], method)
+        assert method.emit is True
+
+
+# ---------------------------------------------------------------------------
+# Built-in: tsujikiri::thread_safe
+# ---------------------------------------------------------------------------
+
+class TestBuiltinThreadSafe:
+    def test_sets_allow_thread_on_method(self):
+        method = _make_method(attrs=["tsujikiri::thread_safe"])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.allow_thread is True
+
+    def test_sets_allow_thread_on_function(self):
+        fn = IRFunction(
+            name="heavy", qualified_name="ns::heavy", namespace="ns",
+            return_type="void", attributes=["tsujikiri::thread_safe"],
+        )
+        _processor().apply(_make_module(functions=[fn]))
+        assert fn.allow_thread is True
+
+    def test_no_effect_on_field(self):
+        field = IRField(name="x", type_spelling="int", attributes=["tsujikiri::thread_safe"])
+        cls = _make_class(fields=[field])
+        _processor().apply(_make_module(cls))
+        # Field has no allow_thread; handler is silently a no-op
+        assert field.emit is True
+
+
+# ---------------------------------------------------------------------------
+# Built-in: tsujikiri::doc
+# ---------------------------------------------------------------------------
+
+class TestBuiltinDoc:
+    def test_sets_doc_on_method(self):
+        method = _make_method(attrs=['tsujikiri::doc("Does something")'])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.doc == "Does something"
+
+    def test_sets_doc_on_class(self):
+        cls = _make_class(attributes=['tsujikiri::doc("My class")'])
+        _processor().apply(_make_module(cls))
+        assert cls.doc == "My class"
+
+    def test_sets_doc_on_field(self):
+        field = IRField(name="x", type_spelling="int", attributes=['tsujikiri::doc("x coord")'])
+        cls = _make_class(fields=[field])
+        _processor().apply(_make_module(cls))
+        assert field.doc == "x coord"
+
+    def test_no_args_is_noop(self):
+        method = _make_method(attrs=["tsujikiri::doc"])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.doc is None
+
+
+# ---------------------------------------------------------------------------
+# Built-in: tsujikiri::rename_argument
+# ---------------------------------------------------------------------------
+
+class TestBuiltinRenameArgument:
+    def test_renames_parameter(self):
+        param = IRParameter(name="x", type_spelling="int")
+        method = IRMethod(
+            name="set", spelling="set", qualified_name="ns::Cls::set", return_type="void",
+            parameters=[param], attributes=['tsujikiri::rename_argument("x", "value")'],
+        )
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert param.rename == "value"
+
+    def test_wrong_name_leaves_unchanged(self):
+        param = IRParameter(name="y", type_spelling="int")
+        method = IRMethod(
+            name="set", spelling="set", qualified_name="ns::Cls::set", return_type="void",
+            parameters=[param], attributes=['tsujikiri::rename_argument("x", "value")'],
+        )
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert param.rename is None
+
+    def test_single_arg_is_noop(self):
+        method = _make_method(attrs=['tsujikiri::rename_argument("x")'])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))  # no crash
+
+    def test_on_function(self):
+        param = IRParameter(name="radius", type_spelling="double")
+        fn = IRFunction(
+            name="f", qualified_name="ns::f", namespace="ns", return_type="void",
+            parameters=[param], attributes=['tsujikiri::rename_argument("radius", "r")'],
+        )
+        _processor().apply(_make_module(functions=[fn]))
+        assert param.rename == "r"
+
+
+# ---------------------------------------------------------------------------
+# Built-in: tsujikiri::type_map
+# ---------------------------------------------------------------------------
+
+class TestBuiltinTypeMap:
+    def test_overrides_param_type(self):
+        param = IRParameter(name="x", type_spelling="juce::String")
+        method = IRMethod(
+            name="set", spelling="set", qualified_name="ns::Cls::set", return_type="void",
+            parameters=[param],
+            attributes=['tsujikiri::type_map("juce::String", "std::string")'],
+        )
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert param.type_override == "std::string"
+
+    def test_overrides_return_type(self):
+        method = IRMethod(
+            name="get", spelling="get", qualified_name="ns::Cls::get",
+            return_type="juce::String", parameters=[],
+            attributes=['tsujikiri::type_map("juce::String", "std::string")'],
+        )
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.return_type_override == "std::string"
+
+    def test_overrides_field_type(self):
+        field = IRField(
+            name="label", type_spelling="juce::String",
+            attributes=['tsujikiri::type_map("juce::String", "std::string")'],
+        )
+        cls = _make_class(fields=[field])
+        _processor().apply(_make_module(cls))
+        assert field.type_override == "std::string"
+
+    def test_non_matching_type_unchanged(self):
+        param = IRParameter(name="x", type_spelling="int")
+        method = IRMethod(
+            name="set", spelling="set", qualified_name="ns::Cls::set", return_type="void",
+            parameters=[param],
+            attributes=['tsujikiri::type_map("juce::String", "std::string")'],
+        )
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert param.type_override is None
+
+    def test_single_arg_is_noop(self):
+        method = _make_method(attrs=['tsujikiri::type_map("only_one")'])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))  # no crash

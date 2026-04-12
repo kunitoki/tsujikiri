@@ -45,27 +45,56 @@ class TestBuildParser:
         args = p.parse_args(["--list-formats"])
         assert args.list_formats is True
 
-    def test_input_and_output(self):
+    def test_target_flag(self):
         p = build_parser()
-        args = p.parse_args(["--input", "foo.yml", "--output", "luabridge3"])
+        args = p.parse_args(["--input", "foo.yml", "--target", "luabridge3", "-"])
         assert args.input == "foo.yml"
-        assert args.output == "luabridge3"
+        assert args.target == [["luabridge3", "-"]]
 
-    def test_short_flags(self):
+    def test_target_short_flag(self):
         p = build_parser()
-        args = p.parse_args(["-i", "foo.yml", "-o", "luabridge3"])
+        args = p.parse_args(["-i", "foo.yml", "-t", "luabridge3", "out.cpp"])
         assert args.input == "foo.yml"
-        assert args.output == "luabridge3"
+        assert args.target == [["luabridge3", "out.cpp"]]
+
+    def test_multiple_targets(self):
+        p = build_parser()
+        args = p.parse_args([
+            "--input", "foo.yml",
+            "--target", "luabridge3", "out.cpp",
+            "--target", "luals", "out.lua",
+        ])
+        assert args.target == [["luabridge3", "out.cpp"], ["luals", "out.lua"]]
 
     def test_classname_flag(self):
         p = build_parser()
-        args = p.parse_args(["--input", "x.yml", "--output", "luabridge3", "--classname", "Foo"])
+        args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-", "--classname", "Foo"])
         assert args.classname == "Foo"
 
     def test_dry_run_flag(self):
         p = build_parser()
-        args = p.parse_args(["--input", "x.yml", "--output", "luabridge3", "--dry-run"])
+        args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-", "--dry-run"])
         assert args.dry_run is True
+
+    def test_trace_transforms_flag(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-", "--trace-transforms"])
+        assert args.trace_transforms is True
+
+    def test_dump_ir_flag_no_file(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-", "--dump-ir"])
+        assert args.dump_ir == "-"
+
+    def test_dump_ir_flag_with_file(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-", "--dump-ir", "ir.json"])
+        assert args.dump_ir == "ir.json"
+
+    def test_validate_config_flag(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "x.yml", "--validate-config"])
+        assert args.validate_config is True
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +111,14 @@ class TestListFormats:
         lines = [l.strip() for l in stdout.splitlines() if l.strip()]
         assert len(lines) >= 1
 
+    def test_pyi_format_listed(self):
+        stdout, _ = _run("--list-formats")
+        assert "pyi" in stdout
+
+    def test_pybind11_format_listed(self):
+        stdout, _ = _run("--list-formats")
+        assert "pybind11" in stdout
+
 
 # ---------------------------------------------------------------------------
 # --dry-run
@@ -91,7 +128,7 @@ class TestDryRun:
     def test_dry_run_prints_summary(self, simple_input_yml):
         stdout, _ = _run(
             "--input", str(simple_input_yml),
-            "--output", "luabridge3",
+            "--target", "luabridge3", "-",
             "--dry-run",
         )
         assert "Classes" in stdout
@@ -99,7 +136,7 @@ class TestDryRun:
     def test_dry_run_no_binding_code(self, simple_input_yml):
         stdout, _ = _run(
             "--input", str(simple_input_yml),
-            "--output", "luabridge3",
+            "--target", "luabridge3", "-",
             "--dry-run",
         )
         assert "getGlobalNamespace" not in stdout
@@ -112,25 +149,37 @@ class TestDryRun:
 
 class TestGeneration:
     def test_luabridge3_output_to_stdout(self, simple_input_yml):
-        stdout, _ = _run("--input", str(simple_input_yml), "--output", "luabridge3")
+        stdout, _ = _run("--input", str(simple_input_yml), "--target", "luabridge3", "-")
         assert "getGlobalNamespace" in stdout
         assert "Widget" in stdout
 
-    def test_output_file(self, simple_input_yml, tmp_path):
+    def test_output_to_file(self, simple_input_yml, tmp_path):
         out_file = tmp_path / "bindings.cpp"
         _run(
             "--input", str(simple_input_yml),
-            "--output", "luabridge3",
-            "--output-file", str(out_file),
+            "--target", "luabridge3", str(out_file),
         )
         assert out_file.exists()
         content = out_file.read_text(encoding="utf-8")
         assert "getGlobalNamespace" in content
 
+    def test_multiple_targets(self, simple_input_yml, tmp_path):
+        cpp_file = tmp_path / "bindings.cpp"
+        lua_file = tmp_path / "bindings.lua"
+        _run(
+            "--input", str(simple_input_yml),
+            "--target", "luabridge3", str(cpp_file),
+            "--target", "luals", str(lua_file),
+        )
+        assert cpp_file.exists()
+        assert lua_file.exists()
+        assert "getGlobalNamespace" in cpp_file.read_text(encoding="utf-8")
+        assert "Widget" in lua_file.read_text(encoding="utf-8")
+
     def test_classname_filter(self, simple_input_yml):
         stdout, _ = _run(
             "--input", str(simple_input_yml),
-            "--output", "luabridge3",
+            "--target", "luabridge3", "-",
             "--classname", "Widget",
         )
         assert "Widget" in stdout
@@ -145,7 +194,7 @@ class TestGeneration:
         )
         stdout, _ = _run(
             "--input", str(simple_input_yml),
-            "--output", str(fmt),
+            "--target", str(fmt), "-",
         )
         assert "NOOP_START" in stdout
         assert "NOOP_END" in stdout
@@ -157,26 +206,26 @@ class TestGeneration:
 
 class TestErrors:
     def test_missing_input_flag(self):
-        _run("--output", "luabridge3", expected_exit=2)
+        _run("--target", "luabridge3", "-", expected_exit=2)
 
-    def test_missing_output_flag(self):
+    def test_missing_target_flag(self):
         _run("--input", "foo.yml", expected_exit=2)
 
     def test_nonexistent_input_file(self, tmp_path):
         _, stderr = _run(
             "--input", str(tmp_path / "nope.yml"),
-            "--output", "luabridge3",
+            "--target", "luabridge3", "-",
         )
         assert "not found" in stderr.lower() or "error" in stderr.lower()
 
     def test_unknown_format_raises(self, simple_input_yml):
         with pytest.raises((FileNotFoundError, SystemExit)):
-            _run("--input", str(simple_input_yml), "--output", "definitely_fake_xyz")
+            _run("--input", str(simple_input_yml), "--target", "definitely_fake_xyz", "-")
 
     def test_no_source_prints_error(self, no_source_input_yml):
         _, stderr = _run(
             "--input", str(no_source_input_yml),
-            "--output", "luabridge3",
+            "--target", "luabridge3", "-",
         )
         assert "no source" in stderr.lower()
 
@@ -187,15 +236,15 @@ class TestErrors:
 
 class TestFormatOverrides:
     def test_format_filter_override(self, fmt_filters_input_yml):
-        stdout, _ = _run("--input", str(fmt_filters_input_yml), "--output", "luabridge3")
+        stdout, _ = _run("--input", str(fmt_filters_input_yml), "--target", "luabridge3", "-")
         assert "Widget" in stdout
 
     def test_format_transform_override(self, fmt_transforms_input_yml):
-        stdout, _ = _run("--input", str(fmt_transforms_input_yml), "--output", "luabridge3")
+        stdout, _ = _run("--input", str(fmt_transforms_input_yml), "--target", "luabridge3", "-")
         assert "Widget" in stdout
 
     def test_format_generation_prefix_postfix(self, fmt_generation_input_yml):
-        stdout, _ = _run("--input", str(fmt_generation_input_yml), "--output", "luabridge3")
+        stdout, _ = _run("--input", str(fmt_generation_input_yml), "--target", "luabridge3", "-")
         assert "// FMT PREFIX" in stdout
         assert "// FMT POSTFIX" in stdout
 
@@ -208,7 +257,7 @@ class TestClassnameNoMatch:
     def test_classname_no_match_suppresses_class(self, simple_input_yml):
         stdout, _ = _run(
             "--input", str(simple_input_yml),
-            "--output", "luabridge3",
+            "--target", "luabridge3", "-",
             "--classname", "NonExistent",
         )
         assert ".beginClass" not in stdout
@@ -222,7 +271,7 @@ class TestPerSourceGenerationIncludes:
     def test_source_generation_includes_in_output(self, multi_source_with_generation_yml):
         stdout, _ = _run(
             "--input", str(multi_source_with_generation_yml),
-            "--output", "luabridge3",
+            "--target", "luabridge3", "-",
         )
         assert "<simple_extra.h>" in stdout
 
@@ -252,7 +301,7 @@ class TestManifestCompatibility:
         manifest = tmp_path / "api.json"
 
         _run("--input", str(self._input_yml(tmp_path, hpp)),
-             "--output", "luabridge3",
+             "--target", "luabridge3", "-",
              "--manifest-file", str(manifest))
 
         assert manifest.exists()
@@ -266,11 +315,11 @@ class TestManifestCompatibility:
         input_yml = self._input_yml(tmp_path, hpp)
         manifest = tmp_path / "api.json"
 
-        _run("--input", str(input_yml), "--output", "luabridge3",
+        _run("--input", str(input_yml), "--target", "luabridge3", "-",
              "--manifest-file", str(manifest))
         v1_version = json.loads(manifest.read_text())["uid"]
 
-        _, stderr = _run("--input", str(input_yml), "--output", "luabridge3",
+        _, stderr = _run("--input", str(input_yml), "--target", "luabridge3", "-",
                          "--manifest-file", str(manifest), "--check-compat")
 
         assert "Breaking" not in stderr
@@ -287,7 +336,7 @@ class TestManifestCompatibility:
         manifest = tmp_path / "api.json"
 
         _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
-             "--output", "luabridge3",
+             "--target", "luabridge3", "-",
              "--manifest-file", str(manifest))
         v1_version = json.loads(manifest.read_text())["uid"]
 
@@ -298,7 +347,7 @@ class TestManifestCompatibility:
         stdout_io, stderr_io = StringIO(), StringIO()
         with patch("sys.argv", ["tsujikiri",
                                 "--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                                "--output", "luabridge3",
+                                "--target", "luabridge3", "-",
                                 "--manifest-file", str(manifest),
                                 "--check-compat"]):
             with patch("sys.stdout", stdout_io), patch("sys.stderr", stderr_io):
@@ -321,7 +370,7 @@ class TestManifestCompatibility:
         manifest = tmp_path / "api.json"
 
         _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
-             "--output", "luabridge3",
+             "--target", "luabridge3", "-",
              "--manifest-file", str(manifest))
         v1_version = json.loads(manifest.read_text())["uid"]
 
@@ -333,7 +382,7 @@ class TestManifestCompatibility:
         stdout_io, stderr_io = StringIO(), StringIO()
         with patch("sys.argv", ["tsujikiri",
                                 "--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                                "--output", "luabridge3",
+                                "--target", "luabridge3", "-",
                                 "--manifest-file", str(manifest),
                                 "--check-compat"]):
             with patch("sys.stdout", stdout_io), patch("sys.stderr", stderr_io):
@@ -353,14 +402,14 @@ class TestManifestCompatibility:
         manifest = tmp_path / "api.json"
 
         _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
-             "--output", "luabridge3",
+             "--target", "luabridge3", "-",
              "--manifest-file", str(manifest))
 
         v2_hpp = tmp_path / "v2.hpp"
         v2_hpp.write_text("namespace api { int compute(int x); int reset(); }\n")
 
         _, stderr = _run("--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                         "--output", "luabridge3",
+                         "--target", "luabridge3", "-",
                          "--manifest-file", str(manifest), "--check-compat")
 
         assert "Breaking" not in stderr
@@ -374,14 +423,14 @@ class TestManifestCompatibility:
         manifest = tmp_path / "api.json"
 
         _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
-             "--output", "luabridge3",
+             "--target", "luabridge3", "-",
              "--manifest-file", str(manifest))
 
         v2_hpp = tmp_path / "v2.hpp"
         v2_hpp.write_text("namespace api { int compute(int x, double y); }\n")
 
         _, stderr = _run("--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                         "--output", "luabridge3",
+                         "--target", "luabridge3", "-",
                          "--manifest-file", str(manifest))  # no --check-compat
 
         assert "Breaking" in stderr
@@ -396,10 +445,9 @@ class TestManifestCompatibility:
         out = tmp_path / "bindings.cpp"
 
         _run("--input", str(self._input_yml(tmp_path, hpp)),
-             "--output", "luabridge3",
+             "--target", "luabridge3", str(out),
              "--manifest-file", str(manifest),
-             "--embed-version",
-             "--output-file", str(out))
+             "--embed-version")
 
         version = json.loads(manifest.read_text())["version"]
         content = out.read_text(encoding="utf-8")
@@ -412,8 +460,7 @@ class TestManifestCompatibility:
         out = tmp_path / "bindings.cpp"
 
         _run("--input", str(self._input_yml(tmp_path, hpp)),
-             "--output", "luabridge3",
-             "--output-file", str(out))
+             "--target", "luabridge3", str(out))
 
         content = out.read_text(encoding="utf-8")
         assert "api_version" not in content
@@ -424,7 +471,7 @@ class TestManifestCompatibility:
         hpp.write_text("namespace api { int compute(int x); }\n")
 
         stdout, _ = _run("--input", str(self._input_yml(tmp_path, hpp)),
-                         "--output", "luabridge3", "--dry-run")
+                         "--target", "luabridge3", "-", "--dry-run")
 
         version_lines = [
             line for line in stdout.splitlines()
@@ -442,7 +489,7 @@ class TestPrettyPrinting:
     def test_pretty_false_by_default_skips_pretty_printer(self, simple_input_yml):
         """When pretty is not set, pretty is never called."""
         with patch("tsujikiri.cli.pretty") as mock_fmt:
-            _run("--input", str(simple_input_yml), "--output", "luabridge3")
+            _run("--input", str(simple_input_yml), "--target", "luabridge3", "-")
         mock_fmt.assert_not_called()
 
     def test_pretty_true_calls_pretty_printer(self, tmp_path):
@@ -461,7 +508,7 @@ class TestPrettyPrinting:
         fake_result = MagicMock()
         fake_result.stdout = "// formatted\n"
         with patch("subprocess.run", return_value=fake_result):
-            stdout, _ = _run("--input", str(p), "--output", "luabridge3")
+            stdout, _ = _run("--input", str(p), "--target", "luabridge3", "-")
 
         assert "// formatted" in stdout
 
@@ -479,7 +526,7 @@ class TestPrettyPrinting:
         p.write_text(yaml.dump(data), encoding="utf-8")
 
         with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
-            _run("--input", str(p), "--output", "luabridge3")
+            _run("--input", str(p), "--target", "luabridge3", "-")
 
         args, kwargs = mock_fmt.call_args
         assert args[1] == "cpp"
@@ -499,7 +546,180 @@ class TestPrettyPrinting:
         p.write_text(yaml.dump(data), encoding="utf-8")
 
         with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
-            _run("--input", str(p), "--output", "luabridge3")
+            _run("--input", str(p), "--target", "luabridge3", "-")
 
         args, kwargs = mock_fmt.call_args
         assert args[2] == ["--style=Google"]
+
+
+# ---------------------------------------------------------------------------
+# --trace-transforms
+# ---------------------------------------------------------------------------
+
+class TestTraceTransforms:
+    def test_trace_transforms_outputs_to_stderr(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { class Foo { public: int val; }; }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["api"]},
+            "transforms": [{"stage": "rename_class", "from": "Foo", "to": "Bar"}],
+        }
+        p = tmp_path / "trace.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--target", "luabridge3", "-", "--trace-transforms")
+        assert "[TRACE]" in stderr
+        assert "RenameClassStage" in stderr
+
+    def test_no_trace_by_default(self, simple_input_yml):
+        _, stderr = _run("--input", str(simple_input_yml), "--target", "luabridge3", "-")
+        assert "[TRACE]" not in stderr
+
+
+# ---------------------------------------------------------------------------
+# --dump-ir
+# ---------------------------------------------------------------------------
+
+class TestDumpIR:
+    def test_dump_ir_to_stdout(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["api"]},
+        }
+        p = tmp_path / "dump.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+        gen_file = tmp_path / "out.cpp"
+
+        # Use file target so stdout is only the IR dump
+        stdout, _ = _run("--input", str(p), "--target", "luabridge3", str(gen_file), "--dump-ir")
+        ir = json.loads(stdout)
+        assert "functions" in ir or "classes" in ir
+
+    def test_dump_ir_to_file(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["api"]},
+        }
+        p = tmp_path / "dump.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+        ir_file = tmp_path / "ir.json"
+
+        _run("--input", str(p), "--target", "luabridge3", "-", "--dump-ir", str(ir_file))
+        assert ir_file.exists()
+        ir = json.loads(ir_file.read_text(encoding="utf-8"))
+        assert "functions" in ir or "classes" in ir
+
+
+# ---------------------------------------------------------------------------
+# --validate-config
+# ---------------------------------------------------------------------------
+
+class TestValidateConfig:
+    def test_valid_config_exits_0(self, simple_input_yml):
+        _, stderr = _run("--input", str(simple_input_yml), "--validate-config")
+        assert "valid" in stderr.lower()
+
+    def test_invalid_transform_stage_exits_1(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int compute(int x); }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["api"]},
+            "transforms": [{"stage": "nonexistent_stage_xyz"}],
+        }
+        p = tmp_path / "invalid.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--validate-config", expected_exit=1)
+        assert "ERROR" in stderr
+        assert "nonexistent_stage_xyz" in stderr
+
+    def test_missing_input_exits_1(self):
+        _, stderr = _run("--validate-config", expected_exit=1)
+        assert "error" in stderr.lower()
+
+    def test_nonexistent_input_exits_1(self, tmp_path):
+        _, stderr = _run(
+            "--input", str(tmp_path / "nope.yml"),
+            "--validate-config",
+            expected_exit=1,
+        )
+        assert "error" in stderr.lower()
+
+    def test_malformed_yaml_exits_1(self, tmp_path):
+        p = tmp_path / "bad.input.yml"
+        p.write_text(": : invalid: yaml: [\n", encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--validate-config", expected_exit=1)
+        assert "error" in stderr.lower()
+
+    def test_invalid_regex_namespace_exits_1(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int x(); }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["[invalid-regex"]},
+        }
+        p = tmp_path / "regex.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--validate-config", expected_exit=1)
+        assert "ERROR" in stderr
+
+    def test_source_entry_with_transforms_validated(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int x(); }\n")
+        data = {
+            "sources": [{
+                "path": str(hpp),
+                "parse_args": ["-std=c++17"],
+                "transforms": [{"stage": "bad_stage_xyz"}],
+            }],
+            "filters": {"namespaces": ["api"]},
+        }
+        p = tmp_path / "src_tf.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--validate-config", expected_exit=1)
+        assert "bad_stage_xyz" in stderr
+
+    def test_format_override_transforms_validated(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int x(); }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["api"]},
+            "format_overrides": {
+                "luabridge3": {
+                    "transforms": [{"stage": "bad_fmt_stage_xyz"}],
+                },
+            },
+        }
+        p = tmp_path / "fmt_tf.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--validate-config", expected_exit=1)
+        assert "bad_fmt_stage_xyz" in stderr
+
+    def test_invalid_target_format_exits_1(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int x(); }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["api"]},
+        }
+        p = tmp_path / "valid.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run(
+            "--input", str(p),
+            "--target", "nonexistent_format_xyz", "-",
+            "--validate-config",
+            expected_exit=1,
+        )
+        assert "ERROR" in stderr

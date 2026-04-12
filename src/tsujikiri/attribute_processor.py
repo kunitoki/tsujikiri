@@ -5,12 +5,17 @@ decisions) and before the transform pipeline (so transforms can still
 override attribute decisions).
 
 Built-in attribute handlers (always active):
-  ``[[tsujikiri::skip]]``              — set emit=False
-  ``[[tsujikiri::keep]]``              — set emit=True (re-enable suppressed node)
-  ``[[tsujikiri::rename("newName")]]`` — set rename field to first string argument
+  ``[[tsujikiri::skip]]``                          — set emit=False
+  ``[[tsujikiri::keep]]``                          — set emit=True (re-enable suppressed node)
+  ``[[tsujikiri::rename("newName")]]``             — set rename field to first string argument
+  ``[[tsujikiri::readonly]]``                      — set read_only=True on IRField
+  ``[[tsujikiri::thread_safe]]``                   — set allow_thread=True on IRMethod/IRFunction
+  ``[[tsujikiri::doc("text")]]``                   — set doc field on any node
+  ``[[tsujikiri::rename_argument("old", "new")]]`` — rename a parameter by name
+  ``[[tsujikiri::type_map("CppType", "Target")]]`` — override type of matching params/return/field
 
 Custom handlers are configured in ``input.yml`` under ``attributes.handlers``
-and map attribute names to the same three actions:
+and map attribute names to the same three simple actions:
 
   attributes:
     handlers:
@@ -34,6 +39,15 @@ _BUILTIN_HANDLERS: Dict[str, str] = {
     "tsujikiri::rename": "rename",
 }
 
+# Built-in attribute names that require special (non-action-string) handling.
+_COMPLEX_BUILTINS = frozenset({
+    "tsujikiri::readonly",
+    "tsujikiri::thread_safe",
+    "tsujikiri::doc",
+    "tsujikiri::rename_argument",
+    "tsujikiri::type_map",
+})
+
 
 def _parse_attribute(attr: str) -> Tuple[str, List[str]]:
     """Parse ``'ns::name("arg1", "arg2")'`` into ``('ns::name', ['arg1', 'arg2'])``.
@@ -50,17 +64,47 @@ def _parse_attribute(attr: str) -> Tuple[str, List[str]]:
     return name, args
 
 
+def _apply_complex_builtin(attr_name: str, args: List[str], node: Any) -> None:
+    """Apply one of the complex built-in attribute handlers to *node*."""
+    if attr_name == "tsujikiri::readonly":
+        if hasattr(node, "read_only"):
+            node.read_only = True
+    elif attr_name == "tsujikiri::thread_safe":
+        if hasattr(node, "allow_thread"):
+            node.allow_thread = True
+    elif attr_name == "tsujikiri::doc" and args:
+        if hasattr(node, "doc"):
+            node.doc = args[0]
+    elif attr_name == "tsujikiri::rename_argument" and len(args) == 2:
+        old_name, new_name = args
+        for p in getattr(node, "parameters", []):
+            if p.name == old_name:
+                p.rename = new_name
+    elif attr_name == "tsujikiri::type_map" and len(args) == 2:
+        src_type, tgt_type = args
+        for p in getattr(node, "parameters", []):
+            if p.type_spelling == src_type:
+                p.type_override = tgt_type
+        if getattr(node, "return_type", None) == src_type and hasattr(node, "return_type_override"):
+            node.return_type_override = tgt_type
+        if getattr(node, "type_spelling", None) == src_type and hasattr(node, "type_override"):
+            node.type_override = tgt_type
+
+
 def _apply_attrs(node: Any, handlers: Dict[str, str]) -> None:
     """Apply handler actions to a single IR node based on its attributes list."""
     for raw_attr in getattr(node, "attributes", []):
         attr_name, args = _parse_attribute(raw_attr)
-        action = handlers.get(attr_name)
-        if action == "skip":
-            node.emit = False
-        elif action == "keep":
-            node.emit = True
-        elif action == "rename" and args:
-            node.rename = args[0]
+        if attr_name in _COMPLEX_BUILTINS:
+            _apply_complex_builtin(attr_name, args, node)
+        else:
+            action = handlers.get(attr_name)
+            if action == "skip":
+                node.emit = False
+            elif action == "keep":
+                node.emit = True
+            elif action == "rename" and args:
+                node.rename = args[0]
 
 
 class AttributeProcessor:

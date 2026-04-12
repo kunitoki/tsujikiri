@@ -14,7 +14,8 @@ from tsujikiri.parser import (
     _collect_attr_blocks,
     _read_source_lines,
     _get_attributes,
-    _SOURCE_CACHE
+    _get_default_value,
+    _SOURCE_CACHE,
 )
 
 HERE = Path(__file__).parent
@@ -383,3 +384,70 @@ class TestGetAttributesHelpers:
         shape = next(c for c in parsed_module.classes if c.name == "Shape")
         setScale = next(m for m in shape.methods if m.name == "setScale")
         assert any("mygame::no_export" in a for a in setScale.attributes)
+
+
+# ---------------------------------------------------------------------------
+# Default parameter value extraction (defaults.hpp)
+# ---------------------------------------------------------------------------
+
+class TestGetDefaultValue:
+    def test_no_tokens_returns_none(self):
+        cursor = MagicMock()
+        cursor.get_tokens.return_value = []
+        assert _get_default_value(cursor) is None
+
+    def test_no_equals_returns_none(self):
+        cursor = MagicMock()
+        tok = MagicMock()
+        tok.spelling = "x"
+        cursor.get_tokens.return_value = [tok]
+        assert _get_default_value(cursor) is None
+
+    def test_equals_with_no_following_token_returns_none(self):
+        cursor = MagicMock()
+        eq = MagicMock()
+        eq.spelling = "="
+        cursor.get_tokens.return_value = [eq]
+        assert _get_default_value(cursor) is None
+
+
+class TestDefaultParameterValues:
+    def _cls(self, defaults_parsed_module):
+        return next(c for c in defaults_parsed_module.classes if c.name == "Defaults")
+
+    def test_integer_default_on_compute(self, defaults_parsed_module):
+        cls = self._cls(defaults_parsed_module)
+        compute = next(m for m in cls.methods if m.name == "compute")
+        x = next(p for p in compute.parameters if p.name == "x")
+        assert x.default_value == "0"
+
+    def test_second_integer_default_on_compute(self, defaults_parsed_module):
+        cls = self._cls(defaults_parsed_module)
+        compute = next(m for m in cls.methods if m.name == "compute")
+        y = next(p for p in compute.parameters if p.name == "y")
+        assert y.default_value == "1"
+
+    def test_float_default_on_scale(self, defaults_parsed_module):
+        cls = self._cls(defaults_parsed_module)
+        scale = next(m for m in cls.methods if m.name == "scale")
+        factor = next(p for p in scale.parameters if p.name == "factor")
+        assert factor.default_value == "1.0"
+
+    def test_bool_default_on_scale(self, defaults_parsed_module):
+        cls = self._cls(defaults_parsed_module)
+        scale = next(m for m in cls.methods if m.name == "scale")
+        normalize = next(p for p in scale.parameters if p.name == "normalize")
+        assert normalize.default_value == "true"
+
+    def test_no_default_returns_none(self, defaults_parsed_module):
+        cls = self._cls(defaults_parsed_module)
+        no_default = next(m for m in cls.methods if m.name == "noDefault")
+        for p in no_default.parameters:
+            assert p.default_value is None
+
+    def test_free_function_defaults(self, defaults_parsed_module):
+        fn = next(f for f in defaults_parsed_module.functions if f.name == "freeWithDefault")
+        x = next(p for p in fn.parameters if p.name == "x")
+        assert x.default_value == "42"
+        flag = next(p for p in fn.parameters if p.name == "flag")
+        assert flag.default_value == "false"

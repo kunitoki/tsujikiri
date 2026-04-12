@@ -511,10 +511,28 @@ class TestIRMetadataInContext:
                       bases=[IRBase("ns::A", "public"), IRBase("ns::B", "protected")])
         ctx = self._ctx_class(cls)
         assert ctx["bases"] == [
-            {"qualified_name": "ns::A", "access": "public"},
-            {"qualified_name": "ns::B", "access": "protected"},
+            {"qualified_name": "ns::A", "access": "public", "emit": True},
+            {"qualified_name": "ns::B", "access": "protected", "emit": True},
         ]
         assert ctx["base_name"] == "ns::A"
+
+    def test_public_bases_in_context(self):
+        cls = IRClass(name="D", qualified_name="ns::D", namespace="ns",
+                      variable_name="classD",
+                      bases=[IRBase("ns::A", "public"), IRBase("ns::B", "protected")])
+        ctx = self._ctx_class(cls)
+        assert ctx["public_bases"] == [
+            {"qualified_name": "ns::A", "short_name": "A"},
+        ]
+
+    def test_suppressed_base_excluded_from_public_bases(self):
+        base = IRBase("ns::A", "public")
+        base.emit = False
+        cls = IRClass(name="D", qualified_name="ns::D", namespace="ns",
+                      variable_name="classD", bases=[base])
+        ctx = self._ctx_class(cls)
+        assert ctx["public_bases"] == []
+        assert ctx["base_name"] == ""
 
     def test_no_bases_context(self):
         cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",

@@ -139,11 +139,17 @@ See [Getting Started](getting-started.md) for the full walkthrough.
 
 ## Installation
 
+Using pip:
 ```bash
 pip install tsujikiri
 ```
 
-**Requirements:** Python ≥ 3.12, libclang 16.
+Using uv:
+```bash
+uv pip install tsujikiri
+```
+
+**Requirements:** Python ≥ 3.12.
 
 ---
 
