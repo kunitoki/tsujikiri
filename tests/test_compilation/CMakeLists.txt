@@ -65,7 +65,7 @@ file(GLOB_RECURSE COMBINED_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
 
 add_custom_command(
     OUTPUT ${GENERATED_SOURCE}
-    COMMAND tsujikiri -i ${INPUT_SOURCE} -o luabridge3 --manifest-file ${GENERATED_MANIFEST} -O ${GENERATED_SOURCE}
+    COMMAND tsujikiri -i ${INPUT_SOURCE} --target luabridge3 ${GENERATED_SOURCE} --manifest-file ${GENERATED_MANIFEST}
     DEPENDS ${INPUT_SOURCE} ${COMBINED_HEADERS}
     IMPLICIT_DEPENDS ${TSUJIKIRI_SOURCES}
     COMMENT "Generating LuaBridge3 bindings with tsujikiri..."
@@ -73,7 +73,7 @@ add_custom_command(
 
 add_custom_command(
     OUTPUT ${GENERATED_LUALS}
-    COMMAND tsujikiri -i ${INPUT_SOURCE} -o luals -O ${GENERATED_LUALS}
+    COMMAND tsujikiri -i ${INPUT_SOURCE} --target luals ${GENERATED_LUALS}
     DEPENDS ${INPUT_SOURCE}
     IMPLICIT_DEPENDS ${TSUJIKIRI_SOURCES}
     COMMENT "Generating LuaLS bindings with tsujikiri..."

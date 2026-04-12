@@ -147,7 +147,7 @@ transforms:
 
 Transforms mutate the Intermediate Representation in-place. The pipeline runs in list order — earlier stages affect what later stages see.
 
-See [Transforms](transforms.md) for all 13 built-in stages with full reference and examples.
+See [Transforms](transforms.md) for all 24 built-in stages with full reference and examples.
 
 ---
 
@@ -181,7 +181,18 @@ generation:
 
 ## `attributes` — Custom C++ Attribute Handlers
 
-Maps C++ attribute names to actions. tsujikiri supports built-in attributes (`[[tsujikiri::skip]]`, `[[tsujikiri::keep]]`, `[[tsujikiri::rename(...)]]`) automatically. This section registers additional attribute names for your project.
+Maps C++ attribute names to actions. tsujikiri supports several built-in attributes automatically:
+
+- `[[tsujikiri::skip]]` — suppress a node
+- `[[tsujikiri::keep]]` — force-include a node (overrides filters)
+- `[[tsujikiri::rename("name")]]` — rename a node
+- `[[tsujikiri::readonly]]` — mark a field read-only
+- `[[tsujikiri::thread_safe]]` — mark a method/function as thread-safe
+- `[[tsujikiri::doc("text")]]` — attach a documentation string
+- `[[tsujikiri::rename_argument("old", "new")]]` — rename a parameter
+- `[[tsujikiri::type_map("CppType", "Target")]]` — override a type for one declaration
+
+This section registers **additional** attribute names for your project:
 
 ```yaml
 attributes:
@@ -218,7 +229,7 @@ tweaks:
 
 ## `format_overrides` — Per-Format Customisation
 
-The `format_overrides` section customises behaviour for specific output formats. The key is the format name (e.g. `luabridge3`, `luals`).
+The `format_overrides` section customises behaviour for specific output formats. The key is the format name (e.g. `luabridge3`, `luals`, `pybind11`, `pyi`).
 
 ```yaml
 format_overrides:
@@ -393,6 +404,6 @@ The pretty printer is invoked with `-` as the filename so it reads from stdin an
 ## See Also
 
 - [Filtering](filtering.md) — complete mechanics for every filter type
-- [Transforms](transforms.md) — all 13 transform stages with examples
+- [Transforms](transforms.md) — all 24 transform stages with examples
 - [Output Formats](output-formats.md) — format files, custom formats, template_extends
 - [Attributes](attributes.md) — C++ attribute system

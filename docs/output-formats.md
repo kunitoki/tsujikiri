@@ -54,7 +54,7 @@ This is a substring check (not exact, not regex). `CFStringRef` will also match 
 Generates a C++ registration function that wires up LuaBridge3 bindings for a `lua_State`.
 
 ```bash
-tsujikiri -i project.input.yml -o luabridge3 -O src/lua_bindings.cpp
+tsujikiri -i project.input.yml --target luabridge3 src/lua_bindings.cpp
 ```
 
 ### Generated Function
@@ -270,7 +270,7 @@ void register_combined(lua_State* L)
 Generates [Lua Language Server](https://luals.github.io/) annotation stubs. Use alongside the luabridge3 output to provide IDE auto-completion and type checking.
 
 ```bash
-tsujikiri -i project.input.yml -o luals -O types/myproject.lua
+tsujikiri -i project.input.yml --target luals types/myproject.lua
 ```
 
 ### Type Mappings
@@ -344,6 +344,198 @@ local Color = {
 
 ---
 
+## Built-in: `pybind11`
+
+Generates a C++ `PYBIND11_MODULE` block that registers classes, methods, properties, and enums using [pybind11](https://pybind11.readthedocs.io/).
+
+```bash
+tsujikiri -i project.input.yml --target pybind11 src/py_bindings.cpp
+```
+
+### Generated Module
+
+```cpp
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+namespace py = pybind11;
+#include "myproject.hpp"
+
+PYBIND11_MODULE(myproject, m)
+{
+  // ... all bindings ...
+}
+```
+
+### Class Registration
+
+Plain classes use `py::class_<QualifiedName>(m, "BindingName")`. Classes with public base classes use `py::class_<Derived, Base>(m, "BindingName")`. Multiple base classes are listed in order.
+
+```cpp
+py::class_<mylib::Shape>(m, "Shape", "A 2D shape")
+    .def(py::init<const char *>())
+    .def("area", &mylib::Shape::area)
+    .def_readwrite("scale", &mylib::Shape::scale_);
+
+py::class_<mylib::Circle, mylib::Shape>(m, "Circle")
+    .def(py::init<double>())
+    .def("get_radius", &mylib::Circle::getRadius);
+```
+
+### Method Registration
+
+```cpp
+// Instance method with py::arg:
+.def("get_value", &mylib::Calculator::getValue, py::arg("key"))
+
+// Static method:
+.def_static("max", &mylib::Calculator::max)
+
+// With wrapper_code (from modify_method/modify_function):
+.def("get_name", [](mylib::Shape& self) { return std::string(self.getName()); })
+```
+
+Method names are converted from `camelCase` to `snake_case` via the `camel_to_snake` filter.
+
+### Overloaded Methods
+
+```cpp
+.def("resize",
+    py::overload_cast<double>(&mylib::Circle::resize),
+    py::arg("factor"))
+.def("resize",
+    py::overload_cast<double, double>(&mylib::Circle::resize),
+    py::arg("width"), py::arg("height"))
+```
+
+### Field Registration
+
+```cpp
+.def_readwrite("scale", &mylib::Shape::scale_)   // read-write
+.def_readonly("radius", &mylib::Circle::radius_) // read-only
+```
+
+### Enum Registration
+
+```cpp
+py::enum_<mylib::Color>(m, "Color", "Colour enumeration")
+    .value("Red",   mylib::Color::Red,   "The red channel")
+    .value("Green", mylib::Color::Green)
+    .value("Blue",  mylib::Color::Blue)
+    .export_values();
+```
+
+### API Version Embedding
+
+When `--embed-version` is passed:
+
+```cpp
+static constexpr const char* k_myproject_api_version = "3a8f...e291";
+
+PYBIND11_MODULE(myproject, m)
+{
+    m.attr("__api_version__") = k_myproject_api_version;
+    // ...
+}
+```
+
+### Template Block Names
+
+| Block | Contents |
+|-------|----------|
+| `prologue` | Includes, `namespace py = pybind11`, api_version constant, `PYBIND11_MODULE` open |
+| `api_version` | The `constexpr` api_version definition |
+| `api_version_registration` | The `m.attr("__api_version__")` call |
+| `enum` | Per-enum `py::enum_<>` block |
+| `enum_value` | Single `.value(...)` for one enum value |
+| `function_group` | Free function `m.def(...)` call |
+| `function_overloaded` | Single overloaded free function entry |
+| `class` | Full class block from `py::class_<>` to `;` |
+| `class_constructors` | All `.def(py::init<>())` calls |
+| `class_constructor_group` | Single `.def(py::init<>())` call |
+| `class_methods` | All method `.def(...)` calls |
+| `class_static_method_group` | Static method group |
+| `class_method_group` | Instance method group |
+| `class_overloaded_static_method` | Single overloaded static method |
+| `class_overloaded_method` | Single overloaded instance method |
+| `class_fields` | All `.def_readwrite()`/`.def_readonly()` calls |
+| `class_field` | Single field binding |
+| `epilogue` | Closing `}` |
+
+---
+
+## Built-in: `pyi`
+
+Generates Python type stub files (`.pyi`) for use alongside `pybind11` bindings. Use these to give IDEs and type checkers accurate signatures for your extension module.
+
+```bash
+tsujikiri -i project.input.yml --target pyi mymodule.pyi
+```
+
+### Type Mappings
+
+The pyi format ships with a comprehensive C++ → Python type mapping table:
+
+| C++ type | Python type |
+|----------|-------------|
+| `int`, `unsigned int`, `long`, `short`, `int8_t`, … `uint64_t`, `size_t` | `int` |
+| `float`, `double` | `float` |
+| `bool` | `bool` |
+| `std::string`, `const char *`, `char *`, `std::string_view` | `str` |
+| `void` | `None` |
+
+Types not in this table pass through unchanged (e.g. `Vec3` stays `Vec3`).
+
+### Class Stubs
+
+```python
+class Shape:
+    """A 2D shape."""
+    scale: float
+
+    def __init__(self, name: str) -> None: ...
+    def area(self) -> float: ...
+    def set_name(self, name: str) -> None: ...
+
+class Circle(Shape):
+    def __init__(self, radius: float) -> None: ...
+    def get_radius(self) -> float: ...
+```
+
+### Static Methods and Overloads
+
+```python
+class Calculator:
+    @staticmethod
+    def max(a: int, b: int) -> int: ...
+
+    @overload
+    def add(self, a: int, b: int) -> int: ...
+    @overload
+    def add(self, a: float, b: float) -> float: ...
+```
+
+### Enum Stubs
+
+Enums are represented as `class Foo(int)` with typed class attributes:
+
+```python
+class Color(int):
+    """Colour enumeration."""
+    Red: Color
+    Green: Color
+    Blue: Color
+```
+
+### API Version
+
+When `--embed-version` is used, the stub includes:
+
+```python
+__api_version__: str
+```
+
+---
+
 ## Jinja2 Template Context Reference
 
 The generator builds a plain-data context dict passed to the Jinja2 template. Templates iterate over this data directly.
@@ -367,8 +559,10 @@ The generator builds a plain-data context dict passed to the Jinja2 template. Te
 | `name` | `string` | Binding name (rename or original) |
 | `qualified_name` | `string` | Fully-qualified C++ name (e.g. `mylib::Circle`) |
 | `attributes` | `list[string]` | Raw C++ attribute contents |
-| `bases` | `list[{qualified_name, access}]` | Base classes |
-| `base_name` | `string` | First base's qualified name (empty if none) |
+| `doc` | `string` | Documentation string (from `[[tsujikiri::doc(...)]]`, else `""`) |
+| `bases` | `list[{qualified_name, access}]` | All base classes |
+| `public_bases` | `list[{qualified_name, short_name, access}]` | Public base classes only (emit=True) |
+| `base_name` | `string` | First public base's qualified name (empty if none) |
 | `base_short_name` | `string` | Last component of `base_name` (e.g. `Shape` from `mylib::Shape`) |
 | `variable_name` | `string` | camelCase variable name (used in some templates) |
 | `has_virtual_methods` | `bool` | Any virtual method present |
@@ -381,6 +575,18 @@ The generator builds a plain-data context dict passed to the Jinja2 template. Te
 | `fields` | `list[field]` | All emittable fields |
 | `enums` | `list[enum]` | Nested class enums |
 | `code_injections` | `list[injection]` | Class-level code injections |
+
+**`public_bases` entry:**
+
+```
+{
+    qualified_name: string,    # e.g. "mylib::Shape"
+    short_name: string,        # last component, e.g. "Shape"
+    access: string             # "public"
+}
+```
+
+Use `public_bases` when generating pybind11 or pyi stubs where the class template argument list needs all public bases. Use `base_name` / `base_short_name` when only a single base is needed (e.g. LuaBridge3's `deriveClass`).
 
 ### Constructor Group
 
@@ -427,6 +633,7 @@ method = {
     is_pure_virtual: bool,
     is_noexcept: bool,
     overload_index: int,
+    doc: string,               # documentation string (from [[tsujikiri::doc(...)]], else "")
     attributes: [string],
     code_injections: [injection]
 }
@@ -445,18 +652,40 @@ param = {
 }
 ```
 
+### Field Dict
+
+```
+field = {
+    name: string,              # binding name (after rename)
+    type: string,              # mapped type
+    raw_type: string,          # unmapped C++ type spelling
+    read_only: bool,           # true if const or forced read-only
+    doc: string,               # documentation string (from [[tsujikiri::doc(...)]], else "")
+    attributes: [string]
+}
+```
+
 ### Enum Dict
 
 ```
 enum = {
     name: string,
     qualified_name: string,    # e.g. "mylib::Color"
+    doc: string,               # documentation string (from [[tsujikiri::doc(...)]], else "")
     attributes: [string],
     values: [
-        { name: string, number: string, attributes: [string] }
+        {
+            name: string,          # binding name (after rename)
+            original_name: string, # original C++ enum member name (for C++ symbol reference)
+            number: string,        # integer value as string
+            doc: string,           # documentation string (from [[tsujikiri::doc(...)]], else "")
+            attributes: [string]
+        }
     ]
 }
 ```
+
+The `original_name` on enum values is the original C++ enumerator name. When a rename transform or `[[tsujikiri::rename(...)]]` is applied, `name` changes but `original_name` stays unchanged. Templates that reference the C++ enum (e.g. `EnumType::EnumeratorName`) must use `original_name`.
 
 ### Function Group Dict
 
@@ -477,6 +706,8 @@ function_group = {
             overload_separator: string,
             overload_index: int,
             is_noexcept: bool,
+            doc: string,        # documentation string (from [[tsujikiri::doc(...)]], else "")
+            wrapper_code: string,
             attributes: [string]
         }
     ]
@@ -511,47 +742,38 @@ injection = { position: "beginning"|"end", code: string }
 ### Step 1 — Create the format file
 
 ```yaml
-# my_formats/pybind11.output.yml
-format_name: pybind11
+# my_formats/myformat.output.yml
+format_name: myformat
 format_version: "1.0"
-description: "pybind11 Python binding stubs"
+description: "My custom binding format"
 language: cpp
 
 unsupported_types:
   - CFStringRef
 
 type_mappings:
-  "std::string": "std::string"
+  "std::string": "String"
+  "int32_t": "int"
 
 template: |
   {%- block prologue %}
-  // DO NOT EDIT - Auto-generated pybind11 bindings for {{ module_name }}
-  #include <pybind11/pybind11.h>
-  namespace py = pybind11;
+  // DO NOT EDIT - Auto-generated myformat bindings for {{ module_name }}
   {%- for inc in includes %}
   #include {{ inc }}
   {%- endfor %}
 
-  PYBIND11_MODULE({{ module_name }}, m)
+  void register_{{ module_name }}()
   {
   {%- endblock %}
   {%- for cls in classes %}
   {%- block class scoped %}
-    py::class_<{{ cls.qualified_name }}>(m, "{{ cls.name }}")
+    bind_class<{{ cls.qualified_name }}>("{{ cls.name }}")
   {%- for ctor in cls.constructor_group.constructors %}
-      .def(py::init<{{ ctor.params | map(attribute='raw_type') | join(', ') }}>())
+      .constructor<{{ ctor.params | map(attribute='raw_type') | join(', ') }}>()
   {%- endfor %}
   {%- for group in cls.method_groups %}
-  {%- for method in group.methods %}
-  {%- if group.is_static %}
-      .def_static("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }})
-  {%- else %}
-      .def("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }})
-  {%- endif %}
-  {%- endfor %}
-  {%- endfor %}
-  {%- for field in cls.fields %}
-      .def_readwrite("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }})
+  {%- set method = group.methods[0] %}
+      .method("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }})
   {%- endfor %}
       ;
   {%- endblock %}
@@ -564,7 +786,7 @@ template: |
 ### Step 2 — Run with the custom format
 
 ```bash
-tsujikiri -i project.input.yml -o pybind11 -F ./my_formats/ -O src/py_bindings.cpp
+tsujikiri -i project.input.yml --target myformat src/bindings.cpp -F ./my_formats/
 ```
 
 ### Step 3 — List available formats (includes custom)
@@ -573,7 +795,9 @@ tsujikiri -i project.input.yml -o pybind11 -F ./my_formats/ -O src/py_bindings.c
 tsujikiri --list-formats -F ./my_formats/
 # luabridge3
 # luals
+# myformat
 # pybind11
+# pyi
 ```
 
 ---
@@ -623,6 +847,8 @@ format_overrides:
 Available parent template names (for `{% extends %}`):
 - `"luabridge3.tpl"` — the built-in LuaBridge3 template
 - `"luals.tpl"` — the built-in LuaLS template
+- `"pybind11.tpl"` — the built-in pybind11 template
+- `"pyi.tpl"` — the built-in Python type stub template
 
 ---
 

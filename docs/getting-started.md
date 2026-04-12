@@ -34,6 +34,8 @@ Expected output:
 ```
 luabridge3
 luals
+pybind11
+pyi
 ```
 
 ---
@@ -113,7 +115,7 @@ generation:
 ### Step 3 — Generate the bindings
 
 ```bash
-tsujikiri -i myproject.input.yml -o luabridge3 -O bindings.cpp
+tsujikiri -i myproject.input.yml --target luabridge3 bindings.cpp
 ```
 
 **Output** (`bindings.cpp`):
@@ -185,7 +187,7 @@ Each phase is independently configurable per input file and per output format. T
 Before generating code, use `--dry-run` to inspect what will be emitted:
 
 ```bash
-tsujikiri -i myproject.input.yml -o luabridge3 --dry-run
+tsujikiri -i myproject.input.yml --target luabridge3 - --dry-run
 ```
 
 ```
@@ -210,8 +212,7 @@ tsujikiri [OPTIONS]
 | Flag | Short | Argument | Description |
 |------|-------|----------|-------------|
 | `--input` | `-i` | `FILE` | Input config YAML (required) |
-| `--output` | `-o` | `FORMAT\|FILE` | Built-in format name (`luabridge3`, `luals`) or path to a `.output.yml` file |
-| `--output-file` | `-O` | `FILE` | Write generated code to FILE instead of stdout |
+| `--target` | `-t` | `FORMAT FILE` | Built-in format name or path to `.output.yml`, plus output file path (`-` for stdout). Repeatable. |
 | `--classname` | `-c` | `CLASS` | Generate bindings for a single class only (additive to config filters) |
 | `--formats-dir` | `-F` | `DIR` | Additional directory to search for `.output.yml` files (repeatable) |
 | `--list-formats` | | | Print available formats and exit |
@@ -219,40 +220,59 @@ tsujikiri [OPTIONS]
 | `--manifest-file` | `-M` | `FILE` | Write API manifest JSON to FILE; compare if FILE already exists |
 | `--check-compat` | | | Exit 1 if manifest shows breaking API changes |
 | `--embed-version` | | | Embed the API version hash string in the generated code |
+| `--trace-transforms` | | | Print which transform stages ran and on what entities to stderr |
+| `--dump-ir` | | `[FILE]` | Dump the post-transform IR as JSON to FILE (default: stdout) |
+| `--validate-config` | | | Validate input config (regex patterns, stage names) and exit |
 | `--help` | `-h` | | Show help and exit |
 
 ### Common Patterns
 
 **Print to stdout (quick inspection):**
 ```bash
-tsujikiri -i project.input.yml -o luabridge3
+tsujikiri -i project.input.yml --target luabridge3 -
 ```
 
 **Write to file:**
 ```bash
-tsujikiri -i project.input.yml -o luabridge3 -O src/bindings.cpp
+tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp
 ```
 
-**Generate LuaLS annotations alongside LuaBridge3:**
+**Generate multiple outputs in one pass:**
 ```bash
-tsujikiri -i project.input.yml -o luabridge3 -O src/bindings.cpp
-tsujikiri -i project.input.yml -o luals      -O types/myproject.lua
+tsujikiri -i project.input.yml \
+  --target luabridge3 src/bindings.cpp \
+  --target luals      types/myproject.lua
 ```
 
 **Single class (useful during development):**
 ```bash
-tsujikiri -i project.input.yml -o luabridge3 -c Vec3
+tsujikiri -i project.input.yml --target luabridge3 - -c Vec3
 ```
 
 **Custom format from a local directory:**
 ```bash
-tsujikiri -i project.input.yml -o myfmt -F ./my_formats/ -O out/bindings.cpp
+tsujikiri -i project.input.yml --target myfmt out/bindings.cpp -F ./my_formats/
 ```
 
 **API versioning — save manifest and fail on breaking changes:**
 ```bash
-tsujikiri -i project.input.yml -o luabridge3 -O src/bindings.cpp \
+tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
           -M api.manifest.json --check-compat
+```
+
+**Debug transforms — see which stages apply to what:**
+```bash
+tsujikiri -i project.input.yml --target luabridge3 - --trace-transforms 2>transforms.log
+```
+
+**Dump IR as JSON for inspection:**
+```bash
+tsujikiri -i project.input.yml --target luabridge3 - --dump-ir ir.json
+```
+
+**Validate config without generating:**
+```bash
+tsujikiri -i project.input.yml --validate-config
 ```
 
 **List all known formats (including custom directories):**
