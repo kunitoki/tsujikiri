@@ -1,5 +1,5 @@
 - always use python via "uv python"
 - use "just test" to test
 - use "just coverage" to coverage
-- in python files and tests, imports are only allowed inside methods
+- in python files and tests, imports are only allowed at the top
 - always use python type annotations
