@@ -7,6 +7,10 @@ from typing import List
 
 import pytest
 
+from tsujikiri.configurations import load_input_config
+from tsujikiri.filters import FilterEngine
+from tsujikiri.parser import parse_translation_unit
+
 HERE = Path(__file__).parent
 
 
@@ -33,15 +37,11 @@ def _load_module(config_file: Path, module_name: str):
 
 @pytest.fixture(scope="module")
 def compilation_input_config():
-    from tsujikiri.configurations import load_input_config
     return load_input_config(HERE / "combined.input.yml")
 
 
 @pytest.fixture(scope="module")
 def compiled_module(compilation_input_config):
-    from tsujikiri.filters import FilterEngine
-    from tsujikiri.parser import parse_translation_unit
-
     entries = compilation_input_config.get_source_entries()
     module = parse_translation_unit(
         entries[0].source,
@@ -77,3 +77,4 @@ def engine_module():
 @pytest.fixture(scope="module")
 def audio_module():
     return _load_module(HERE / "audio" / "audio.input.yml", "audio")
+
