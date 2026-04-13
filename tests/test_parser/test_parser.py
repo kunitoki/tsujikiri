@@ -826,15 +826,12 @@ class TestTypeFromTokens:
         assert len(parm_cursors) == 2, f"expected 2 PARM_DECLs, got {len(parm_cursors)}"
         s_cursor, v_cursor = parm_cursors
 
-        # Verify the bug exists: libclang reports wrong types
-        assert s_cursor.type.spelling == "int", (
-            "libclang bug no longer present for std::string — update this test"
-        )
-        assert v_cursor.type.spelling == "int", (
-            "libclang bug no longer present for std::vector<int> — update this test"
-        )
+        # Document whether the libclang bug is present on this platform/version.
+        # Some libclang builds correctly report the type even in init-list ctors;
+        # the token workaround is safe either way and must always return the right type.
+        _ = s_cursor.type.spelling  # may be 'int' (bug) or 'std::string' (fixed)
 
-        # Verify _type_from_tokens corrects them
+        # _type_from_tokens must return the correct type regardless
         assert _type_from_tokens(s_cursor) == "std::string"
         assert _type_from_tokens(v_cursor) == "std::vector < int >"
 

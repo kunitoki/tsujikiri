@@ -40,11 +40,12 @@ def _generate(module, output_config, generation=None) -> str:
 
 def _cmake_configure() -> bool:
     """Run cmake configure, serialized via a file lock to avoid parallel conflicts."""
-    import fcntl
     CMAKE_BUILD_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = CMAKE_BUILD_DIR.parent / ".cmake_configure.lock"
     with open(lock_path, "w") as lock_f:
-        fcntl.flock(lock_f, fcntl.LOCK_EX)
+        if sys.platform != "win32":
+            import fcntl
+            fcntl.flock(lock_f, fcntl.LOCK_EX)
         # Skip if already configured — FETCHCONTENT_UPDATES_DISCONNECTED makes
         # re-configures fast and safe, but skipping avoids redundant work.
         if (CMAKE_BUILD_DIR / "CMakeCache.txt").exists():
