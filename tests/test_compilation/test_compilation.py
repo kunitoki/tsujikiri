@@ -67,18 +67,32 @@ def _cmake_configure() -> bool:
 
 def _cmake_build(target: str) -> bool:
     """Build a specific cmake target."""
-    result = subprocess.run(
-        ["cmake", "--build", str(CMAKE_BUILD_DIR), "--target", target],
-        capture_output=True,
-        text=True,
-    )
+    cmd = ["cmake", "--build", str(CMAKE_BUILD_DIR), "--target", target]
+    # Multi-config generators (e.g. MSVC on Windows) require an explicit config.
+    if sys.platform == "win32":
+        cmd += ["--config", "Release"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
     print(result.stdout + result.stderr)
     return result.returncode == 0
 
 
 def _run_executable(name: str) -> bool:
-    """Run a built executable in the cmake build directory."""
-    exe = CMAKE_BUILD_DIR / name
+    """Run a built executable in the cmake build directory.
+
+    Checks multiple candidate paths to support both single-config generators
+    (Ninja/Make: ``build/name`` on Unix, ``build/name.exe`` on Windows) and
+    multi-config generators (MSVC: ``build/Release/name.exe``).
+    """
+    suffix = ".exe" if sys.platform == "win32" else ""
+    candidates = [
+        CMAKE_BUILD_DIR / f"{name}{suffix}",
+        CMAKE_BUILD_DIR / "Release" / f"{name}{suffix}",
+        CMAKE_BUILD_DIR / "Debug" / f"{name}{suffix}",
+    ]
+    exe = next((p for p in candidates if p.exists()), None)
+    if exe is None:
+        print(f"executable not found: {name}")
+        return False
     result = subprocess.run([str(exe)], capture_output=True, text=True)
     if result.stdout:
         print(result.stdout)
@@ -88,8 +102,17 @@ def _run_executable(name: str) -> bool:
 
 
 def _run_pybind11_verify(script: Path) -> bool:
-    """Run a pybind11 verify script with PYTHONPATH pointing to built modules."""
-    env = {**os.environ, "PYTHONPATH": str(PYTHON_MODULES_DIR)}
+    """Run a pybind11 verify script with PYTHONPATH pointing to built modules.
+
+    Includes Release/ and Debug/ subdirectories so that multi-config generators
+    (MSVC on Windows) are handled correctly alongside single-config layouts.
+    """
+    dirs = [PYTHON_MODULES_DIR] + [
+        PYTHON_MODULES_DIR / cfg
+        for cfg in ("Release", "Debug")
+        if (PYTHON_MODULES_DIR / cfg).exists()
+    ]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(str(d) for d in dirs)}
     result = subprocess.run(
         [sys.executable, str(script)],
         capture_output=True,

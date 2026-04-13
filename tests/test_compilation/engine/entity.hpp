@@ -14,7 +14,7 @@ class Entity {
 public:
     Entity() = default;
     explicit Entity(std::string_view name) : name_(name) {}
-    Entity(std::string name, math::Vec3 pos) : name_(std::move(name)), position_(pos) {}
+    Entity(std::string name, math::Vec3 pos) : name_(name), position_(pos) {}
 
     std::string_view getName() const { return name_; }
     void        setName(const char* n) { name_ = n; }
