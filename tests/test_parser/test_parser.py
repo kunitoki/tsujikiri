@@ -529,7 +529,7 @@ class TestExplicitXArgNotDuplicated:
 
 
 # ---------------------------------------------------------------------------
-# Branch coverage: -isysroot already in args skips darwin sysroot (323->326)
+# Branch coverage: darwin sysroot injection
 # ---------------------------------------------------------------------------
 
 class TestIsysrootNotDuplicated:
@@ -539,6 +539,16 @@ class TestIsysrootNotDuplicated:
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
         module = parse_translation_unit(src, ["ns"], "isysroot_test")
+        assert module is not None
+        assert any(f.name == "foo" for f in module.functions)
+
+    def test_darwin_sysroot_appended_when_missing(self, tmp_path: Path) -> None:
+        """On darwin, -isysroot is appended to args when not already present."""
+        hpp = tmp_path / "sysroot.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("sys.platform", "darwin"):
+            module = parse_translation_unit(src, ["ns"], "sysroot_test")
         assert module is not None
         assert any(f.name == "foo" for f in module.functions)
 
