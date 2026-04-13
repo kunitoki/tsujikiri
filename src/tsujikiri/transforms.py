@@ -522,9 +522,10 @@ class SetTypeHintStage(TransformStage):
     YAML::
       stage: set_type_hint
       class: MyClass
-      copyable: false      # optional: override copy-constructibility
-      movable: true        # optional: override move-constructibility
-      force_abstract: true # optional: suppress constructor binding
+      copyable: false           # optional: override copy-constructibility
+      movable: true             # optional: override move-constructibility
+      force_abstract: true      # optional: suppress constructor binding
+      holder_type: std::shared_ptr  # optional: smart pointer holder for binding declaration
     """
     name = "set_type_hint"
 
@@ -534,6 +535,7 @@ class SetTypeHintStage(TransformStage):
         self.copyable: Optional[bool] = kwargs.get("copyable")
         self.movable: Optional[bool] = kwargs.get("movable")
         self.force_abstract: Optional[bool] = kwargs.get("force_abstract")
+        self.holder_type: Optional[str] = kwargs.get("holder_type")
 
     def apply(self, module: IRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
@@ -543,6 +545,8 @@ class SetTypeHintStage(TransformStage):
                 cls.movable = self.movable
             if self.force_abstract is not None:
                 cls.force_abstract = self.force_abstract
+            if self.holder_type is not None:
+                cls.holder_type = self.holder_type
 
 
 # ---------------------------------------------------------------------------

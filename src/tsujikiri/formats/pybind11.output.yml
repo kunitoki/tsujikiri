@@ -11,6 +11,28 @@ unsupported_types:
 # Optional C++ → target-language type remapping (use add_type_mapping transform)
 type_mappings: {}
 
+# C++ operator overload → Python dunder method name mapping
+# operator<< maps to __repr__ to generate a lambda using std::ostringstream
+operator_mappings:
+  "operator+": "__add__"
+  "operator+unary": "__pos__"
+  "operator-": "__sub__"
+  "operator-unary": "__neg__"
+  "operator*": "__mul__"
+  "operator/": "__truediv__"
+  "operator%": "__mod__"
+  "operator==": "__eq__"
+  "operator!=": "__ne__"
+  "operator<": "__lt__"
+  "operator<=": "__le__"
+  "operator>": "__gt__"
+  "operator>=": "__ge__"
+  "operator<<": "__repr__"
+  "operator>>": "__rshift__"
+  "operator[]": "__getitem__"
+  "operator()": "__call__"
+  "operator!": "__bool__"
+
 template: |
   {%- block prologue -%}
   // DO NOT EDIT - Auto-generated pybind11 bindings for {{ module_name }} by tsujikiri
@@ -73,14 +95,28 @@ template: |
   {%- endfor %}
   {%- for cls in classes %}
   {%- block class scoped %}
+  {%- if cls.has_virtual_methods %}
 
-    py::class_<{{ cls.qualified_name }}{% for b in cls.public_bases %}, {{ b.qualified_name }}{% endfor %}>(m, "{{ cls.name }}"{% if cls.doc %}, "{{ cls.doc }}"{% endif %})
+  class {{ cls.trampoline_name }} : public {{ cls.qualified_name }} {
+  public:
+      using {{ cls.qualified_name }}::{{ cls.cpp_name }};
+  {%- for vm in cls.virtual_methods %}
+  {%- block trampoline_method scoped %}
+      {{ vm.raw_return_type }} {{ vm.name }}({% for p in vm.params %}{{ p.raw_type }} {{ p.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% if vm.is_const %} const{% endif %} override {
+          {% if vm.is_pure_virtual %}PYBIND11_OVERRIDE_PURE_NAME{% else %}PYBIND11_OVERRIDE_NAME{% endif %}({{ vm.raw_return_type }}, {{ cls.qualified_name }}, "{{ vm.name | camel_to_snake }}", {{ vm.name }}{% for p in vm.params %}, {{ p.name }}{% endfor %});
+      }
+  {%- endblock %}
+  {%- endfor %}
+  };
+  {%- endif %}
+
+    py::class_<{{ cls.qualified_name }}{% if cls.has_virtual_methods %}, {{ cls.trampoline_name }}{% endif %}{% if cls.holder_type %}, {{ cls.holder_type }}<{{ cls.qualified_name }}>{% endif %}{% for b in cls.public_bases %}, {{ b.qualified_name }}{% endfor %}>(m, "{{ cls.name }}"{% if cls.doc %}, "{{ cls.doc }}"{% endif %})
   {{ cls.code_injections | code_at("beginning") }}
   {%- block class_constructors scoped %}
   {%- if not cls.force_abstract %}
   {%- for ctor in cls.constructor_group.constructors %}
   {%- block class_constructor_group scoped %}
-      .def(py::init<{{ ctor.params | map(attribute='raw_type') | join(', ') }}>(){% if ctor.doc %}, "{{ ctor.doc }}"{% endif %})
+      .def(py::init<{{ ctor.params | map(attribute='raw_type') | join(', ') }}>(){% for p in ctor.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if ctor.doc %}, "{{ ctor.doc }}"{% endif %})
   {%- endblock %}
   {%- endfor %}
   {%- endif %}
@@ -109,15 +145,25 @@ template: |
   {%- if group.is_overloaded %}
   {%- for method in group.methods %}
   {%- block class_overloaded_method scoped %}
-      .def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+  {%- if method.is_operator and method.operator_name == "__repr__" %}
+      .def("__repr__", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
+  {%- elif method.is_operator and method.operator_name %}
+      .def("{{ method.operator_name }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+  {%- else %}
+      .def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+  {%- endif %}
   {%- endblock %}
   {%- endfor %}
   {%- else %}
   {%- set method = group.methods[0] %}
   {%- if method.wrapper_code %}
       .def("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+  {%- elif method.is_operator and method.operator_name == "__repr__" %}
+      .def("__repr__", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
+  {%- elif method.is_operator and method.operator_name %}
+      .def("{{ method.operator_name }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
   {%- else %}
-      .def("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+      .def("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
   {%- endif %}
   {%- endif %}
   {%- endblock %}

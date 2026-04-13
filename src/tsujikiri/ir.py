@@ -50,6 +50,8 @@ class IRMethod:
     is_pure_virtual: bool = False
     is_noexcept: bool = False
     is_overload: bool = False   # set during IR build when multiple same-name methods exist
+    is_operator: bool = False   # True if this is a C++ operator overload
+    operator_type: Optional[str] = None  # canonical operator spelling e.g. "operator+", "operator-unary"
     source_file: Optional[str] = None
     emit: bool = True
     rename: Optional[str] = None    # set by transforms to change the binding name
@@ -132,6 +134,7 @@ class IRClass:
     copyable: Optional[bool] = None     # None = infer from C++; True/False = forced
     movable: Optional[bool] = None      # None = infer from C++; True/False = forced
     force_abstract: bool = False        # suppress constructors even if C++ is not abstract
+    holder_type: Optional[str] = None   # e.g. "std::shared_ptr" — affects binding declaration
     code_injections: List[IRCodeInjection] = field(default_factory=list)
 
 
@@ -144,6 +147,8 @@ class IRFunction:
     parameters: List[IRParameter] = field(default_factory=list)
     is_overload: bool = False
     is_noexcept: bool = False
+    is_operator: bool = False   # True if this is a C++ operator overload (free function)
+    operator_type: Optional[str] = None  # canonical operator spelling e.g. "operator<<"
     emit: bool = True
     rename: Optional[str] = None
     attributes: List[str] = field(default_factory=list)

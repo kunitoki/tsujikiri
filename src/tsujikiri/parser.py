@@ -193,6 +193,21 @@ def _is_explicit(cursor) -> bool:
     return any(tok.spelling == "explicit" for tok in cursor.get_tokens())
 
 
+def _canonicalize_operator(spelling: str, num_params: int) -> str:
+    """Return a canonical operator type string, disambiguating unary/binary cases."""
+    if spelling in ("operator-", "operator+") and num_params == 0:
+        return f"{spelling}unary"
+    if spelling == "operator++" and num_params == 0:
+        return "operator++prefix"
+    if spelling == "operator++" and num_params == 1:
+        return "operator++postfix"
+    if spelling == "operator--" and num_params == 0:
+        return "operator--prefix"
+    if spelling == "operator--" and num_params == 1:
+        return "operator--postfix"
+    return spelling
+
+
 def _access_str(access_specifier) -> str:
     if access_specifier == AccessSpecifier.PUBLIC:
         return "public"
@@ -255,18 +270,23 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     for spell, cursors in methods_by_name.items():
         is_overload = len(cursors) > 1
         for m in cursors:
+            params = _parse_parameters(m)
+            is_op = m.spelling.startswith("operator") and not m.spelling[len("operator"):].isalpha()
+            op_type = _canonicalize_operator(m.spelling, len(params)) if is_op else None
             method = IRMethod(
                 name=m.spelling,
                 spelling=m.spelling,
                 qualified_name=f"{qualified}::{m.spelling}",
                 return_type=m.result_type.spelling,
-                parameters=_parse_parameters(m),
+                parameters=params,
                 is_static=m.is_static_method(),
                 is_const=m.is_const_method(),
                 is_virtual=m.is_virtual_method(),
                 is_pure_virtual=m.is_pure_virtual_method(),
                 is_noexcept=_is_noexcept(m),
                 is_overload=is_overload,
+                is_operator=is_op,
+                operator_type=op_type,
                 source_file=_source_file(m),
                 attributes=_get_attributes(m),
             )
@@ -383,14 +403,20 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
         is_overload = len(entries) > 1
         for fn_cursor, ns_name in entries:
             qualified = f"{ns_name}::{fn_cursor.spelling}" if ns_name else fn_cursor.spelling
+            fn_params = _parse_parameters(fn_cursor)
+            fn_is_op = (fn_cursor.spelling.startswith("operator")
+                        and not fn_cursor.spelling[len("operator"):].isalpha())
+            fn_op_type = _canonicalize_operator(fn_cursor.spelling, len(fn_params)) if fn_is_op else None
             module.functions.append(IRFunction(
                 name=fn_cursor.spelling,
                 qualified_name=qualified,
                 namespace=ns_name,
                 return_type=fn_cursor.result_type.spelling,
-                parameters=_parse_parameters(fn_cursor),
+                parameters=fn_params,
                 is_overload=is_overload,
                 is_noexcept=_is_noexcept(fn_cursor),
+                is_operator=fn_is_op,
+                operator_type=fn_op_type,
                 attributes=_get_attributes(fn_cursor),
             ))
 

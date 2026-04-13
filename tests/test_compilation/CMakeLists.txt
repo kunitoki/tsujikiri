@@ -217,3 +217,15 @@ add_pybind11_binding_test(
     INPUT_FILE   "${_audio_dir}/audio.input.yml"
     INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}"
     HEADERS      ${_audio_headers})
+
+# ============================================================
+# Test: samplebinding — virtual methods, trampolines, shared_ptr holder, keep_alive
+# ============================================================
+set(_samplebinding_dir     "${CMAKE_CURRENT_SOURCE_DIR}/samplebinding")
+set(_samplebinding_headers "${_samplebinding_dir}/samplebinding.hpp")
+
+add_pybind11_binding_test(
+    NAME         samplebinding
+    INPUT_FILE   "${_samplebinding_dir}/samplebinding.input.yml"
+    INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}"
+    HEADERS      ${_samplebinding_headers})

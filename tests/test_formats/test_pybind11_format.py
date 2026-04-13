@@ -238,7 +238,7 @@ class TestClassBinding:
         cls = _simple_class(ctors=[ctor])
         mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
-        assert ".def(py::init<int>())" in out
+        assert '.def(py::init<int>(), py::arg("v"))' in out
 
     def test_force_abstract_suppresses_constructor(self, pybind11_output_config):
         ctor = IRConstructor(parameters=[IRParameter("v", "int")])
@@ -330,3 +330,252 @@ class TestPybind11FormatDiscovery:
 
     def test_pybind11_language_is_cpp(self, pybind11_output_config):
         assert pybind11_output_config.language == "cpp"
+
+
+# ---------------------------------------------------------------------------
+# Trampoline class generation
+# ---------------------------------------------------------------------------
+
+class TestTrampolineGeneration:
+    def test_no_trampoline_for_nonvirtual_class(self, pybind11_output_config):
+        cls = _simple_class()
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "PyFoo" not in out
+        assert "PYBIND11_OVERRIDE" not in out
+
+    def test_trampoline_class_generated_for_virtual_method(self, pybind11_output_config):
+        method = IRMethod(name="compute", spelling="compute",
+                          qualified_name="ns::Foo::compute", return_type="int",
+                          is_virtual=True)
+        cls = _simple_class(methods=[method])
+        cls.has_virtual_methods = True
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "class PyFoo : public ns::Foo" in out
+        assert "using ns::Foo::Foo;" in out
+        assert 'PYBIND11_OVERRIDE_NAME(int, ns::Foo, "compute", compute);' in out
+
+    def test_trampoline_uses_override_pure_for_pure_virtual(self, pybind11_output_config):
+        method = IRMethod(name="compute", spelling="compute",
+                          qualified_name="ns::Foo::compute", return_type="int",
+                          is_virtual=True, is_pure_virtual=True)
+        cls = _simple_class(methods=[method])
+        cls.has_virtual_methods = True
+        cls.is_abstract = True
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert 'PYBIND11_OVERRIDE_PURE_NAME(int, ns::Foo, "compute", compute);' in out
+
+    def test_trampoline_const_method_has_const_qualifier(self, pybind11_output_config):
+        method = IRMethod(name="name", spelling="name",
+                          qualified_name="ns::Foo::name", return_type="std::string",
+                          is_virtual=True, is_const=True)
+        cls = _simple_class(methods=[method])
+        cls.has_virtual_methods = True
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "std::string name(" in out
+        assert ") const override" in out
+
+    def test_trampoline_method_with_params(self, pybind11_output_config):
+        p = IRParameter("x", "double")
+        method = IRMethod(name="scale", spelling="scale",
+                          qualified_name="ns::Foo::scale", return_type="void",
+                          is_virtual=True, parameters=[p])
+        cls = _simple_class(methods=[method])
+        cls.has_virtual_methods = True
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "void scale(double x) override" in out
+        assert 'PYBIND11_OVERRIDE_NAME(void, ns::Foo, "scale", scale, x);' in out
+
+    def test_class_declaration_includes_trampoline(self, pybind11_output_config):
+        method = IRMethod(name="compute", spelling="compute",
+                          qualified_name="ns::Foo::compute", return_type="int",
+                          is_virtual=True)
+        cls = _simple_class(methods=[method])
+        cls.has_virtual_methods = True
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::class_<ns::Foo, PyFoo>" in out
+
+    def test_trampoline_before_base_in_declaration(self, pybind11_output_config):
+        method = IRMethod(name="compute", spelling="compute",
+                          qualified_name="ns::Foo::compute", return_type="int",
+                          is_virtual=True)
+        cls = _simple_class(methods=[method], bases=[IRBase("ns::Base", "public")])
+        cls.has_virtual_methods = True
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::class_<ns::Foo, PyFoo, ns::Base>" in out
+
+    def test_custom_trampoline_prefix_from_generation_config(self, pybind11_output_config):
+        from tsujikiri.configurations import GenerationConfig
+        method = IRMethod(name="compute", spelling="compute",
+                          qualified_name="ns::Foo::compute", return_type="int",
+                          is_virtual=True)
+        cls = _simple_class(methods=[method])
+        cls.has_virtual_methods = True
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        gen_cfg = GenerationConfig(trampoline_prefix="Wrap")
+        buf = io.StringIO()
+        from tsujikiri.generator import Generator
+        Generator(pybind11_output_config, generation=gen_cfg).generate(mod, buf)
+        out = buf.getvalue()
+        assert "class WrapFoo : public ns::Foo" in out
+        assert "py::class_<ns::Foo, WrapFoo>" in out
+
+
+# ---------------------------------------------------------------------------
+# Holder type in class declaration
+# ---------------------------------------------------------------------------
+
+class TestHolderType:
+    def test_holder_type_in_class_declaration(self, pybind11_output_config):
+        cls = _simple_class()
+        cls.holder_type = "std::shared_ptr"
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::class_<ns::Foo, std::shared_ptr<ns::Foo>>" in out
+
+    def test_holder_type_with_base(self, pybind11_output_config):
+        cls = _simple_class(bases=[IRBase("ns::Base", "public")])
+        cls.holder_type = "std::shared_ptr"
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::class_<ns::Foo, std::shared_ptr<ns::Foo>, ns::Base>" in out
+
+    def test_holder_type_with_trampoline_and_base(self, pybind11_output_config):
+        method = IRMethod(name="compute", spelling="compute",
+                          qualified_name="ns::Foo::compute", return_type="int",
+                          is_virtual=True)
+        cls = _simple_class(methods=[method], bases=[IRBase("ns::Base", "public")])
+        cls.has_virtual_methods = True
+        cls.holder_type = "std::shared_ptr"
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::class_<ns::Foo, PyFoo, std::shared_ptr<ns::Foo>, ns::Base>" in out
+
+    def test_no_holder_by_default(self, pybind11_output_config):
+        cls = _simple_class()
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "shared_ptr" not in out
+
+
+# ---------------------------------------------------------------------------
+# Return value policies
+# ---------------------------------------------------------------------------
+
+class TestReturnValuePolicy:
+    def test_no_rvp_when_ownership_none(self, pybind11_output_config):
+        method = IRMethod(name="get", spelling="get",
+                          qualified_name="ns::Foo::get", return_type="ns::Bar*",
+                          return_ownership="none")
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "return_value_policy" not in out
+
+    def test_rvp_reference_internal_when_cpp(self, pybind11_output_config):
+        method = IRMethod(name="get", spelling="get",
+                          qualified_name="ns::Foo::get", return_type="ns::Bar*",
+                          return_ownership="cpp")
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::return_value_policy::reference_internal" in out
+
+    def test_rvp_take_ownership_when_script(self, pybind11_output_config):
+        method = IRMethod(name="create", spelling="create",
+                          qualified_name="ns::Foo::create", return_type="ns::Bar*",
+                          return_ownership="script")
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::return_value_policy::take_ownership" in out
+
+
+# ---------------------------------------------------------------------------
+# keep_alive policy
+# ---------------------------------------------------------------------------
+
+class TestKeepAlive:
+    def test_keep_alive_for_cpp_owned_param(self, pybind11_output_config):
+        p = IRParameter("item", "ns::Item*", ownership="cpp")
+        method = IRMethod(name="add", spelling="add",
+                          qualified_name="ns::Foo::add", return_type="void",
+                          parameters=[p])
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::keep_alive<1, 2>()" in out
+
+    def test_keep_alive_second_param_uses_index_3(self, pybind11_output_config):
+        p1 = IRParameter("a", "int", ownership="none")
+        p2 = IRParameter("item", "ns::Item*", ownership="cpp")
+        method = IRMethod(name="add", spelling="add",
+                          qualified_name="ns::Foo::add", return_type="void",
+                          parameters=[p1, p2])
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::keep_alive<1, 3>()" in out
+
+    def test_no_keep_alive_for_none_ownership(self, pybind11_output_config):
+        p = IRParameter("item", "ns::Item*", ownership="none")
+        method = IRMethod(name="add", spelling="add",
+                          qualified_name="ns::Foo::add", return_type="void",
+                          parameters=[p])
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "keep_alive" not in out
+
+
+# ---------------------------------------------------------------------------
+# Operator bindings
+# ---------------------------------------------------------------------------
+
+class TestOperatorBinding:
+    def test_operator_plus_binds_to_add(self, pybind11_output_config):
+        method = IRMethod(name="operator+", spelling="operator+",
+                          qualified_name="ns::Foo::operator+", return_type="ns::Foo",
+                          is_operator=True, operator_type="operator+")
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert '.def("__add__"' in out
+
+    def test_operator_eq_binds_to_eq(self, pybind11_output_config):
+        p = IRParameter("other", "const ns::Foo &")
+        method = IRMethod(name="operator==", spelling="operator==",
+                          qualified_name="ns::Foo::operator==", return_type="bool",
+                          is_operator=True, operator_type="operator==",
+                          parameters=[p])
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert '.def("__eq__"' in out
+
+    def test_operator_stream_binds_to_repr_lambda(self, pybind11_output_config):
+        method = IRMethod(name="operator<<", spelling="operator<<",
+                          qualified_name="ns::Foo::operator<<", return_type="std::ostream &",
+                          is_operator=True, operator_type="operator<<")
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert '.def("__repr__"' in out
+        assert "std::ostringstream" in out
+        assert "&ns::Foo::operator<<" not in out
+
+    def test_unmapped_operator_uses_camel_to_snake_name(self, pybind11_output_config):
+        # operator<< is mapped to __repr__, so use an unmapped one to test fallback
+        method = IRMethod(name="operator>>", spelling="operator>>",
+                          qualified_name="ns::Foo::operator>>", return_type="ns::Foo",
+                          is_operator=True, operator_type="operator>>")
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert '.def("__rshift__"' in out

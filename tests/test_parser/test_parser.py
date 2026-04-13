@@ -14,6 +14,7 @@ from tsujikiri.configurations import SourceConfig
 from tsujikiri.clang_base_enumerations import CursorKind, AccessSpecifier
 from tsujikiri.parser import (
     parse_translation_unit,
+    _canonicalize_operator,
     _collect_attr_blocks,
     _get_attributes,
     _get_default_value,
@@ -1026,3 +1027,38 @@ class TestTypeFromTokensNamespaces:
         assert self._fn_types(type_tokens_module, "m_function_nested") == [
             "::std::function<outer::inner::Nested (::std::string, outer::Mid)>"
         ]
+
+
+# ---------------------------------------------------------------------------
+# _canonicalize_operator
+# ---------------------------------------------------------------------------
+
+class TestCanonicalizeOperator:
+    def test_binary_minus_unchanged(self) -> None:
+        assert _canonicalize_operator("operator-", 1) == "operator-"
+
+    def test_unary_minus(self) -> None:
+        assert _canonicalize_operator("operator-", 0) == "operator-unary"
+
+    def test_unary_plus(self) -> None:
+        assert _canonicalize_operator("operator+", 0) == "operator+unary"
+
+    def test_binary_plus_unchanged(self) -> None:
+        assert _canonicalize_operator("operator+", 1) == "operator+"
+
+    def test_prefix_increment(self) -> None:
+        assert _canonicalize_operator("operator++", 0) == "operator++prefix"
+
+    def test_postfix_increment(self) -> None:
+        assert _canonicalize_operator("operator++", 1) == "operator++postfix"
+
+    def test_prefix_decrement(self) -> None:
+        assert _canonicalize_operator("operator--", 0) == "operator--prefix"
+
+    def test_postfix_decrement(self) -> None:
+        assert _canonicalize_operator("operator--", 1) == "operator--postfix"
+
+    def test_other_operator_passthrough(self) -> None:
+        assert _canonicalize_operator("operator==", 1) == "operator=="
+        assert _canonicalize_operator("operator<<", 1) == "operator<<"
+        assert _canonicalize_operator("operator[]", 1) == "operator[]"

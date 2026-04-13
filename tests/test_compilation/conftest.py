@@ -20,13 +20,16 @@ def _load_module(config_file: Path, module_name: str):
     from tsujikiri.filters import FilterEngine
     from tsujikiri.ir import merge_modules
     from tsujikiri.parser import parse_translation_unit
+    from tsujikiri.transforms import build_pipeline_from_config
 
     config = load_input_config(config_file)
     modules = []
     for entry in config.get_source_entries():
         effective = entry.filters if entry.filters is not None else config.filters
+        effective_transforms = entry.transforms if entry.transforms is not None else config.transforms
         mod = parse_translation_unit(entry.source, effective.namespaces, module_name)
         FilterEngine(effective).apply(mod)
+        build_pipeline_from_config(effective_transforms).run(mod)
         modules.append(mod)
     return merge_modules(modules)
 
@@ -77,4 +80,13 @@ def engine_module():
 @pytest.fixture(scope="module")
 def audio_module():
     return _load_module(HERE / "audio" / "audio.input.yml", "audio")
+
+
+# ---------------------------------------------------------------------------
+# samplebinding: virtual methods, shared_ptr holder, keep_alive ownership
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def samplebinding_module():
+    return _load_module(HERE / "samplebinding" / "samplebinding.input.yml", "samplebinding")
 

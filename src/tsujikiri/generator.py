@@ -144,6 +144,7 @@ class Generator:
             "function_groups": self._build_function_group_ctxs(module.functions),
             "classes": flat_classes,
             "api_version": api_version,
+            "operator_mappings": dict(self.cfg.operator_mappings),
             "code_injections": [{"position": c.position, "code": c.code} for c in module.code_injections],
         }
 
@@ -238,6 +239,28 @@ class Generator:
         ]
         base_name = public_bases[0].qualified_name if public_bases else ""
 
+        # Virtual methods list for trampoline generation (ungrouped, each override individually)
+        virtual_methods_ctx = []
+        for m in ir_class.methods:
+            if m.emit and (m.is_virtual or m.is_pure_virtual):
+                eff_rt = m.return_type_override or m.return_type
+                virtual_methods_ctx.append({
+                    "name": m.spelling,
+                    "return_type": self._map_type(eff_rt),
+                    "raw_return_type": eff_rt,
+                    "is_const": m.is_const,
+                    "is_pure_virtual": m.is_pure_virtual,
+                    "params": [
+                        {
+                            "name": p.rename or p.name,
+                            "type": self._map_type(p.type_override or p.type_spelling),
+                            "raw_type": p.type_override or p.type_spelling,
+                        }
+                        for p in m.parameters
+                        if p.emit
+                    ],
+                })
+
         # Constructor group
         ctors = [c for c in ir_class.constructors if c.emit]
         ctor_group = {
@@ -312,6 +335,9 @@ class Generator:
                     "is_virtual": m.is_virtual,
                     "is_pure_virtual": m.is_pure_virtual,
                     "is_noexcept": m.is_noexcept,
+                    "is_operator": m.is_operator,
+                    "operator_type": m.operator_type or "",
+                    "operator_name": self.cfg.operator_mappings.get(m.operator_type or "", "") if m.is_operator else "",
                     "overload_index": i,
                     "doc": m.doc,
                     "attributes": list(m.attributes),
@@ -340,6 +366,7 @@ class Generator:
 
         return {
             "name": name,
+            "cpp_name": ir_class.name,
             "qualified_name": ir_class.qualified_name,
             "doc": ir_class.doc,
             "attributes": list(ir_class.attributes),
@@ -362,6 +389,9 @@ class Generator:
             "copyable": ir_class.copyable,
             "movable": ir_class.movable,
             "force_abstract": ir_class.force_abstract,
+            "holder_type": ir_class.holder_type or "",
+            "trampoline_name": f"{self.generation.trampoline_prefix if self.generation else 'Py'}{ir_class.name}",
+            "virtual_methods": virtual_methods_ctx,
             "constructor_group": ctor_group,
             "method_groups": method_groups,
             "fields": fields,
