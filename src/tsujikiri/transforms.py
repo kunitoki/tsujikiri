@@ -33,6 +33,7 @@ from tsujikiri.ir import (
     IRMethod,
     IRModule,
     IRParameter,
+    IRProperty,
 )
 
 
@@ -301,6 +302,7 @@ class ModifyMethodStage(TransformStage):
         self.remove: bool = kwargs.get("remove", False)
         self.return_type: Optional[str] = kwargs.get("return_type")
         self.return_ownership: Optional[str] = kwargs.get("return_ownership")
+        self.return_keep_alive: Optional[bool] = kwargs.get("return_keep_alive")
         self.allow_thread: Optional[bool] = kwargs.get("allow_thread")
         self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
 
@@ -316,6 +318,8 @@ class ModifyMethodStage(TransformStage):
                         method.return_type_override = self.return_type
                     if self.return_ownership is not None:
                         method.return_ownership = self.return_ownership
+                    if self.return_keep_alive is not None:
+                        method.return_keep_alive = self.return_keep_alive
                     if self.allow_thread is not None:
                         method.allow_thread = self.allow_thread
                     if self.wrapper_code is not None:
@@ -760,6 +764,7 @@ class ModifyFunctionStage(TransformStage):
         self.remove: bool = kwargs.get("remove", False)
         self.return_type: Optional[str] = kwargs.get("return_type")
         self.return_ownership: Optional[str] = kwargs.get("return_ownership")
+        self.return_keep_alive: Optional[bool] = kwargs.get("return_keep_alive")
         self.allow_thread: Optional[bool] = kwargs.get("allow_thread")
         self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
 
@@ -774,6 +779,8 @@ class ModifyFunctionStage(TransformStage):
                     fn.return_type_override = self.return_type
                 if self.return_ownership is not None:
                     fn.return_ownership = self.return_ownership
+                if self.return_keep_alive is not None:
+                    fn.return_keep_alive = self.return_keep_alive
                 if self.allow_thread is not None:
                     fn.allow_thread = self.allow_thread
                 if self.wrapper_code is not None:
@@ -880,6 +887,37 @@ class SuppressBaseStage(TransformStage):
                     base.emit = False
 
 
+class InjectPropertyStage(TransformStage):
+    """Inject a synthetic getter/setter property binding on a class.
+
+    YAML::
+      stage: inject_property
+      class: MyClass
+      name: arrivalMessage
+      getter: getArrivalMessage
+      setter: setArrivalMessage  # optional; omit for read-only
+      type: "std::string"        # optional
+    """
+    name = "inject_property"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.class_pattern: str = kwargs["class"]
+        self.class_is_regex: bool = kwargs.get("class_is_regex", False)
+        self.prop_name: str = kwargs["name"]
+        self.getter: str = kwargs["getter"]
+        self.setter: Optional[str] = kwargs.get("setter")
+        self.type_spelling: str = kwargs.get("type", "")
+
+    def apply(self, module: IRModule) -> None:
+        for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
+            cls.properties.append(IRProperty(
+                name=self.prop_name,
+                getter=self.getter,
+                setter=self.setter,
+                type_spelling=self.type_spelling,
+            ))
+
+
 # ---------------------------------------------------------------------------
 # Register all built-in stages
 # ---------------------------------------------------------------------------
@@ -911,6 +949,7 @@ for _stage_cls in [
     # Injection stages
     InjectConstructorStage,
     InjectFunctionStage,
+    InjectPropertyStage,
     # Base-class suppression
     SuppressBaseStage,
 ]:

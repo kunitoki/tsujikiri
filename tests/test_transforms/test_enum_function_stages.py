@@ -326,6 +326,11 @@ class TestModifyFunctionStage:
         ModifyFunctionStage(**{"function": "compute", "return_ownership": "cpp"}).apply(mod)
         assert _fn(mod, "compute").return_ownership == "cpp"
 
+    def test_return_keep_alive(self):
+        mod = _make_module()
+        ModifyFunctionStage(**{"function": "compute", "return_keep_alive": True}).apply(mod)
+        assert _fn(mod, "compute").return_keep_alive is True
+
     def test_allow_thread(self):
         mod = _make_module()
         ModifyFunctionStage(**{"function": "compute", "allow_thread": True}).apply(mod)

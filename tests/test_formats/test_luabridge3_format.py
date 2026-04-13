@@ -12,6 +12,7 @@ from tsujikiri.ir import (
     IRMethod,
     IRModule,
     IRParameter,
+    IRProperty,
 )
 
 
@@ -147,3 +148,36 @@ class TestOperatorMetamethods:
         out = _gen(mod, lua_cfg)
         assert "addMetaMethod" not in out
         assert '.addFunction("get_value"' in out
+
+
+# ---------------------------------------------------------------------------
+# Synthetic property bindings
+# ---------------------------------------------------------------------------
+
+class TestPropertyBinding:
+    def test_readwrite_property_emits_add_property_with_setter(self, lua_cfg):
+        prop = IRProperty(name="arrivalMessage", getter="getArrivalMessage",
+                          setter="setArrivalMessage", type_spelling="std::string")
+        cls = _simple_class()
+        cls.properties.append(prop)
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, lua_cfg)
+        assert '.addProperty("arrival_message"' in out
+        assert "&ns::Foo::getArrivalMessage" in out
+        assert "&ns::Foo::setArrivalMessage" in out
+
+    def test_readonly_property_emits_add_property_with_nullptr(self, lua_cfg):
+        prop = IRProperty(name="name", getter="getName", type_spelling="std::string")
+        cls = _simple_class()
+        cls.properties.append(prop)
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, lua_cfg)
+        assert '.addProperty("name"' in out
+        assert "&ns::Foo::getName" in out
+        assert "nullptr" in out
+
+    def test_no_properties_by_default(self, lua_cfg):
+        cls = _simple_class()
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, lua_cfg)
+        assert "addProperty" not in out

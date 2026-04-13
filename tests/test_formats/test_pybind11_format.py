@@ -19,6 +19,7 @@ from tsujikiri.ir import (
     IRMethod,
     IRModule,
     IRParameter,
+    IRProperty,
 )
 
 
@@ -532,6 +533,109 @@ class TestKeepAlive:
         mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert "keep_alive" not in out
+
+    def test_return_keep_alive_emits_keep_alive_0_1(self, pybind11_output_config):
+        method = IRMethod(name="model", spelling="model",
+                          qualified_name="ns::Foo::model", return_type="ns::Model*",
+                          return_keep_alive=True)
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::keep_alive<0, 1>()" in out
+
+    def test_no_return_keep_alive_by_default(self, pybind11_output_config):
+        method = IRMethod(name="model", spelling="model",
+                          qualified_name="ns::Foo::model", return_type="ns::Model*")
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::keep_alive<0, 1>()" not in out
+
+    def test_return_keep_alive_combined_with_return_ownership(self, pybind11_output_config):
+        method = IRMethod(name="model", spelling="model",
+                          qualified_name="ns::Foo::model", return_type="ns::Model*",
+                          return_ownership="script", return_keep_alive=True)
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::return_value_policy::take_ownership" in out
+        assert "py::keep_alive<0, 1>()" in out
+
+
+# ---------------------------------------------------------------------------
+# allow_thread / GIL release
+# ---------------------------------------------------------------------------
+
+class TestAllowThread:
+    def test_allow_thread_emits_call_guard(self, pybind11_output_config):
+        method = IRMethod(name="compute", spelling="compute",
+                          qualified_name="ns::Foo::compute", return_type="void",
+                          allow_thread=True)
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::call_guard<py::gil_scoped_release>()" in out
+
+    def test_no_call_guard_when_allow_thread_false(self, pybind11_output_config):
+        method = IRMethod(name="compute", spelling="compute",
+                          qualified_name="ns::Foo::compute", return_type="void",
+                          allow_thread=False)
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "call_guard" not in out
+
+    def test_allow_thread_combined_with_return_ownership(self, pybind11_output_config):
+        method = IRMethod(name="fetch", spelling="fetch",
+                          qualified_name="ns::Foo::fetch", return_type="ns::Bar*",
+                          return_ownership="cpp", allow_thread=True)
+        cls = _simple_class(methods=[method])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "py::return_value_policy::reference_internal" in out
+        assert "py::call_guard<py::gil_scoped_release>()" in out
+
+
+# ---------------------------------------------------------------------------
+# Synthetic property bindings
+# ---------------------------------------------------------------------------
+
+class TestPropertyBinding:
+    def test_readwrite_property_emits_def_property(self, pybind11_output_config):
+        prop = IRProperty(name="arrivalMessage", getter="getArrivalMessage",
+                          setter="setArrivalMessage", type_spelling="std::string")
+        cls = _simple_class()
+        cls.properties.append(prop)
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert '.def_property("arrival_message"' in out
+        assert "&ns::Foo::getArrivalMessage" in out
+        assert "&ns::Foo::setArrivalMessage" in out
+
+    def test_readonly_property_emits_def_property_readonly(self, pybind11_output_config):
+        prop = IRProperty(name="name", getter="getName", type_spelling="std::string")
+        cls = _simple_class()
+        cls.properties.append(prop)
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert ".def_property_readonly(" in out
+        assert "&ns::Foo::getName" in out
+        assert "def_property(" not in out.replace("def_property_readonly(", "")
+
+    def test_property_doc_string(self, pybind11_output_config):
+        prop = IRProperty(name="value", getter="getValue", setter="setValue",
+                          type_spelling="int", doc="The value.")
+        cls = _simple_class()
+        cls.properties.append(prop)
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert '"The value."' in out
+
+    def test_no_properties_by_default(self, pybind11_output_config):
+        cls = _simple_class()
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert "def_property" not in out
 
 
 # ---------------------------------------------------------------------------

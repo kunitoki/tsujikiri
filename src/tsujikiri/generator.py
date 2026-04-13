@@ -213,6 +213,7 @@ class Generator:
                     "return_type": self._map_type(eff_return),
                     "raw_return_type": eff_return,
                     "return_ownership": fn.return_ownership,
+                    "return_keep_alive": fn.return_keep_alive,
                     "allow_thread": fn.allow_thread,
                     "wrapper_code": fn.wrapper_code,
                     "overload_kind": "overload",
@@ -327,6 +328,7 @@ class Generator:
                     "return_type": self._map_type(effective_return(m)),
                     "raw_return_type": effective_return(m),
                     "return_ownership": m.return_ownership,
+                    "return_keep_alive": m.return_keep_alive,
                     "allow_thread": m.allow_thread,
                     "wrapper_code": m.wrapper_code,
                     "overload_kind": self._compute_overload_kind(group, m),
@@ -364,6 +366,20 @@ class Generator:
             if f.emit and not self._is_unsupported(f.type_override or f.type_spelling)
         ]
 
+        # Synthetic getter/setter properties
+        properties = [
+            {
+                "name": p.name,
+                "getter": p.getter,
+                "setter": p.setter,
+                "type": self._map_type(p.type_spelling),
+                "raw_type": p.type_spelling,
+                "doc": p.doc,
+            }
+            for p in ir_class.properties
+            if p.emit
+        ]
+
         return {
             "name": name,
             "cpp_name": ir_class.name,
@@ -395,6 +411,7 @@ class Generator:
             "constructor_group": ctor_group,
             "method_groups": method_groups,
             "fields": fields,
+            "properties": properties,
             "enums": [self._build_enum_ctx(e) for e in ir_class.enums if e.emit],
             "code_injections": [{"position": c.position, "code": c.code} for c in ir_class.code_injections],
         }

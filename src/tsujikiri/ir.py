@@ -58,6 +58,7 @@ class IRMethod:
     attributes: List[str] = field(default_factory=list)   # raw [[...]] attribute contents
     return_type_override: Optional[str] = None   # overrides return_type in output only
     return_ownership: str = "none"               # "none" | "cpp" | "script"
+    return_keep_alive: bool = False              # True → py::keep_alive<0, 1>() (return kept alive by self)
     allow_thread: bool = False                   # hint: release GIL around call
     wrapper_code: Optional[str] = None           # if set, template emits lambda instead of &Class::method
     doc: Optional[str] = None                    # documentation string from [[tsujikiri::doc("…")]]
@@ -112,6 +113,17 @@ class IREnum:
 
 
 @dataclass
+class IRProperty:
+    """A synthetic property binding backed by getter/setter methods."""
+    name: str
+    getter: str
+    setter: Optional[str] = None   # None = read-only property
+    type_spelling: str = ""
+    emit: bool = True
+    doc: Optional[str] = None
+
+
+@dataclass
 class IRClass:
     name: str
     qualified_name: str
@@ -122,6 +134,7 @@ class IRClass:
     methods: List[IRMethod] = field(default_factory=list)
     fields: List[IRField] = field(default_factory=list)
     enums: List[IREnum] = field(default_factory=list)
+    properties: List[IRProperty] = field(default_factory=list)  # synthetic getter/setter properties
     has_virtual_methods: bool = False   # True if any method is virtual or pure virtual
     is_abstract: bool = False           # True if any method is pure virtual
     emit: bool = True
@@ -154,6 +167,7 @@ class IRFunction:
     attributes: List[str] = field(default_factory=list)
     return_type_override: Optional[str] = None   # overrides return_type in output only (mirrors IRMethod)
     return_ownership: str = "none"               # "none" | "cpp" | "script" (mirrors IRMethod)
+    return_keep_alive: bool = False              # True → py::keep_alive<0, 1>() (mirrors IRMethod)
     allow_thread: bool = False                   # hint: release GIL around call (mirrors IRMethod)
     wrapper_code: Optional[str] = None           # if set, template emits lambda instead of &qualified_name
     doc: Optional[str] = None                    # documentation string

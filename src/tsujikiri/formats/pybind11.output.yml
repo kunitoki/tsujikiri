@@ -150,7 +150,7 @@ template: |
   {%- elif method.is_operator and method.operator_name %}
       .def("{{ method.operator_name }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
   {%- else %}
-      .def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+      .def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if method.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
   {%- endif %}
   {%- endblock %}
   {%- endfor %}
@@ -163,7 +163,7 @@ template: |
   {%- elif method.is_operator and method.operator_name %}
       .def("{{ method.operator_name }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
   {%- else %}
-      .def("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+      .def("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if method.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
   {%- endif %}
   {%- endif %}
   {%- endblock %}
@@ -177,6 +177,17 @@ template: |
       .def_readonly("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
   {%- else %}
       .def_readwrite("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
+  {%- endif %}
+  {%- endblock %}
+  {%- endfor %}
+  {%- endblock %}
+  {%- block class_properties scoped %}
+  {%- for prop in cls.properties %}
+  {%- block class_property scoped %}
+  {%- if prop.setter %}
+      .def_property("{{ prop.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ prop.getter }}, &{{ cls.qualified_name }}::{{ prop.setter }}{% if prop.doc %}, "{{ prop.doc }}"{% endif %})
+  {%- else %}
+      .def_property_readonly("{{ prop.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ prop.getter }}{% if prop.doc %}, "{{ prop.doc }}"{% endif %})
   {%- endif %}
   {%- endblock %}
   {%- endfor %}

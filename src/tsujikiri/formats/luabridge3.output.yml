@@ -186,6 +186,17 @@ template: |
   {%- endblock %}
   {%- endfor %}
   {%- endblock %}
+  {%- block class_properties scoped %}
+  {%- for prop in cls.properties %}
+  {%- block class_property scoped %}
+  {%- if prop.setter %}
+          .addProperty("{{ prop.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ prop.getter }}, &{{ cls.qualified_name }}::{{ prop.setter }})
+  {%- else %}
+          .addProperty("{{ prop.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ prop.getter }}, nullptr)
+  {%- endif %}
+  {%- endblock %}
+  {%- endfor %}
+  {%- endblock %}
   {%- block class_enums scoped %}
   {%- for enum in cls.enums %}
   {%- block class_enum scoped %}
