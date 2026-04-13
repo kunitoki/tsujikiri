@@ -5,17 +5,9 @@ default:
 sync:
     uv sync
 
-# Build both source distribution and wheel.
-build:
-    uv build
-
-# Build wheel only.
+# Build wheel and source distribution.
 wheel:
-    uv build --wheel
-
-# Build source distribution only.
-sdist:
-    uv build --sdist
+    uv build
 
 # Run test suite.
 test *args:
@@ -24,6 +16,11 @@ test *args:
 # Run tests with coverage report.
 coverage *args:
     uv run pytest -n auto --cov=tsujikiri --cov-branch --cov-report=term-missing {{args}}
+
+# Publish a release (build + PyPI publish handled by .github/workflows/release.yml on tag push)
+publish version:
+    echo "__version__ = \"{{version}}\"" > src/tsujikiri/__init__.py
+    perl -0pi -e 's/x=(\d+)/"x=" . ($1 + 1)/ge' README.md
 
 # Remove build artifacts.
 clean:
