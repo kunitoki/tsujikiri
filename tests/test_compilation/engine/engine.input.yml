@@ -1,0 +1,16 @@
+source:
+  path: "entity.hpp"
+  parse_args: ["-std=c++17"]
+
+filters:
+  namespaces: ["math", "engine"]
+  constructors:
+    include: true
+
+format_overrides:
+  luabridge3:
+    generation:
+      includes: ['"engine/math_types.hpp"', '"engine/entity.hpp"']
+  pybind11:
+    generation:
+      includes: ['"engine/math_types.hpp"', '"engine/entity.hpp"']

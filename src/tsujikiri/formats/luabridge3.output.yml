@@ -83,12 +83,12 @@ template: |
   {%- endif %}
   {{ cls.code_injections | code_at("beginning") }}
   {%- block class_constructors scoped %}
-  {%- if not cls.force_abstract %}
+  {%- if not cls.force_abstract and cls.constructor_group.constructors %}
+  {%- set ns = namespace(ctors=[]) %}
   {%- for ctor in cls.constructor_group.constructors %}
-  {%- block class_constructor_group scoped %}
-          .addConstructor<void (*)({{ ctor.params | map(attribute='raw_type') | join(', ') }})>()
-  {%- endblock %}
+  {%- set ns.ctors = ns.ctors + ["void (*)(" + (ctor.params | map(attribute='raw_type') | join(', ')) + ")"] %}
   {%- endfor %}
+          .addConstructor<{{ ns.ctors | join(', ') }}>()
   {%- endif %}
   {%- endblock %}
   {%- block class_methods scoped %}

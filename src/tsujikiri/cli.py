@@ -53,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate bindings for a single class only",
     )
     p.add_argument(
-        "--formats-dir", "-F",
+        "--formats-dir", "-f",
         action="append",
         default=[],
         metavar="DIR",
@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Parse and filter but do not generate output; print a summary instead",
     )
     p.add_argument(
-        "--manifest-file", "-M",
+        "--manifest-file", "-m",
         default=None,
         metavar="FILE",
         help="Write API manifest JSON to FILE; if FILE already exists, compare with new manifest",
@@ -102,6 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--validate-config",
         action="store_true",
         help="Validate the input config YAML (regex patterns, transform stage names) and exit",
+    )
+    p.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose output during parsing (currently only applies to Clang diagnostics)",
     )
     return p
 

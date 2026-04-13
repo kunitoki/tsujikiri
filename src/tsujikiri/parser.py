@@ -7,6 +7,7 @@ Filtering happens in filters.py after the full IR is built.
 from __future__ import annotations
 
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -55,14 +56,38 @@ def _get_default_value(cursor) -> Optional[str]:
     return None
 
 
+def _type_from_tokens(cursor) -> str:
+    """Extract parameter type spelling from source tokens.
+
+    Works around a libclang bug where some parameter types in constructors
+    with initializer lists using std::move are reported with the wrong type
+    (e.g. 'int' instead of 'std::string'). Source tokens are always correct.
+    """
+    name = cursor.spelling
+    tokens = list(cursor.get_tokens())
+    if not name or not tokens:
+        return cursor.type.spelling
+    for i, tok in enumerate(tokens):
+        if tok.spelling == name:
+            if i == 0:
+                return cursor.type.spelling
+            raw = " ".join(t.spelling for t in tokens[:i])
+            return re.sub(r"\s*::\s*", "::", raw).strip() or cursor.type.spelling
+    return cursor.type.spelling
+
+
 def _parse_parameters(cursor) -> List[IRParameter]:
+    # Use PARM_DECL children and token-based type extraction to avoid a
+    # libclang bug where constructors with initializer lists using std::move
+    # cause parameter types to be reported incorrectly via cursor.type.spelling.
     return [
         IRParameter(
             name=arg.spelling,
-            type_spelling=arg.type.spelling,
+            type_spelling=_type_from_tokens(arg),
             default_value=_get_default_value(arg),
         )
-        for arg in cursor.get_arguments()
+        for arg in cursor.get_children()
+        if arg.kind == CursorKind.PARM_DECL
     ]
 
 
@@ -270,8 +295,23 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     ir_class.is_abstract = any(m.is_pure_virtual for m in ir_class.methods)
 
     # --- Fields ---
+    # Derive access from CXX_ACCESS_SPEC_DECL nodes rather than trusting
+    # FIELD_DECL.access_specifier directly.  libclang 16 on Linux misreports
+    # the access specifier of private fields that have in-class default member
+    # initialisers (e.g. `std::string name_ = "entity";`), causing them to
+    # appear as PUBLIC.  CXX_ACCESS_SPEC_DECL cursors always carry the correct
+    # access level because they are derived straight from the `public:` /
+    # `private:` / `protected:` keyword tokens.
+    _default_access: object = (
+        AccessSpecifier.PRIVATE
+        if cursor.kind == CursorKind.CLASS_DECL
+        else AccessSpecifier.PUBLIC
+    )
+    _tracked_access: object = _default_access
     for child in cursor.get_children():
-        if child.kind == CursorKind.FIELD_DECL and child.access_specifier == AccessSpecifier.PUBLIC:
+        if child.kind == CursorKind.CXX_ACCESS_SPEC_DECL:
+            _tracked_access = child.access_specifier
+        elif child.kind == CursorKind.FIELD_DECL and _tracked_access == AccessSpecifier.PUBLIC:
             ir_class.fields.append(IRField(
                 name=child.spelling,
                 type_spelling=child.type.spelling,
@@ -318,6 +358,9 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
     # Ensure we parse as C++ by default if not already specified
     if "-x" not in args:
         args = ["-x", "c++"] + args
+    # Ensure sysroot on darwin
+    if sys.platform == "darwin" and "-isysroot" not in args:
+        args += ["-isysroot", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"]
 
     index = cindex.Index.create()
     tu = index.parse(str(source_path.absolute()), args=args)

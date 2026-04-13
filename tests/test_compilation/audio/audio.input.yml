@@ -1,0 +1,18 @@
+source:
+  path: "audio.hpp"
+  parse_args: ["-std=c++17"]
+
+filters:
+  namespaces: ["audio"]
+  constructors:
+    include: true
+  methods:
+    global_blacklist: []
+
+format_overrides:
+  luabridge3:
+    generation:
+      includes: ['"audio/audio.hpp"']
+  pybind11:
+    generation:
+      includes: ['"audio/audio.hpp"']

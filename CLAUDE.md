@@ -1,5 +1,6 @@
 - always use python via "uv python"
 - use "just test" to test
+- use "just test -k test_method_name" to test an individual test method
 - use "just coverage" to coverage
 - in python files and tests, imports are only allowed at the top
 - always use python type annotations

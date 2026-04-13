@@ -198,7 +198,7 @@ templates:
 Point tsujikiri at your format directory:
 
 ```bash
-tsujikiri -i project.input.yml --target myformat out/bindings.cpp -F ./my_formats/
+tsujikiri -i project.input.yml --target myformat out/bindings.cpp -f ./my_formats/
 ```
 
 ---
@@ -214,10 +214,10 @@ Options:
                               .output.yml; FILE is the output path ('-' for stdout).
                               Repeatable for multiple simultaneous outputs.
   -c, --classname CLASS       Generate bindings for a single class only
-  -F, --formats-dir DIR       Extra directory to search for .output.yml files (repeatable)
+  -f, --formats-dir DIR       Extra directory to search for .output.yml files (repeatable)
       --list-formats          Print available formats and exit
       --dry-run               Parse and filter only; print IR summary without generating
-  -M, --manifest-file FILE    Write API manifest JSON to FILE; compare if FILE exists
+  -m, --manifest-file FILE    Write API manifest JSON to FILE; compare if FILE exists
       --check-compat          Exit 1 if manifest shows breaking API changes
       --embed-version         Embed the API version hash in the generated code
       --trace-transforms      Print transform stages and their targets to stderr

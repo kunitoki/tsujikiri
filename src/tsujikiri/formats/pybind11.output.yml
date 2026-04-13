@@ -109,7 +109,7 @@ template: |
   {%- if group.is_overloaded %}
   {%- for method in group.methods %}
   {%- block class_overloaded_method scoped %}
-      .def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}, {% if method.is_const %}py::const_{% else %}py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>{% endif %}){% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+      .def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
   {%- endblock %}
   {%- endfor %}
   {%- else %}

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from clang import cindex as ci
 from clang.cindex import CursorKind
 from tsujikiri.configurations import SourceConfig
+from tsujikiri.clang_base_enumerations import CursorKind, AccessSpecifier
 from tsujikiri.parser import (
     parse_translation_unit,
     _collect_attr_blocks,
@@ -17,6 +20,7 @@ from tsujikiri.parser import (
     _parse_enum,
     _read_source_lines,
     _source_file,
+    _type_from_tokens,
     _SOURCE_CACHE,
 )
 
@@ -522,3 +526,503 @@ class TestExplicitXArgNotDuplicated:
         module = parse_translation_unit(src, ["ns"], "xarg_test")
         assert module is not None
         assert any(f.name == "foo" for f in module.functions)
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: darwin sysroot injection
+# ---------------------------------------------------------------------------
+
+class TestIsysrootNotDuplicated:
+    def test_parse_with_explicit_isysroot(self, tmp_path: Path) -> None:
+        """When parse_args already contains ``-isysroot``, it must not be appended again."""
+        hpp = tmp_path / "isysroot.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
+        module = parse_translation_unit(src, ["ns"], "isysroot_test")
+        assert module is not None
+        assert any(f.name == "foo" for f in module.functions)
+
+    def test_darwin_sysroot_appended_when_missing(self, tmp_path: Path) -> None:
+        """On darwin, -isysroot is appended to args when not already present."""
+        hpp = tmp_path / "sysroot.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("sys.platform", "darwin"):
+            module = parse_translation_unit(src, ["ns"], "sysroot_test")
+        assert module is not None
+        assert any(f.name == "foo" for f in module.functions)
+
+
+# ---------------------------------------------------------------------------
+# _type_from_tokens — comprehensive real-libclang tests
+#
+# Many std:: types are misreported by libclang (typically as 'int') when they
+# appear in constructor parameters whose constructor has a member-initialiser
+# list.  _type_from_tokens works around this by reconstructing the type from
+# the source token stream.
+#
+# Tests are grouped into:
+#   • Primitive / built-in            — not affected by the bug
+#   • Pointer / reference             — not affected
+#   • std::string variants            — AFFECTED (bug produces 'int')
+#   • std::string_view variants       — not affected
+#   • Template containers / wrappers  — AFFECTED (bug produces 'int')
+#   • std::function / shared_ptr      — not affected
+#   • Multi-parameter function        — mixed
+#   • Widget constructors (regression)— AFFECTED (the original bug trigger)
+#
+# Integration path: parse_translation_unit → _parse_parameters →
+#   _type_from_tokens → IRParameter.type_spelling
+# ---------------------------------------------------------------------------
+
+class TestTypeFromTokens:
+    """Verify _type_from_tokens yields correct type spellings via the full IR pipeline.
+
+    The fixture `type_tokens_module` parses type_tokens.hpp which is designed to
+    exercise every interesting case including those that trigger the libclang bug.
+    """
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _fn_types(mod, name: str) -> list[str]:
+        fn = next(f for f in mod.functions if f.name == name)
+        return [p.type_spelling for p in fn.parameters]
+
+    @staticmethod
+    def _ctor_types(mod, class_name: str, n_params: int) -> list[str]:
+        cls = next(c for c in mod.classes if c.name == class_name)
+        ctor = next(c for c in cls.constructors if len(c.parameters) == n_params)
+        return [p.type_spelling for p in ctor.parameters]
+
+    # ------------------------------------------------------------------
+    # Primitive / built-in — libclang reports these correctly
+    # ------------------------------------------------------------------
+
+    def test_int(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_int") == ["int"]
+
+    def test_double(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_double") == ["double"]
+
+    def test_bool(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_bool") == ["bool"]
+
+    def test_unsigned_int(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_unsigned_int") == ["unsigned int"]
+
+    def test_long_long(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_long_long") == ["long long"]
+
+    def test_size_t(self, type_tokens_module: object) -> None:
+        # std::size_t spans tokens ['std', '::', 'size_t', name]; :: is normalised
+        assert self._fn_types(type_tokens_module, "f_size_t") == ["std::size_t"]
+
+    # ------------------------------------------------------------------
+    # Pointer / reference — not affected by the bug
+    # ------------------------------------------------------------------
+
+    def test_int_ptr(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_int_ptr") == ["int *"]
+
+    def test_const_char_ptr(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_const_char_ptr") == ["const char *"]
+
+    def test_int_ref(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_int_ref") == ["int &"]
+
+    def test_const_int_ref(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_const_int_ref") == ["const int &"]
+
+    # ------------------------------------------------------------------
+    # std::string — affected by the libclang bug (would return 'int' without fix)
+    # ------------------------------------------------------------------
+
+    def test_string_value(self, type_tokens_module: object) -> None:
+        # libclang cursor.type.spelling would say 'int'; tokens give 'std::string'
+        assert self._fn_types(type_tokens_module, "f_string") == ["std::string"]
+
+    def test_string_ref(self, type_tokens_module: object) -> None:
+        # tokens: ['std', '::', 'string', '&', name] → 'std::string &'
+        assert self._fn_types(type_tokens_module, "f_string_ref") == ["std::string &"]
+
+    def test_string_cref(self, type_tokens_module: object) -> None:
+        # tokens: ['const', 'std', '::', 'string', '&', name] → 'const std::string &'
+        assert self._fn_types(type_tokens_module, "f_string_cref") == ["const std::string &"]
+
+    def test_string_rref(self, type_tokens_module: object) -> None:
+        # tokens: ['std', '::', 'string', '&&', name] → 'std::string &&'
+        assert self._fn_types(type_tokens_module, "f_string_rref") == ["std::string &&"]
+
+    # ------------------------------------------------------------------
+    # std::string_view — NOT affected by the bug; token path still correct
+    # ------------------------------------------------------------------
+
+    def test_string_view_value(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_sv") == ["std::string_view"]
+
+    def test_string_view_cref(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_sv_cref") == ["const std::string_view &"]
+
+    # ------------------------------------------------------------------
+    # std::vector — affected by the bug ('int' without fix).
+    # Template bracket tokens are joined with spaces (valid C++).
+    # ------------------------------------------------------------------
+
+    def test_vec_int(self, type_tokens_module: object) -> None:
+        # tokens include '<', 'int', '>'; joined: 'std::vector < int >'
+        assert self._fn_types(type_tokens_module, "f_vec_int") == ["std::vector < int >"]
+
+    def test_vec_string(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_vec_string") == ["std::vector < std::string >"]
+
+    def test_vec_int_cref(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_vec_int_cref") == ["const std::vector < int > &"]
+
+    # ------------------------------------------------------------------
+    # std::map — affected by the bug
+    # ------------------------------------------------------------------
+
+    def test_map_string_int(self, type_tokens_module: object) -> None:
+        # comma token has spaces on both sides from join
+        assert self._fn_types(type_tokens_module, "f_map_string_int") == [
+            "std::map < std::string , int >"
+        ]
+
+    # ------------------------------------------------------------------
+    # std::optional — affected by the bug
+    # ------------------------------------------------------------------
+
+    def test_optional_string(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_opt_string") == [
+            "std::optional < std::string >"
+        ]
+
+    # ------------------------------------------------------------------
+    # Nested templates — affected by the bug.
+    # Note: '>>' is a single token in C++11+ (closes two templates).
+    # ------------------------------------------------------------------
+
+    def test_nested_vector_pair(self, type_tokens_module: object) -> None:
+        # tokens end with '>>' (single token): 'std::vector < std::pair < int , std::string >>'
+        assert self._fn_types(type_tokens_module, "f_nested") == [
+            "std::vector < std::pair < int , std::string >>"
+        ]
+
+    # ------------------------------------------------------------------
+    # std::function — NOT affected by the bug; token path still exercised
+    # ------------------------------------------------------------------
+
+    def test_function_void_int(self, type_tokens_module: object) -> None:
+        # '(' and ')' are separate tokens, each with surrounding spaces after join
+        assert self._fn_types(type_tokens_module, "f_fn_void_int") == [
+            "std::function < void ( int ) >"
+        ]
+
+    def test_function_int_two_doubles(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_fn_int_two_doubles") == [
+            "std::function < int ( double , double ) >"
+        ]
+
+    # ------------------------------------------------------------------
+    # std::shared_ptr — NOT affected by the bug
+    # ------------------------------------------------------------------
+
+    def test_shared_ptr_obj(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "f_shared_obj") == [
+            "std::shared_ptr < Obj >"
+        ]
+
+    # ------------------------------------------------------------------
+    # Multi-parameter function — verifies each positional slot is correct
+    # ------------------------------------------------------------------
+
+    def test_multi_param_string(self, type_tokens_module: object) -> None:
+        types = self._fn_types(type_tokens_module, "f_multi")
+        assert types[0] == "std::string"
+
+    def test_multi_param_int(self, type_tokens_module: object) -> None:
+        types = self._fn_types(type_tokens_module, "f_multi")
+        assert types[1] == "int"
+
+    def test_multi_param_vec_double_cref(self, type_tokens_module: object) -> None:
+        types = self._fn_types(type_tokens_module, "f_multi")
+        assert types[2] == "const std::vector < double > &"
+
+    # ------------------------------------------------------------------
+    # Widget constructors — regression for the original bug trigger.
+    #
+    # Widget(std::string name, std::vector<int> ids) uses std::move in its
+    # initialiser list. Without _type_from_tokens, libclang reports both
+    # parameter types as 'int'.  With the fix, both are correctly extracted
+    # from the source token stream.
+    # ------------------------------------------------------------------
+
+    def test_widget_ctor_std_move_string_param(self, type_tokens_module: object) -> None:
+        """std::string in a constructor with a std::move initialiser list."""
+        types = self._ctor_types(type_tokens_module, "Widget", 2)
+        assert types[0] == "std::string"
+
+    def test_widget_ctor_std_move_vector_param(self, type_tokens_module: object) -> None:
+        """std::vector<int> in a constructor with a std::move initialiser list."""
+        types = self._ctor_types(type_tokens_module, "Widget", 2)
+        assert types[1] == "std::vector < int >"
+
+    def test_widget_ctor_cref_string_param(self, type_tokens_module: object) -> None:
+        """const std::string & in a second constructor (also has initialiser list)."""
+        types = self._ctor_types(type_tokens_module, "Widget", 3)
+        assert types[0] == "const std::string &"
+
+    def test_widget_ctor_map_param(self, type_tokens_module: object) -> None:
+        """std::map<std::string, int> in a constructor — heavily templated arg."""
+        types = self._ctor_types(type_tokens_module, "Widget", 3)
+        assert types[1] == "std::map < std::string , int >"
+
+    def test_widget_ctor_optional_param(self, type_tokens_module: object) -> None:
+        """std::optional<double> in a constructor."""
+        types = self._ctor_types(type_tokens_module, "Widget", 3)
+        assert types[2] == "std::optional < double >"
+
+    # ------------------------------------------------------------------
+    # Direct _type_from_tokens unit tests on raw libclang cursors.
+    # These bypass the IR pipeline and call the function directly to verify
+    # its behaviour on actual token sequences reported by libclang.
+    # ------------------------------------------------------------------
+
+    def test_direct_string_in_init_list_ctor(self, tmp_path: Path) -> None:
+        """_type_from_tokens returns 'std::string' even when cursor.type.spelling says 'int'."""
+        hpp = tmp_path / "direct_test.hpp"
+        hpp.write_text(
+            "#include <string>\n"
+            "#include <vector>\n"
+            "namespace dt {\n"
+            "class Foo {\n"
+            "public:\n"
+            "    std::string s_;\n"
+            "    std::vector<int> v_;\n"
+            "    Foo(std::string s, std::vector<int> v) : s_(std::move(s)), v_(std::move(v)) {}\n"
+            "};\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        args = ["-x", "c++", "-std=c++17"]
+        if sys.platform == "darwin":
+            args += ["-isysroot", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"]
+
+        index = ci.Index.create()
+        tu = index.parse(str(hpp), args=args)
+
+        parm_cursors: list[object] = []
+        hpp_path = str(hpp)
+
+        def _collect(cursor: object) -> None:
+            loc = cursor.location
+            if (
+                cursor.kind == CursorKind.CONSTRUCTOR
+                and cursor.access_specifier == AccessSpecifier.PUBLIC
+                and loc.file is not None
+                and loc.file.name == hpp_path
+            ):
+                parm_cursors.extend(
+                    c for c in cursor.get_children() if c.kind == CursorKind.PARM_DECL
+                )
+            for child in cursor.get_children():
+                _collect(child)
+
+        _collect(tu.cursor)
+
+        assert len(parm_cursors) == 2, f"expected 2 PARM_DECLs, got {len(parm_cursors)}"
+        s_cursor, v_cursor = parm_cursors
+
+        # Document whether the libclang bug is present on this platform/version.
+        # Some libclang builds correctly report the type even in init-list ctors;
+        # the token workaround is safe either way and must always return the right type.
+        _ = s_cursor.type.spelling  # may be 'int' (bug) or 'std::string' (fixed)
+
+        # _type_from_tokens must return the correct type regardless
+        assert _type_from_tokens(s_cursor) == "std::string"
+        assert _type_from_tokens(v_cursor) == "std::vector < int >"
+
+    def test_direct_no_name_falls_back_to_cursor_type(self, tmp_path: Path) -> None:
+        """Unnamed parameters (no spelling) fall back to cursor.type.spelling."""
+        hpp = tmp_path / "unnamed.hpp"
+        hpp.write_text(
+            "namespace un { void f(int, double); }\n",
+            encoding="utf-8",
+        )
+        import sys
+        args = ["-x", "c++", "-std=c++17"]
+        if sys.platform == "darwin":
+            args += ["-isysroot", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"]
+
+        index = ci.Index.create()
+        tu = index.parse(str(hpp), args=args)
+
+        parm_cursors: list[object] = []
+
+        def _collect(cursor: object) -> None:
+            if cursor.kind == CursorKind.FUNCTION_DECL and cursor.spelling == "f":
+                parm_cursors.extend(
+                    c for c in cursor.get_children() if c.kind == CursorKind.PARM_DECL
+                )
+            for child in cursor.get_children():
+                _collect(child)
+
+        _collect(tu.cursor)
+        assert len(parm_cursors) == 2
+
+        # Unnamed parameters have empty spelling; function falls back to cursor.type.spelling
+        for p in parm_cursors:
+            assert p.spelling == "", f"expected unnamed param, got {p.spelling!r}"
+            result = _type_from_tokens(p)
+            assert result == p.type.spelling
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: _type_from_tokens lines 73 and 76 (mock-based)
+# ---------------------------------------------------------------------------
+
+class TestTypeFromTokensBranches:
+    """Cover the two remaining branches of _type_from_tokens using mocks."""
+
+    def test_name_is_first_token_returns_cursor_type(self) -> None:
+        """When the parameter name is the very first token (i == 0), return cursor.type.spelling.
+
+        This safety guard fires when the type and name spellings are identical,
+        e.g. ``void f(Foo Foo)``.  Without the guard the type extraction would
+        produce an empty string.
+        """
+        cursor = MagicMock()
+        cursor.spelling = "Foo"
+        tok = MagicMock()
+        tok.spelling = "Foo"
+        cursor.get_tokens.return_value = [tok]
+        cursor.type.spelling = "Foo"
+        assert _type_from_tokens(cursor) == "Foo"
+
+    def test_name_absent_from_tokens_falls_back_to_cursor_type(self) -> None:
+        """When cursor.spelling is not found in any token, return cursor.type.spelling.
+
+        This happens with macro-expanded parameter names: get_tokens() returns
+        the unexpanded macro identifier while cursor.spelling returns the
+        expanded name, so the name is never matched.
+        """
+        cursor = MagicMock()
+        cursor.spelling = "myvar"
+        tok_int = MagicMock()
+        tok_int.spelling = "int"
+        tok_macro = MagicMock()
+        tok_macro.spelling = "MYNAME"
+        cursor.get_tokens.return_value = [tok_int, tok_macro]
+        cursor.type.spelling = "int"
+        assert _type_from_tokens(cursor) == "int"
+
+
+# ---------------------------------------------------------------------------
+# _type_from_tokens — namespace and global-qualifier cases (type_tokens.hpp)
+#
+# All functions below live in ``namespace types`` in type_tokens.hpp, which
+# includes type_namespaces.hpp for the outer::inner user types.
+#
+# Groups:
+#   • Global-namespace-qualified std:: types  (::std::...)
+#   • Nested-namespace user types             (outer::inner::Type)
+#   • Cross-namespace combinations
+# ---------------------------------------------------------------------------
+
+class TestTypeFromTokensNamespaces:
+    """Verify _type_from_tokens for global-qualifier and nested-namespace types."""
+
+    @staticmethod
+    def _fn_types(mod: object, name: str) -> list[str]:
+        fn = next(f for f in mod.functions if f.name == name)
+        return [p.type_spelling for p in fn.parameters]
+
+    # ------------------------------------------------------------------
+    # Global-namespace-qualified std:: types (::std::...)
+    # The leading '::' token causes re.sub to strip surrounding spaces,
+    # producing 'const::std::string' (no space between const and ::).
+    # ------------------------------------------------------------------
+
+    def test_g_string(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "g_string") == ["::std::string"]
+
+    def test_g_string_cref(self, type_tokens_module: object) -> None:
+        # 'const :: std :: string &' → 'const::std::string &' (no space before ::)
+        assert self._fn_types(type_tokens_module, "g_string_cref") == ["const::std::string &"]
+
+    def test_g_string_rref(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "g_string_rref") == ["::std::string &&"]
+
+    def test_g_vec_int(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "g_vec_int") == ["::std::vector < int >"]
+
+    def test_g_optional_string(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "g_optional_string") == [
+            "::std::optional <::std::string >"
+        ]
+
+    def test_g_map_string_int(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "g_map_string_int") == [
+            "::std::map <::std::string , int >"
+        ]
+
+    def test_g_function_void_string(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "g_function_void_string") == [
+            "::std::function < void (::std::string ) >"
+        ]
+
+    # ------------------------------------------------------------------
+    # Nested-namespace user types (outer::inner::Type)
+    # libclang reports these correctly; the token path still exercises
+    # the :: normalisation across multiple namespace separators.
+    # ------------------------------------------------------------------
+
+    def test_n_nested_value(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "n_nested_value") == ["outer::inner::Nested"]
+
+    def test_n_nested_cref(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "n_nested_cref") == ["const outer::inner::Nested &"]
+
+    def test_n_nested_ptr(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "n_nested_ptr") == ["outer::inner::Nested *"]
+
+    def test_n_mid_unnamed_falls_back_to_cursor_type(self, type_tokens_module: object) -> None:
+        # Unnamed parameter (no spelling) → falls back to cursor.type.spelling
+        assert self._fn_types(type_tokens_module, "n_mid_value") == ["outer::Mid"]
+
+    def test_n_global_nested(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "n_global_nested") == ["::outer::inner::Nested"]
+
+    def test_n_global_deep_ptr(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "n_global_deep_ptr") == ["::outer::inner::Deep *"]
+
+    # ------------------------------------------------------------------
+    # Cross-namespace: std containers holding user types and mixed args
+    # ------------------------------------------------------------------
+
+    def test_m_multi_first_param(self, type_tokens_module: object) -> None:
+        types = self._fn_types(type_tokens_module, "m_multi")
+        assert types[0] == "outer::inner::Nested"
+
+    def test_m_multi_second_param(self, type_tokens_module: object) -> None:
+        types = self._fn_types(type_tokens_module, "m_multi")
+        assert types[1] == "::std::string"
+
+    def test_m_vec_nested(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "m_vec_nested") == [
+            "::std::vector < outer::inner::Nested >"
+        ]
+
+    def test_m_map_nested_string(self, type_tokens_module: object) -> None:
+        assert self._fn_types(type_tokens_module, "m_map_nested_string") == [
+            "::std::map < outer::inner::Nested ,::std::string >"
+        ]
+
+    def test_m_function_nested_unnamed(self, type_tokens_module: object) -> None:
+        # Unnamed parameter → falls back to cursor.type.spelling (canonical libclang form)
+        assert self._fn_types(type_tokens_module, "m_function_nested") == [
+            "::std::function<outer::inner::Nested (::std::string, outer::Mid)>"
+        ]
