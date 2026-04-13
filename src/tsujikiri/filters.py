@@ -100,6 +100,10 @@ class FilterEngine:
         for method in ir_class.methods:
             if not method.emit:
                 continue
+            # Auto-suppress variadic (varargs) methods — no Python dunder equivalent
+            if method.is_varargs:
+                method.emit = False
+                continue
             # Operator suppression is done via config (global_blacklist or per-class pattern)
             # Global blacklist
             if _matches(method.name, self.cfg.methods.global_blacklist):
@@ -144,6 +148,10 @@ class FilterEngine:
         blacklist = cfg.blacklist
         for fn in module.functions:
             if not fn.emit:
+                continue
+            # Auto-suppress variadic (varargs) functions
+            if fn.is_varargs:
+                fn.emit = False
                 continue
             if _matches(fn.name, blacklist):
                 fn.emit = False

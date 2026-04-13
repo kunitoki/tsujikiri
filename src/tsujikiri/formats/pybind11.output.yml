@@ -9,10 +9,12 @@ unsupported_types:
   - OSType
 
 # Optional C++ → target-language type remapping (use add_type_mapping transform)
-type_mappings: {}
+type_mappings:
+  "std::string_view": "std::string"
 
 # C++ operator overload → Python dunder method name mapping
 # operator<< maps to __repr__ to generate a lambda using std::ostringstream
+# operator= is intentionally omitted — it has no Python dunder equivalent
 operator_mappings:
   "operator+": "__add__"
   "operator+unary": "__pos__"
@@ -21,6 +23,18 @@ operator_mappings:
   "operator*": "__mul__"
   "operator/": "__truediv__"
   "operator%": "__mod__"
+  "operator+=": "__iadd__"
+  "operator-=": "__isub__"
+  "operator*=": "__imul__"
+  "operator/=": "__itruediv__"
+  "operator%=": "__imod__"
+  "operator&": "__and__"
+  "operator|": "__or__"
+  "operator^": "__xor__"
+  "operator~": "__invert__"
+  "operator&=": "__iand__"
+  "operator|=": "__ior__"
+  "operator^=": "__ixor__"
   "operator==": "__eq__"
   "operator!=": "__ne__"
   "operator<": "__lt__"
@@ -32,6 +46,14 @@ operator_mappings:
   "operator[]": "__getitem__"
   "operator()": "__call__"
   "operator!": "__bool__"
+  "operator bool": "__bool__"
+  "operator int": "__int__"
+  "operator long": "__int__"
+  "operator long long": "__int__"
+  "operator float": "__float__"
+  "operator double": "__float__"
+  "operator std::string": "__str__"
+  "operator size_t": "__index__"
 
 template: |
   {%- block prologue -%}
@@ -59,16 +81,33 @@ template: |
     m.attr("__api_version__") = k_{{ module_name }}_api_version;
   {%- endif %}
   {%- endblock %}
+  {%- block exception_registrations %}
+  {%- for exc in exception_registrations %}
+    py::register_exception<{{ exc.cpp_type }}>(m, "{{ exc.python_name }}");
+  {%- endfor %}
+  {%- endblock %}
   {%- for enum in enums %}
   {%- block enum scoped %}
+  {%- if enum.is_anonymous %}
+  {%- for value in enum.values %}
+  {%- block anon_enum_value scoped %}
+    m.attr("{{ value.name }}") = static_cast<int>({{ value.number }});
+  {%- endblock %}
+  {%- endfor %}
+  {%- else %}
 
-    py::enum_<{{ enum.qualified_name }}>(m, "{{ enum.name }}"{% if enum.doc %}, "{{ enum.doc }}"{% endif %})
+    py::enum_<{{ enum.qualified_name }}>(m, "{{ enum.name }}"{% if enum.is_arithmetic %}, py::arithmetic(){% endif %}{% if enum.doc %}, "{{ enum.doc }}"{% endif %})
   {%- for value in enum.values %}
   {%- block enum_value scoped %}
       .value("{{ value.name }}", {{ enum.qualified_name }}::{{ value.original_name }}{% if value.doc %}, "{{ value.doc }}"{% endif %})
   {%- endblock %}
   {%- endfor %}
+  {%- if not enum.is_scoped %}
       .export_values();
+  {%- else %}
+      ;
+  {%- endif %}
+  {%- endif %}
   {%- endblock %}
   {%- endfor %}
   {%- for group in function_groups %}
@@ -107,6 +146,14 @@ template: |
       }
   {%- endblock %}
   {%- endfor %}
+  {%- if cls.has_exposed_protected %}
+  {%- for pm in cls.exposed_protected_methods %}
+  {%- block trampoline_using scoped %}
+      using {{ cls.qualified_name }}::{{ pm.spelling }};
+  {%- endblock %}
+  {%- endfor %}
+  {%- endif %}
+  {{ cls.declaration_injections | code_at("declaration") }}
   };
   {%- endif %}
 
@@ -173,10 +220,18 @@ template: |
   {%- block class_fields scoped %}
   {%- for field in cls.fields %}
   {%- block class_field scoped %}
+  {%- if field.is_static %}
+  {%- if field.read_only %}
+      .def_readonly_static("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
+  {%- else %}
+      .def_readwrite_static("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
+  {%- endif %}
+  {%- else %}
   {%- if field.read_only %}
       .def_readonly("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
   {%- else %}
       .def_readwrite("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
+  {%- endif %}
   {%- endif %}
   {%- endblock %}
   {%- endfor %}
@@ -192,6 +247,12 @@ template: |
   {%- endblock %}
   {%- endfor %}
   {%- endblock %}
+  {%- if cls.generate_hash %}
+      .def("__hash__", [](const {{ cls.qualified_name }}& self) { return std::hash<{{ cls.qualified_name }}>{}(self); })
+  {%- endif %}
+  {%- if cls.has_free_ostream_op %}
+      .def("__repr__", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
+  {%- endif %}
   {{ cls.code_injections | code_at("end") }}
       ;
   {%- endblock %}

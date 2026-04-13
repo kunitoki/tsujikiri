@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 from clang import cindex
 
-from tsujikiri.clang_base_enumerations import AccessSpecifier, CursorKind
+from tsujikiri.clang_base_enumerations import AccessSpecifier, AvailabilityKind, CursorKind
 from tsujikiri.configurations import SourceConfig
 from tsujikiri.ir import (
     IRBase,
@@ -27,6 +27,7 @@ from tsujikiri.ir import (
     IRMethod,
     IRModule,
     IRParameter,
+    IRUsingDeclaration,
 )
 
 
@@ -180,6 +181,45 @@ def _get_attributes(cursor) -> List[str]:
     return attrs
 
 
+def _is_deleted(cursor) -> bool:
+    """Return True if the cursor's declaration has '= delete'."""
+    tokens = list(cursor.get_tokens())
+    for i, tok in enumerate(tokens):
+        if tok.spelling == "=" and i + 1 < len(tokens) and tokens[i + 1].spelling == "delete":
+            return True
+    return False
+
+
+def _is_deprecated(cursor) -> bool:
+    """Return True if the cursor is marked as deprecated."""
+    return cursor.availability == AvailabilityKind.DEPRECATED
+
+
+def _get_deprecation_message(cursor) -> Optional[str]:
+    """Return the deprecation message if present, or None.
+
+    Scans tokens for [[deprecated("msg")]] or __attribute__((deprecated("msg"))) patterns.
+    """
+    for tok in cursor.get_tokens():
+        if tok.spelling == "deprecated":
+            pass  # found the keyword; scan surrounding tokens
+    # Scan source text for deprecated("msg") pattern
+    if cursor.location.file is None:
+        return None
+    lines = _read_source_lines(cursor.location.file.name)
+    if not lines:
+        return None
+    start_line = cursor.extent.start.line
+    # Check current and previous lines for deprecated message
+    check_range = range(max(0, start_line - 3), min(len(lines), start_line + 1))
+    for idx in check_range:
+        line = lines[idx]
+        m = re.search(r'deprecated\s*\(\s*"([^"]*)"\s*\)', line)
+        if m:
+            return m.group(1)
+    return None
+
+
 def _is_noexcept(cursor) -> bool:
     kind = cursor.exception_specification_kind
     return kind in (
@@ -216,8 +256,29 @@ def _access_str(access_specifier) -> str:
     return "private"
 
 
+def _is_scoped_enum(cursor) -> bool:
+    """Return True if the enum is declared as 'enum class' or 'enum struct'."""
+    tokens = list(cursor.get_tokens())
+    for i, tok in enumerate(tokens):
+        if tok.spelling == "enum":
+            if i + 1 < len(tokens) and tokens[i + 1].spelling in ("class", "struct"):
+                return True
+            break
+    return False
+
+
+def _is_anonymous_enum(cursor) -> bool:
+    """Return True if the enum is anonymous (has no user-defined name)."""
+    # libclang Python reports anonymous types with spellings like
+    # "(unnamed enum at /path/file.hpp:17:1)" rather than empty string.
+    s = cursor.spelling
+    return not s or s.startswith("(") or "unnamed" in s
+
+
 def _parse_enum(cursor, namespace: str) -> IREnum:
-    qualified = f"{namespace}::{cursor.spelling}" if namespace else cursor.spelling
+    is_anonymous = _is_anonymous_enum(cursor)
+    name = cursor.spelling if not is_anonymous else f"__anon_enum_{cursor.location.line}"
+    qualified = f"{namespace}::{name}" if namespace else name
     values = []
     for child in cursor.get_children():
         if child.kind == CursorKind.ENUM_CONSTANT_DECL:
@@ -227,9 +288,13 @@ def _parse_enum(cursor, namespace: str) -> IREnum:
                 attributes=_get_attributes(child),
             ))
     return IREnum(
-        name=cursor.spelling,
+        name=name,
         qualified_name=qualified,
         values=values,
+        is_scoped=_is_scoped_enum(cursor),
+        is_anonymous=is_anonymous,
+        is_deprecated=_is_deprecated(cursor),
+        deprecation_message=_get_deprecation_message(cursor) if _is_deprecated(cursor) else None,
         attributes=_get_attributes(cursor),
     )
 
@@ -273,6 +338,8 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
             params = _parse_parameters(m)
             is_op = m.spelling.startswith("operator") and not m.spelling[len("operator"):].isalpha()
             op_type = _canonicalize_operator(m.spelling, len(params)) if is_op else None
+            deprecated = _is_deprecated(m)
+            is_varargs = m.type.is_function_variadic()
             method = IRMethod(
                 name=m.spelling,
                 spelling=m.spelling,
@@ -284,35 +351,96 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 is_virtual=m.is_virtual_method(),
                 is_pure_virtual=m.is_pure_virtual_method(),
                 is_noexcept=_is_noexcept(m),
+                is_varargs=is_varargs,
                 is_overload=is_overload,
                 is_operator=is_op,
                 operator_type=op_type,
                 source_file=_source_file(m),
+                is_deprecated=deprecated,
+                deprecation_message=_get_deprecation_message(m) if deprecated else None,
                 attributes=_get_attributes(m),
             )
-            # access filter: only public
+            # Collect public and protected methods; protected methods are suppressed by default
             if m.access_specifier == AccessSpecifier.PUBLIC:
                 ir_class.methods.append(method)
+            elif m.access_specifier == AccessSpecifier.PROTECTED:
+                method.access = "protected"
+                method.emit = False
+                ir_class.methods.append(method)
+
+    # --- Conversion operators ---
+    for child in cursor.get_children():
+        if child.kind == CursorKind.CONVERSION_FUNCTION and child.access_specifier == AccessSpecifier.PUBLIC:
+            deprecated = _is_deprecated(child)
+            method = IRMethod(
+                name=child.spelling,
+                spelling=child.spelling,
+                qualified_name=f"{qualified}::{child.spelling}",
+                return_type=child.result_type.spelling,
+                parameters=[],
+                is_static=False,
+                is_const=child.is_const_method(),
+                is_virtual=child.is_virtual_method(),
+                is_pure_virtual=child.is_pure_virtual_method(),
+                is_noexcept=_is_noexcept(child),
+                is_overload=False,
+                is_operator=True,
+                operator_type=child.spelling,  # e.g. "operator bool"
+                is_conversion_operator=True,
+                conversion_target_type=child.result_type.spelling,
+                source_file=_source_file(child),
+                is_deprecated=deprecated,
+                deprecation_message=_get_deprecation_message(child) if deprecated else None,
+                attributes=_get_attributes(child),
+            )
+            ir_class.methods.append(method)
 
     # --- Constructors ---
-    ctors = [
+    all_ctors = [
         c for c in cursor.get_children()
         if c.kind == CursorKind.CONSTRUCTOR
-        and c.access_specifier == AccessSpecifier.PUBLIC
     ]
-    is_ctor_overload = len(ctors) > 1
-    for ctor in ctors:
+    # Detect deleted copy/move constructors for move-only type inference
+    class_name_for_ctor = class_name
+    for ctor in all_ctors:
+        params = _parse_parameters(ctor)
+        if len(params) == 1:
+            t = params[0].type_spelling
+            # Copy constructor: takes const ClassName& or ClassName const&
+            if (f"const {class_name_for_ctor} &" in t or f"{class_name_for_ctor} const &" in t
+                    or t.strip() == f"const {class_name_for_ctor} &"):
+                if _is_deleted(ctor) or ctor.access_specifier != AccessSpecifier.PUBLIC:
+                    ir_class.has_deleted_copy_constructor = True
+                    ir_class.copyable = False
+            # Move constructor: takes ClassName&&
+            elif f"{class_name_for_ctor} &&" in t or f"{class_name_for_ctor}&&" in t:
+                if _is_deleted(ctor) or ctor.access_specifier != AccessSpecifier.PUBLIC:
+                    ir_class.has_deleted_move_constructor = True
+                    ir_class.movable = False
+
+    public_ctors = [c for c in all_ctors if c.access_specifier == AccessSpecifier.PUBLIC and not _is_deleted(c)]
+    is_ctor_overload = len(public_ctors) > 1
+    for ctor in public_ctors:
+        deprecated = _is_deprecated(ctor)
         ir_class.constructors.append(IRConstructor(
             parameters=_parse_parameters(ctor),
             is_overload=is_ctor_overload,
             is_noexcept=_is_noexcept(ctor),
             is_explicit=_is_explicit(ctor),
+            is_varargs=ctor.type.is_function_variadic(),
+            is_deprecated=deprecated,
+            deprecation_message=_get_deprecation_message(ctor) if deprecated else None,
             attributes=_get_attributes(ctor),
         ))
 
     # --- Virtual / abstract class flags ---
     ir_class.has_virtual_methods = any(m.is_virtual for m in ir_class.methods)
     ir_class.is_abstract = any(m.is_pure_virtual for m in ir_class.methods)
+
+    # --- Class-level deprecation ---
+    ir_class.is_deprecated = _is_deprecated(cursor)
+    if ir_class.is_deprecated:
+        ir_class.deprecation_message = _get_deprecation_message(cursor)
 
     # --- Fields ---
     # Derive access from CXX_ACCESS_SPEC_DECL nodes rather than trusting
@@ -338,6 +466,32 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 is_const="const" in child.type.spelling,
                 is_static=False,
                 attributes=_get_attributes(child),
+            ))
+        elif child.kind == CursorKind.VAR_DECL and _tracked_access == AccessSpecifier.PUBLIC:
+            # Static member variables (class-level, not instance fields)
+            ir_class.fields.append(IRField(
+                name=child.spelling,
+                type_spelling=child.type.spelling,
+                is_const="const" in child.type.spelling,
+                is_static=True,
+                attributes=_get_attributes(child),
+            ))
+
+    # --- Using declarations ---
+    for child in cursor.get_children():
+        if child.kind == CursorKind.USING_DECLARATION:
+            access = _access_str(child.access_specifier)
+            member_name = child.spelling
+            # Extract base class qualified name from child TYPE_REF cursor
+            base_qname = ""
+            for ch in child.get_children():
+                if ch.kind == CursorKind.TYPE_REF:
+                    base_qname = ch.type.get_canonical().spelling
+                    break
+            ir_class.using_declarations.append(IRUsingDeclaration(
+                member_name=member_name,
+                base_qualified_name=base_qname,
+                access=access,
             ))
 
     # --- Nested enums ---
@@ -407,6 +561,7 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
             fn_is_op = (fn_cursor.spelling.startswith("operator")
                         and not fn_cursor.spelling[len("operator"):].isalpha())
             fn_op_type = _canonicalize_operator(fn_cursor.spelling, len(fn_params)) if fn_is_op else None
+            fn_deprecated = _is_deprecated(fn_cursor)
             module.functions.append(IRFunction(
                 name=fn_cursor.spelling,
                 qualified_name=qualified,
@@ -415,8 +570,11 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
                 parameters=fn_params,
                 is_overload=is_overload,
                 is_noexcept=_is_noexcept(fn_cursor),
+                is_varargs=fn_cursor.type.is_function_variadic(),
                 is_operator=fn_is_op,
                 operator_type=fn_op_type,
+                is_deprecated=fn_deprecated,
+                deprecation_message=_get_deprecation_message(fn_cursor) if fn_deprecated else None,
                 attributes=_get_attributes(fn_cursor),
             ))
 

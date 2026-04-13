@@ -208,7 +208,8 @@ class TestGeoPybind11Generation:
     def test_color_enum(self, geo_module, pybind11_output_config):
         out = _generate(geo_module, pybind11_output_config)
         assert 'py::enum_<geo::Color>(m, "Color")' in out
-        assert ".export_values();" in out
+        # geo::Color is "enum class" (scoped), so .export_values() must NOT appear
+        assert ".export_values();" not in out
 
     def test_overloaded_resize_fixed(self, geo_module, pybind11_output_config):
         # Verify the fixed template: no spurious py::overload_cast<...> as 2nd arg

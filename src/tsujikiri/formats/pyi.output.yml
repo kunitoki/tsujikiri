@@ -36,6 +36,7 @@ template: |
   {%- block prologue -%}
   # DO NOT EDIT - Auto-generated Python stubs for {{ module_name }} by tsujikiri
   from __future__ import annotations
+  import enum
   from typing import overload
   {{ code_injections | code_at("beginning") }}
   {%- endblock %}
@@ -55,7 +56,11 @@ template: |
   {%- block class_fields scoped %}
   {%- for field in cls.fields %}
   {%- block class_field scoped %}
+  {%- if field.is_static %}
+      {{ field.name }}: {{ field.type }}  # static{% if field.read_only %}, read-only{% endif %}
+  {%- else %}
       {{ field.name }}: {{ field.type }}{% if field.read_only %}  # read-only{% endif %}
+  {%- endif %}
   {%- if field.doc %}
       """{{ field.doc }}"""
   {%- endif %}
@@ -94,6 +99,9 @@ template: |
   {%- else %}
   {%- set method = group.methods[0] %}
   {%- block class_method scoped %}
+  {%- if method.is_deprecated %}
+      # deprecated{% if method.deprecation_message %}: {{ method.deprecation_message }}{% endif %}
+  {%- endif %}
   {%- if group.is_static %}
       @staticmethod
       def {{ group.name | camel_to_snake }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
@@ -112,8 +120,34 @@ template: |
   {%- endfor %}
   {%- for enum in enums %}
   {%- block enum scoped %}
+  {%- if enum.is_anonymous %}
+  {%- for value in enum.values %}
+
+  {{ value.name }}: int = {{ value.number }}
+  {%- endfor %}
+  {%- elif enum.is_scoped %}
+
+  class {{ enum.name }}(enum.IntEnum):
+  {%- if enum.is_deprecated %}
+      # deprecated{% if enum.deprecation_message %}: {{ enum.deprecation_message }}{% endif %}
+  {%- endif %}
+  {%- if enum.doc %}
+      """{{ enum.doc }}"""
+  {%- endif %}
+  {%- for value in enum.values %}
+  {%- block scoped_enum_value scoped %}
+      {{ value.name }}: int = {{ value.number }}
+  {%- if value.doc %}
+          """{{ value.doc }}"""
+  {%- endif %}
+  {%- endblock %}
+  {%- endfor %}
+  {%- else %}
 
   class {{ enum.name }}(int):
+  {%- if enum.is_deprecated %}
+      # deprecated{% if enum.deprecation_message %}: {{ enum.deprecation_message }}{% endif %}
+  {%- endif %}
   {%- if enum.doc %}
       """{{ enum.doc }}"""
   {%- endif %}
@@ -125,6 +159,7 @@ template: |
   {%- endif %}
   {%- endblock %}
   {%- endfor %}
+  {%- endif %}
   {%- endblock %}
   {%- endfor %}
   {%- for group in function_groups %}
@@ -151,5 +186,11 @@ template: |
   {%- endif %}
   {%- endblock %}
   {%- endfor %}
+  {%- block exception_stubs %}
+  {%- for exc in exception_registrations %}
+
+  class {{ exc.python_name }}({{ exc.base }}): ...
+  {%- endfor %}
+  {%- endblock %}
   {{ code_injections | code_at("end") }}
   {%- block epilogue %}{% endblock %}

@@ -178,10 +178,18 @@ template: |
   {%- block class_fields scoped %}
   {%- for field in cls.fields %}
   {%- block class_field scoped %}
+  {%- if field.is_static %}
+  {%- if field.read_only %}
+          .addStaticProperty("{{ field.name | camel_to_snake }}", +[] () { return {{ cls.qualified_name }}::{{ field.name }}; }, nullptr)
+  {%- else %}
+          .addStaticProperty("{{ field.name | camel_to_snake }}", +[] () { return {{ cls.qualified_name }}::{{ field.name }}; }, +[] (const decltype({{ cls.qualified_name }}::{{ field.name }})& v) { {{ cls.qualified_name }}::{{ field.name }} = v; })
+  {%- endif %}
+  {%- else %}
   {%- if field.read_only %}
           .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}, nullptr)
   {%- else %}
           .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }})
+  {%- endif %}
   {%- endif %}
   {%- endblock %}
   {%- endfor %}
