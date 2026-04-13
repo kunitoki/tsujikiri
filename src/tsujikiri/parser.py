@@ -295,8 +295,23 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     ir_class.is_abstract = any(m.is_pure_virtual for m in ir_class.methods)
 
     # --- Fields ---
+    # Derive access from CXX_ACCESS_SPEC_DECL nodes rather than trusting
+    # FIELD_DECL.access_specifier directly.  libclang 16 on Linux misreports
+    # the access specifier of private fields that have in-class default member
+    # initialisers (e.g. `std::string name_ = "entity";`), causing them to
+    # appear as PUBLIC.  CXX_ACCESS_SPEC_DECL cursors always carry the correct
+    # access level because they are derived straight from the `public:` /
+    # `private:` / `protected:` keyword tokens.
+    _default_access: object = (
+        AccessSpecifier.PRIVATE
+        if cursor.kind == CursorKind.CLASS_DECL
+        else AccessSpecifier.PUBLIC
+    )
+    _tracked_access: object = _default_access
     for child in cursor.get_children():
-        if child.kind == CursorKind.FIELD_DECL and child.access_specifier == AccessSpecifier.PUBLIC:
+        if child.kind == CursorKind.CXX_ACCESS_SPEC_DECL:
+            _tracked_access = child.access_specifier
+        elif child.kind == CursorKind.FIELD_DECL and _tracked_access == AccessSpecifier.PUBLIC:
             ir_class.fields.append(IRField(
                 name=child.spelling,
                 type_spelling=child.type.spelling,
