@@ -22,6 +22,13 @@ def luabridge3_output_config():
 
 
 @pytest.fixture(scope="session")
+def pybind11_output_config():
+    from tsujikiri.configurations import load_output_config
+    from tsujikiri.formats import resolve_format_path
+    return load_output_config(resolve_format_path("pybind11"))
+
+
+@pytest.fixture(scope="session")
 def luals_output_config():
     from tsujikiri.configurations import load_output_config
     from tsujikiri.formats import resolve_format_path

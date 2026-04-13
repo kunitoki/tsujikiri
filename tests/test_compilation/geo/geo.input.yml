@@ -1,0 +1,28 @@
+sources:
+  - path: "base.hpp"
+    parse_args: ["-std=c++17"]
+
+  - path: "shapes.hpp"
+    parse_args: ["-std=c++17"]
+    # Exclude classes AND enums already captured from base.hpp to avoid duplicates
+    filters:
+      namespaces: ["geo"]
+      constructors:
+        include: true
+      sources:
+        exclude_patterns: ["*/base.hpp"]
+      enums:
+        blacklist: ["Color"]
+
+filters:
+  namespaces: ["geo"]
+  constructors:
+    include: true
+
+format_overrides:
+  luabridge3:
+    generation:
+      includes: ['"geo/base.hpp"', '"geo/shapes.hpp"']
+  pybind11:
+    generation:
+      includes: ['"geo/base.hpp"', '"geo/shapes.hpp"']

@@ -3,11 +3,33 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import List
 
 import pytest
 
 HERE = Path(__file__).parent
 
+
+def _load_module(config_file: Path, module_name: str):
+    """Parse all source entries in *config_file* and return the merged IRModule."""
+    from tsujikiri.configurations import load_input_config
+    from tsujikiri.filters import FilterEngine
+    from tsujikiri.ir import merge_modules
+    from tsujikiri.parser import parse_translation_unit
+
+    config = load_input_config(config_file)
+    modules = []
+    for entry in config.get_source_entries():
+        effective = entry.filters if entry.filters is not None else config.filters
+        mod = parse_translation_unit(entry.source, effective.namespaces, module_name)
+        FilterEngine(effective).apply(mod)
+        modules.append(mod)
+    return merge_modules(modules)
+
+
+# ---------------------------------------------------------------------------
+# combined (original single-namespace, single-header)
+# ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
 def compilation_input_config():
@@ -19,7 +41,39 @@ def compilation_input_config():
 def compiled_module(compilation_input_config):
     from tsujikiri.filters import FilterEngine
     from tsujikiri.parser import parse_translation_unit
+
     entries = compilation_input_config.get_source_entries()
-    module = parse_translation_unit(entries[0].source, compilation_input_config.filters.namespaces, "combined")
+    module = parse_translation_unit(
+        entries[0].source,
+        compilation_input_config.filters.namespaces,
+        "combined",
+    )
     FilterEngine(compilation_input_config.filters).apply(module)
     return module
+
+
+# ---------------------------------------------------------------------------
+# geo: multi-header, single namespace, Circle/Rectangle inherit from Shape
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def geo_module():
+    return _load_module(HERE / "geo" / "geo.input.yml", "geo")
+
+
+# ---------------------------------------------------------------------------
+# engine: multi-header, two namespaces (math + engine), cross-namespace types
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def engine_module():
+    return _load_module(HERE / "engine" / "engine.input.yml", "engine")
+
+
+# ---------------------------------------------------------------------------
+# audio: single header, 3-level hierarchy (AudioNode → AudioEffect → Reverb/Delay)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def audio_module():
+    return _load_module(HERE / "audio" / "audio.input.yml", "audio")

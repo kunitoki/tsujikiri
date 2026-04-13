@@ -93,14 +93,14 @@ The `uid` field is a SHA-256 hash of the `api` section serialised with sorted ke
 ```bash
 # First run — generate bindings and save the initial manifest
 tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
-          -M api.manifest.json
+          -m api.manifest.json
 
 # Subsequent runs — compare with existing manifest, then save updated one
 tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
-          -M api.manifest.json
+          -m api.manifest.json
 ```
 
-When `-M FILE` is passed:
+When `-m FILE` is passed:
 - If `FILE` does **not** exist: generate bindings normally, then save the manifest.
 - If `FILE` **does** exist and the uid differs: compare the two manifests, print a report, then save the new manifest.
 - If `FILE` exists and uid is **identical**: no changes; keep the existing manifest unchanged.
@@ -155,7 +155,7 @@ ERROR: Breaking API changes detected:
 
 ```bash
 tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
-          -M api.manifest.json --check-compat
+          -m api.manifest.json --check-compat
 ```
 
 When `--check-compat` is passed:
@@ -191,7 +191,7 @@ To seed the initial version, manually edit the saved manifest JSON and set `"ver
 
 ```bash
 tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
-          -M api.manifest.json --embed-version
+          -m api.manifest.json --embed-version
 ```
 
 When `--embed-version` is passed (or `embed_version: true` in `generation`), the api version number is embedded in the generated code.
@@ -246,7 +246,7 @@ MANIFEST="api.manifest.json"
 OUTPUT="src/lua_bindings.cpp"
 
 echo "--- Generating bindings ---"
-tsujikiri -i "$INPUT" --target luabridge3 "$OUTPUT" -M "$MANIFEST" \
+tsujikiri -i "$INPUT" --target luabridge3 "$OUTPUT" -m "$MANIFEST" \
   --check-compat \
   --embed-version
 
@@ -284,6 +284,6 @@ If the C++ API has breaking changes, `tsujikiri` exits with code 1 at the `--che
 
 ## See Also
 
-- [Getting Started](getting-started.md) — `-M`, `--check-compat`, `--embed-version` CLI flags
+- [Getting Started](getting-started.md) — `--manifest-file`, `--check-compat`, `--embed-version` CLI flags
 - [Input File Reference](input-file-reference.md) — `generation.embed_version` config key
 - [Output Formats](output-formats.md) — how the API version hash appears in luabridge3 and luals templates

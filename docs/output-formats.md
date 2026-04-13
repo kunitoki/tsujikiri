@@ -786,13 +786,13 @@ template: |
 ### Step 2 — Run with the custom format
 
 ```bash
-tsujikiri -i project.input.yml --target myformat src/bindings.cpp -F ./my_formats/
+tsujikiri -i project.input.yml --target myformat src/bindings.cpp -f ./my_formats/
 ```
 
 ### Step 3 — List available formats (includes custom)
 
 ```bash
-tsujikiri --list-formats -F ./my_formats/
+tsujikiri --list-formats -f ./my_formats/
 # luabridge3
 # luals
 # myformat

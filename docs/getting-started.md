@@ -214,10 +214,10 @@ tsujikiri [OPTIONS]
 | `--input` | `-i` | `FILE` | Input config YAML (required) |
 | `--target` | `-t` | `FORMAT FILE` | Built-in format name or path to `.output.yml`, plus output file path (`-` for stdout). Repeatable. |
 | `--classname` | `-c` | `CLASS` | Generate bindings for a single class only (additive to config filters) |
-| `--formats-dir` | `-F` | `DIR` | Additional directory to search for `.output.yml` files (repeatable) |
+| `--formats-dir` | `-f` | `DIR` | Additional directory to search for `.output.yml` files (repeatable) |
 | `--list-formats` | | | Print available formats and exit |
 | `--dry-run` | | | Parse and filter only; print IR summary without generating code |
-| `--manifest-file` | `-M` | `FILE` | Write API manifest JSON to FILE; compare if FILE already exists |
+| `--manifest-file` | `-m` | `FILE` | Write API manifest JSON to FILE; compare if FILE already exists |
 | `--check-compat` | | | Exit 1 if manifest shows breaking API changes |
 | `--embed-version` | | | Embed the API version hash string in the generated code |
 | `--trace-transforms` | | | Print which transform stages ran and on what entities to stderr |
@@ -251,13 +251,13 @@ tsujikiri -i project.input.yml --target luabridge3 - -c Vec3
 
 **Custom format from a local directory:**
 ```bash
-tsujikiri -i project.input.yml --target myfmt out/bindings.cpp -F ./my_formats/
+tsujikiri -i project.input.yml --target myfmt out/bindings.cpp -f ./my_formats/
 ```
 
 **API versioning — save manifest and fail on breaking changes:**
 ```bash
 tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
-          -M api.manifest.json --check-compat
+          -m api.manifest.json --check-compat
 ```
 
 **Debug transforms — see which stages apply to what:**
@@ -277,7 +277,7 @@ tsujikiri -i project.input.yml --validate-config
 
 **List all known formats (including custom directories):**
 ```bash
-tsujikiri --list-formats -F ./my_formats/
+tsujikiri --list-formats -f ./my_formats/
 ```
 
 ---

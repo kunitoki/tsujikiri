@@ -100,8 +100,7 @@ class TestMethodTemplates:
 class TestConstructorTemplates:
     def test_constructors(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
-        assert "addConstructor<void (*)()" in out
-        assert "addConstructor<void (*)(int)" in out
+        assert "addConstructor<void (*)(), void (*)(int)>" in out
 
     def test_suppressed_constructor_skipped(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()

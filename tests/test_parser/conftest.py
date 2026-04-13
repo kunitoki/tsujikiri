@@ -36,3 +36,11 @@ def defaults_parsed_module():
     from tsujikiri.parser import parse_translation_unit
     src = SourceConfig(path=str(HERE / "defaults.hpp"), parse_args=["-std=c++17"])
     return parse_translation_unit(src, ["mylib"], "defaults")
+
+
+@pytest.fixture(scope="module")
+def type_tokens_module():
+    from tsujikiri.configurations import SourceConfig
+    from tsujikiri.parser import parse_translation_unit
+    src = SourceConfig(path=str(HERE / "type_tokens.hpp"), parse_args=["-std=c++17"])
+    return parse_translation_unit(src, ["types"], "type_tokens")
