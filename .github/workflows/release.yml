@@ -29,7 +29,7 @@ jobs:
       - name: Regenerate stubs and check for drift
         run: |
           uv run stubgen -p tsujikiri -o /tmp/stubs_check
-          diff -rq --include="*.pyi" src/tsujikiri/ /tmp/stubs_check/tsujikiri/ \
+          diff -rq --exclude="*.py" --exclude="py.typed" src/tsujikiri/ /tmp/stubs_check/tsujikiri/ \
             || { echo "Stubs are out of date. Run 'just stubs' and commit the result."; exit 1; }
 
   build:
