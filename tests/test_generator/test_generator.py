@@ -647,3 +647,85 @@ class TestTopoSortDiamond:
 
         assert names.index("A") > names.index("B")
         assert names.index("A") > names.index("C")
+
+
+# ---------------------------------------------------------------------------
+# Typesystem-aware type mapping and unsupported-type logic
+# ---------------------------------------------------------------------------
+
+class TestTypesystemGenerator:
+    def test_typesystem_primitive_mapping_fallback(self, luabridge3_output_config: OutputConfig) -> None:
+        from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
+        ts = TypesystemConfig(
+            primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", python_name="int")]
+        )
+        gen = Generator(luabridge3_output_config, typesystem=ts)
+        assert gen._map_type("int64_t") == "int"
+
+    def test_output_config_type_mapping_wins_over_typesystem(self) -> None:
+        from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
+        ts = TypesystemConfig(
+            primitive_types=[PrimitiveTypeEntry(cpp_name="MyType", python_name="from_typesystem")]
+        )
+        cfg = OutputConfig(
+            format_name="test",
+            type_mappings={"MyType": "from_output_config"},
+            template="",
+        )
+        gen = Generator(cfg, typesystem=ts)
+        assert gen._map_type("MyType") == "from_output_config"
+
+    def test_typesystem_typedef_mapping_fallback(self, luabridge3_output_config: OutputConfig) -> None:
+        from tsujikiri.configurations import TypesystemConfig, TypedefTypeEntry
+        ts = TypesystemConfig(
+            typedef_types=[TypedefTypeEntry(cpp_name="MyString", source="std::string")]
+        )
+        gen = Generator(luabridge3_output_config, typesystem=ts)
+        assert gen._map_type("MyString") == "std::string"
+
+    def test_custom_type_overrides_unsupported(self) -> None:
+        from tsujikiri.configurations import TypesystemConfig, CustomTypeEntry
+        ts = TypesystemConfig(
+            custom_types=[CustomTypeEntry(cpp_name="QObject")]
+        )
+        cfg = OutputConfig(
+            format_name="test",
+            unsupported_types=["QObject"],
+            template="",
+        )
+        gen = Generator(cfg, typesystem=ts)
+        assert not gen._is_unsupported("QObject")
+
+    def test_no_typesystem_unchanged_behaviour(self, luabridge3_output_config: OutputConfig) -> None:
+        gen = Generator(luabridge3_output_config)
+        assert gen._map_type("unknown_type") == "unknown_type"
+
+    def test_conversion_rules_in_template_context(self) -> None:
+        from tsujikiri.configurations import TypesystemConfig, ConversionRuleEntry
+        ts = TypesystemConfig(
+            conversion_rules=[
+                ConversionRuleEntry(
+                    cpp_type="MyColor",
+                    native_to_target="convert_color(%%in)",
+                    target_to_native="from_color(%%in)",
+                ),
+            ]
+        )
+        cfg = OutputConfig(
+            format_name="test",
+            template="{{ conversion_rules[0].cpp_type }}",
+        )
+        gen = Generator(cfg, typesystem=ts)
+        buf = io.StringIO()
+        gen.generate(IRModule(name="test"), buf)
+        assert buf.getvalue() == "MyColor"
+
+    def test_conversion_rules_empty_without_typesystem(self) -> None:
+        cfg = OutputConfig(
+            format_name="test",
+            template="{{ conversion_rules | length }}",
+        )
+        gen = Generator(cfg)
+        buf = io.StringIO()
+        gen.generate(IRModule(name="test"), buf)
+        assert buf.getvalue() == "0"

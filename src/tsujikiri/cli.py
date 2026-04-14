@@ -108,6 +108,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable verbose output during parsing (currently only applies to Clang diagnostics)",
     )
+    p.add_argument(
+        "--api-version",
+        metavar="VERSION",
+        default=None,
+        help="Target API version (semver). Entities with api_since > VERSION or api_until <= VERSION are excluded.",
+    )
     return p
 
 
@@ -231,6 +237,9 @@ def _process_sources(
                 stage_info = {k: v for k, v in vars(stage).items() if not k.startswith("_")}
                 trace_stream.write(f"[TRACE] {stage.__class__.__name__}: {stage_info}\n")
         pipeline.run(module)
+        if trace_stream:
+            for desc in pipeline.unmatched_stages():
+                trace_stream.write(f"[WARN] unmatched transform: {desc}\n")
 
         all_modules.append(module)
         if entry.generation:
@@ -287,6 +296,24 @@ def main() -> None:
     merged, all_includes = _process_sources(
         input_config, source_entries, first_output_config, module_name, args.classname, trace_stream,
     )
+
+    # --- Inject declared functions from typesystem ---
+    from tsujikiri.ir import IRFunction, IRParameter
+    for fn_decl in input_config.typesystem.declared_functions:
+        params = [
+            IRParameter(name=p["name"], type_spelling=p.get("type", ""))
+            for p in fn_decl.parameters
+        ]
+        qualified = f"{fn_decl.namespace}::{fn_decl.name}" if fn_decl.namespace else fn_decl.name
+        merged.functions.append(IRFunction(
+            name=fn_decl.name,
+            qualified_name=qualified,
+            namespace=fn_decl.namespace,
+            return_type=fn_decl.return_type,
+            parameters=params,
+            wrapper_code=fn_decl.wrapper_code,
+            doc=fn_decl.doc,
+        ))
 
     # --- Manifest: compute, compare, and optionally embed version ---
     manifest = compute_manifest(merged)
@@ -385,7 +412,7 @@ def main() -> None:
             postfix = base_gen.postfix
             ev = base_gen.embed_version
 
-        target_api_version = manifest["version"] if (args.embed_version or ev) else ""
+        target_api_version = args.api_version or (manifest["version"] if (args.embed_version or ev) else "")
 
         effective_generation = GenerationConfig(
             includes=effective_gen_includes, prefix=prefix, postfix=postfix, embed_version=ev,
@@ -396,6 +423,7 @@ def main() -> None:
             generation=effective_generation,
             extra_unsupported_types=extra_unsupported,
             template_extends=template_extends,
+            typesystem=input_config.typesystem,
         )
 
         buf = StringIO()

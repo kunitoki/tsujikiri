@@ -9,6 +9,7 @@ from tsujikiri.ir import (
     IRBase,
     IRClass,
     IRConstructor,
+    IRFunction,
     IRMethod,
     IRModule,
     IRParameter,
@@ -181,3 +182,35 @@ class TestPropertyBinding:
         mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
         assert "addProperty" not in out
+
+
+# ---------------------------------------------------------------------------
+# Free-function wrapper_code support
+# ---------------------------------------------------------------------------
+
+class TestFreeFunctionWrapperCode:
+    def test_non_overloaded_wrapper_code_emitted(self, lua_cfg) -> None:
+        fn = IRFunction(
+            name="myFunc",
+            qualified_name="myFunc",
+            namespace="",
+            return_type="void",
+            wrapper_code="+[] (int x) { return myFunc(x * 2); }",
+        )
+        mod = IRModule(name="m")
+        mod.functions = [fn]
+        out = _gen(mod, lua_cfg)
+        assert "+[] (int x) { return myFunc(x * 2); }" in out
+        assert "&myFunc" not in out
+
+    def test_non_overloaded_no_wrapper_code_uses_address(self, lua_cfg) -> None:
+        fn = IRFunction(
+            name="myFunc",
+            qualified_name="myFunc",
+            namespace="",
+            return_type="void",
+        )
+        mod = IRModule(name="m")
+        mod.functions = [fn]
+        out = _gen(mod, lua_cfg)
+        assert "&myFunc" in out

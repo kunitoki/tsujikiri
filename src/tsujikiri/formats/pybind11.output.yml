@@ -118,7 +118,7 @@ template: |
   {%- if fn.wrapper_code %}
     m.def("{{ group.name | camel_to_snake }}", {{ fn.wrapper_code }}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
   {%- else %}
-    m.def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ fn.params | map(attribute='raw_type') | join(', ') }}>(&{{ fn.spelling }}){% for p in fn.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
+    m.def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ fn.params | map(attribute='raw_type') | join(', ') }}>(&{{ fn.spelling }}){% for p in fn.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if fn.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif fn.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in fn.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if fn.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if fn.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if fn.is_deprecated %}, py::deprecated("{{ fn.deprecation_message }}"){% endif %}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
   {%- endif %}
   {%- endblock %}
   {%- endfor %}
@@ -127,7 +127,7 @@ template: |
   {%- if fn.wrapper_code %}
     m.def("{{ group.name | camel_to_snake }}", {{ fn.wrapper_code }}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
   {%- else %}
-    m.def("{{ group.name | camel_to_snake }}", &{{ fn.spelling }}{% for p in fn.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
+    m.def("{{ group.name | camel_to_snake }}", &{{ fn.spelling }}{% for p in fn.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if fn.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif fn.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in fn.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if fn.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if fn.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if fn.is_deprecated %}, py::deprecated("{{ fn.deprecation_message }}"){% endif %}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
   {%- endif %}
   {%- endif %}
   {%- endblock %}

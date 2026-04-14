@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 import jinja2
 
-from tsujikiri.configurations import GenerationConfig, OutputConfig
+from tsujikiri.configurations import GenerationConfig, OutputConfig, TypesystemConfig
 from tsujikiri.generator_filters import camel_to_snake, code_at, param_pairs
 from tsujikiri.ir import (
     IRClass,
@@ -58,11 +58,13 @@ class Generator:
         generation: Optional[GenerationConfig] = None,
         extra_unsupported_types: Optional[List[str]] = None,
         template_extends: Optional[str] = None,
+        typesystem: Optional[TypesystemConfig] = None,
     ) -> None:
         self.cfg = output_config
         self.generation = generation
         self.extra_unsupported: List[str] = extra_unsupported_types or []
         self.template_extends: str = template_extends or ""
+        self._typesystem: Optional[TypesystemConfig] = typesystem
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -131,17 +133,27 @@ class Generator:
 
     def _build_ir_context(self, module: IRModule, api_version: str = "") -> Dict[str, Any]:
         """Build a plain-data context dict from the IR for template rendering."""
+        vir = self._version_in_range  # shorthand
         topo = self._topo_sort(module.classes, module.class_by_name)
         flat_classes: List[Dict[str, Any]] = []
         for cls in topo:
-            if cls.emit:
-                flat_classes.extend(self._flatten_class_ctx(cls, module.functions))
+            if cls.emit and vir(api_version, cls.api_since, cls.api_until):
+                flat_classes.extend(self._flatten_class_ctx(cls, module.functions, api_version))
+
+        active_enums = [
+            e for e in module.enums
+            if e.emit and vir(api_version, e.api_since, e.api_until)
+        ]
+        active_fns = [
+            fn for fn in module.functions
+            if fn.emit and vir(api_version, fn.api_since, fn.api_until)
+        ]
 
         return {
             "module_name": module.name,
             "includes": list(self.generation.includes) if self.generation else [],
-            "enums": [self._build_enum_ctx(e) for e in module.enums if e.emit],
-            "function_groups": self._build_function_group_ctxs(module.functions),
+            "enums": [self._build_enum_ctx(e) for e in active_enums],
+            "function_groups": self._build_function_group_ctxs(active_fns),
             "classes": flat_classes,
             "api_version": api_version,
             "operator_mappings": dict(self.cfg.operator_mappings),
@@ -154,14 +166,31 @@ class Generator:
                 }
                 for er in module.exception_registrations
             ],
+            "conversion_rules": (
+                [
+                    {
+                        "cpp_type": r.cpp_type,
+                        "native_to_target": r.native_to_target,
+                        "target_to_native": r.target_to_native,
+                    }
+                    for r in self._typesystem.conversion_rules
+                ]
+                if self._typesystem else []
+            ),
         }
 
-    def _flatten_class_ctx(self, ir_class: IRClass, module_functions: Optional[List[IRFunction]] = None) -> List[Dict[str, Any]]:
+    def _flatten_class_ctx(
+        self,
+        ir_class: IRClass,
+        module_functions: Optional[List[IRFunction]] = None,
+        api_version: str = "",
+    ) -> List[Dict[str, Any]]:
         """Return class ctx followed by inner-class ctxs (recursive, flattened)."""
-        result = [self._build_class_ctx(ir_class, module_functions)]
+        result = [self._build_class_ctx(ir_class, module_functions, api_version)]
+        vir = self._version_in_range
         for inner in ir_class.inner_classes:
-            if inner.emit:
-                result.extend(self._flatten_class_ctx(inner, module_functions))
+            if inner.emit and vir(api_version, inner.api_since, inner.api_until):
+                result.extend(self._flatten_class_ctx(inner, module_functions, api_version))
         return result
 
     def _build_enum_ctx(self, enum: IREnum) -> Dict[str, Any]:
@@ -245,7 +274,7 @@ class Generator:
             })
         return result
 
-    def _build_class_ctx(self, ir_class: IRClass, module_functions: Optional[List[IRFunction]] = None) -> Dict[str, Any]:
+    def _build_class_ctx(self, ir_class: IRClass, module_functions: Optional[List[IRFunction]] = None, api_version: str = "") -> Dict[str, Any]:
         name = ir_class.rename or ir_class.name
 
         # Only emit=True public bases for deriveClass<> template usage
@@ -311,7 +340,12 @@ class Generator:
 
         # Method groups (preserving original order)
         effective_return = lambda m: m.return_type_override or m.return_type  # noqa: E731
-        methods = [m for m in ir_class.methods if m.emit and not self._is_unsupported(effective_return(m))]
+        methods = [
+            m for m in ir_class.methods
+            if m.emit
+            and not self._is_unsupported(effective_return(m))
+            and self._version_in_range(api_version, m.api_since, m.api_until)
+        ]
         mgroups: Dict[tuple, List[IRMethod]] = {}
         morder: List[tuple] = []
         for m in methods:
@@ -479,12 +513,57 @@ class Generator:
     # Helpers
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # API version gating
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _version_in_range(api_version: str, api_since: Optional[str], api_until: Optional[str]) -> bool:
+        """Return True if api_version falls within [api_since, api_until).
+
+        Returns True when api_version is empty (no gating requested) or when
+        the entity has no since/until constraints.
+        """
+        if not api_version:
+            return True
+        try:
+            from packaging.version import Version
+            v = Version(api_version)
+            if api_since and v < Version(api_since):
+                return False
+            if api_until and v >= Version(api_until):
+                return False
+        except Exception:
+            return True  # unparseable: include by default
+        return True
+
+    # ------------------------------------------------------------------
+    # Type helpers
+    # ------------------------------------------------------------------
+
     def _map_type(self, type_spelling: str) -> str:
-        """Apply output-format type mappings (e.g. C++ → Lua types)."""
-        return self.cfg.type_mappings.get(type_spelling, type_spelling)
+        """Apply output-format type mappings, falling back to typesystem declarations."""
+        if type_spelling in self.cfg.type_mappings:
+            return self.cfg.type_mappings[type_spelling]
+        if self._typesystem:
+            for pt in self._typesystem.primitive_types:
+                if pt.cpp_name == type_spelling:
+                    return pt.python_name
+            for tt in self._typesystem.typedef_types:
+                if tt.cpp_name == type_spelling:
+                    return tt.source
+        return type_spelling
 
     def _is_unsupported(self, type_spelling: str) -> bool:
-        """Return True if the type spelling matches any unsupported type."""
+        """Return True if the type spelling matches any unsupported type.
+
+        custom_types from the typesystem are explicitly known externals and
+        are never treated as unsupported even if listed in unsupported_types.
+        """
+        if self._typesystem:
+            for ct in self._typesystem.custom_types:
+                if ct.cpp_name in type_spelling:
+                    return False
         all_unsupported = self.cfg.unsupported_types + self.extra_unsupported
         return any(t in type_spelling for t in all_unsupported)
 

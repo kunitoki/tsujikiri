@@ -508,13 +508,64 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     return ir_class
 
 
-def _collect_namespace_cursors(top_level, namespaces: List[str]):
-    """Yield namespace cursors matching the filter (or all if namespaces is empty)."""
-    for entry in top_level:
-        if entry.kind != CursorKind.NAMESPACE:
-            continue
-        if not namespaces or entry.spelling in namespaces:
-            yield entry
+def _is_inline_namespace(cursor: "cindex.Cursor") -> bool:
+    """Return True if this NAMESPACE cursor is declared as 'inline namespace ...'."""
+    tokens = list(cursor.get_tokens())
+    return bool(tokens) and tokens[0].spelling == "inline"
+
+
+def _namespace_in_filter(path: str, filters: List[str]) -> bool:
+    """True if path exactly matches any filter entry."""
+    return path in filters
+
+
+def _namespace_should_recurse(path: str, filters: List[str]) -> bool:
+    """True if we should enter a namespace at this path.
+
+    We recurse if:
+    - path equals a filter entry (already matched, collect its descendants)
+    - path is a strict ancestor of a filter ("outer" when filter is "outer::inner")
+    - path is a strict descendant of a filter ("outer::inner::detail" when filter is "outer::inner")
+    """
+    if not filters:
+        return True
+    for f in filters:
+        if path == f:
+            return True
+        if f.startswith(path + "::"):
+            return True
+        if path.startswith(f + "::"):
+            return True
+    return False
+
+
+def _iter_scope_decls(cursors, filter_prefixes: List[str], current_path: str = ""):
+    """Recursively yield (decl_cursor, scope_path) for CLASS_DECL, STRUCT_DECL,
+    FUNCTION_DECL, and ENUM_DECL reachable under namespaces matching filter_prefixes,
+    or at global scope when filter_prefixes is empty.
+
+    Inline namespaces are transparent: a declaration inside 'inline namespace v2'
+    nested under 'outer' is treated as being in 'outer'.
+    """
+    for cursor in cursors:
+        if cursor.kind == CursorKind.NAMESPACE:
+            if _is_inline_namespace(cursor):
+                # Transparent: keep parent path for both matching and storage
+                child_path = current_path
+            else:
+                child_path = f"{current_path}::{cursor.spelling}" if current_path else cursor.spelling
+
+            if _namespace_should_recurse(child_path, filter_prefixes):
+                yield from _iter_scope_decls(cursor.get_children(), filter_prefixes, child_path)
+
+        elif cursor.kind in (
+            CursorKind.CLASS_DECL,
+            CursorKind.STRUCT_DECL,
+            CursorKind.FUNCTION_DECL,
+            CursorKind.ENUM_DECL,
+        ):
+            if not filter_prefixes or _namespace_in_filter(current_path, filter_prefixes):
+                yield (cursor, current_path)
 
 
 def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_name: str) -> IRModule:
@@ -528,6 +579,7 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
 
     args = list(source.parse_args)
     args += [f"-I{p}" for p in source.include_paths]
+    args += [f"-isystem{p}" for p in source.system_include_paths]
     args += [f"-D{d}" for d in source.defines]
     # Ensure we parse as C++ by default if not already specified
     if "-x" not in args:
@@ -541,22 +593,19 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
 
     module = IRModule(name=module_name, namespaces=list(namespaces))
 
-    namespace_cursors = list(_collect_namespace_cursors(
-        tu.cursor.get_children(),
-        namespaces,
-    ))
+    # Gather all declarations under matching scopes (includes global scope when namespaces=[])
+    all_decls = list(_iter_scope_decls(tu.cursor.get_children(), namespaces, current_path=""))
 
     # --- Free functions ---
-    fn_names: Dict[str, list] = defaultdict(list)
-    for ns in namespace_cursors:
-        for child in ns.get_children():
-            if child.kind == CursorKind.FUNCTION_DECL:
-                fn_names[child.spelling].append((child, ns.spelling))
+    fn_groups: Dict[str, list] = defaultdict(list)
+    for cursor, scope_path in all_decls:
+        if cursor.kind == CursorKind.FUNCTION_DECL:
+            fn_groups[cursor.spelling].append((cursor, scope_path))
 
-    for entries in fn_names.values():
+    for entries in fn_groups.values():
         is_overload = len(entries) > 1
-        for fn_cursor, ns_name in entries:
-            qualified = f"{ns_name}::{fn_cursor.spelling}" if ns_name else fn_cursor.spelling
+        for fn_cursor, scope_path in entries:
+            qualified = f"{scope_path}::{fn_cursor.spelling}" if scope_path else fn_cursor.spelling
             fn_params = _parse_parameters(fn_cursor)
             fn_is_op = (fn_cursor.spelling.startswith("operator")
                         and not fn_cursor.spelling[len("operator"):].isalpha())
@@ -565,7 +614,7 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
             module.functions.append(IRFunction(
                 name=fn_cursor.spelling,
                 qualified_name=qualified,
-                namespace=ns_name,
+                namespace=scope_path,
                 return_type=fn_cursor.result_type.spelling,
                 parameters=fn_params,
                 is_overload=is_overload,
@@ -577,23 +626,26 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
                 deprecation_message=_get_deprecation_message(fn_cursor) if fn_deprecated else None,
                 attributes=_get_attributes(fn_cursor),
             ))
+            if scope_path and scope_path not in module.namespaces:
+                module.namespaces.append(scope_path)
 
     # --- Top-level enums ---
-    for ns in namespace_cursors:
-        for child in ns.get_children():
-            if child.kind == CursorKind.ENUM_DECL:
-                module.enums.append(_parse_enum(child, ns.spelling))
+    for cursor, scope_path in all_decls:
+        if cursor.kind == CursorKind.ENUM_DECL:
+            module.enums.append(_parse_enum(cursor, scope_path))
+            if scope_path and scope_path not in module.namespaces:
+                module.namespaces.append(scope_path)
 
     # --- Classes ---
-    all_class_cursors = []
-    for ns in namespace_cursors:
-        for child in ns.get_children():
-            if child.kind in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL):
-                all_class_cursors.append((child, ns.spelling))
-
-    for cls_cursor, ns_name in all_class_cursors:
-        ir_class = _parse_class(cls_cursor, namespace=ns_name)
+    for cursor, scope_path in all_decls:
+        if cursor.kind not in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL):
+            continue
+        if not cursor.is_definition():
+            continue
+        ir_class = _parse_class(cursor, namespace=scope_path)
         module.classes.append(ir_class)
         module.class_by_name[ir_class.name] = ir_class
+        if scope_path and scope_path not in module.namespaces:
+            module.namespaces.append(scope_path)
 
     return module

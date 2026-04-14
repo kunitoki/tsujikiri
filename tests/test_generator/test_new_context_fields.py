@@ -720,3 +720,122 @@ class TestDocStringLuaLS:
         # Only the standard header comment should appear
         lines = [l for l in out.splitlines() if l.startswith("---")]
         assert all("@" in l or l == "---" for l in lines)
+
+
+class TestApiVersionGating:
+    def _gen(self, module: IRModule, output_config, api_version: str) -> str:
+        buf = io.StringIO()
+        Generator(output_config).generate(module, buf, api_version=api_version)
+        return buf.getvalue()
+
+    def test_method_excluded_before_since_version(self, pybind11_output_config) -> None:
+        m = IRMethod(name="newOp", spelling="newOp", qualified_name="Cls::newOp",
+                     return_type="void", api_since="2.0")
+        cls = _simple_class()
+        cls.methods = [m]
+        mod = IRModule(name="t", classes=[cls], class_by_name={"MyClass": cls})
+        out = self._gen(mod, pybind11_output_config, api_version="1.0")
+        assert "newOp" not in out
+
+    def test_method_included_at_since_version(self, pybind11_output_config) -> None:
+        m = IRMethod(name="newOp", spelling="newOp", qualified_name="Cls::newOp",
+                     return_type="void", api_since="2.0")
+        cls = _simple_class()
+        cls.methods = [m]
+        mod = IRModule(name="t", classes=[cls], class_by_name={"MyClass": cls})
+        out = self._gen(mod, pybind11_output_config, api_version="2.0")
+        assert "newOp" in out
+
+    def test_method_excluded_at_or_after_until_version(self, pybind11_output_config) -> None:
+        m = IRMethod(name="oldOp", spelling="oldOp", qualified_name="Cls::oldOp",
+                     return_type="void", api_until="2.0")
+        cls = _simple_class()
+        cls.methods = [m]
+        mod = IRModule(name="t", classes=[cls], class_by_name={"MyClass": cls})
+        out = self._gen(mod, pybind11_output_config, api_version="2.0")
+        assert "oldOp" not in out
+
+    def test_function_excluded_before_since_version(self, pybind11_output_config) -> None:
+        fn = IRFunction(name="futureFunc", qualified_name="futureFunc",
+                        namespace="", return_type="void", api_since="3.0")
+        mod = IRModule(name="t", functions=[fn])
+        out = self._gen(mod, pybind11_output_config, api_version="2.0")
+        assert "futureFunc" not in out
+
+    def test_no_api_version_includes_all(self, pybind11_output_config) -> None:
+        m = IRMethod(name="withSince", spelling="withSince", qualified_name="Cls::withSince",
+                     return_type="void", api_since="5.0")
+        cls = _simple_class()
+        cls.methods = [m]
+        mod = IRModule(name="t", classes=[cls], class_by_name={"MyClass": cls})
+        out = self._gen(mod, pybind11_output_config, api_version="")
+        assert "withSince" in out
+
+
+class TestVersionInRangeBranches:
+    """Cover generator.py _version_in_range exception path (lines 536-537)."""
+
+    def test_unparseable_api_version_includes_by_default(self) -> None:
+        """Lines 536-537: invalid semver string → exception → return True (include)."""
+        from tsujikiri.generator import Generator
+        result = Generator._version_in_range("not-a-version!!", "1.0", None)
+        assert result is True
+
+    def test_unparseable_since_includes_by_default(self) -> None:
+        """Lines 536-537: invalid since string → exception → return True."""
+        from tsujikiri.generator import Generator
+        result = Generator._version_in_range("1.0", "not-valid-since!!!", None)
+        assert result is True
+
+
+class TestTypesystemTypeMappingBranches:
+    """Cover generator.py type-mapping branches 550->549, 553->552 and 565->564."""
+
+    def test_primitive_type_loop_continues_past_non_match(self) -> None:
+        """Branch 550->549: primitive_types has entries but first doesn't match — loop continues."""
+        from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
+        from tsujikiri.configurations import OutputConfig
+        ts = TypesystemConfig(
+            primitive_types=[
+                PrimitiveTypeEntry(cpp_name="int64_t", python_name="int"),
+                PrimitiveTypeEntry(cpp_name="float32_t", python_name="float"),
+            ]
+        )
+        cfg = OutputConfig(format_name="test", template="")
+        gen = Generator(cfg, typesystem=ts)
+        # "float32_t" is the second entry; "int64_t" doesn't match → loop continues to next
+        assert gen._map_type("float32_t") == "float"
+
+    def test_typedef_type_loop_continues_past_non_match(self) -> None:
+        """Branch 553->552: typedef_types has entries but first doesn't match — loop continues."""
+        from tsujikiri.configurations import TypesystemConfig, TypedefTypeEntry
+        from tsujikiri.configurations import OutputConfig
+        ts = TypesystemConfig(
+            typedef_types=[
+                TypedefTypeEntry(cpp_name="MyString", source="std::string"),
+                TypedefTypeEntry(cpp_name="MyBuffer", source="std::vector<uint8_t>"),
+            ]
+        )
+        cfg = OutputConfig(format_name="test", template="")
+        gen = Generator(cfg, typesystem=ts)
+        # "MyBuffer" is second; "MyString" doesn't match → loop continues
+        assert gen._map_type("MyBuffer") == "std::vector<uint8_t>"
+
+    def test_custom_type_loop_continues_past_non_match(self) -> None:
+        """Branch 565->564: custom_types has entries but first doesn't match — loop continues."""
+        from tsujikiri.configurations import TypesystemConfig, CustomTypeEntry
+        from tsujikiri.configurations import OutputConfig
+        ts = TypesystemConfig(
+            custom_types=[
+                CustomTypeEntry(cpp_name="QObject"),
+                CustomTypeEntry(cpp_name="PyObject"),
+            ]
+        )
+        cfg = OutputConfig(
+            format_name="test",
+            unsupported_types=["PyObject"],
+            template="",
+        )
+        gen = Generator(cfg, typesystem=ts)
+        # "PyObject" is second; "QObject" doesn't match first, loop continues to PyObject → not unsupported
+        assert not gen._is_unsupported("PyObject")
