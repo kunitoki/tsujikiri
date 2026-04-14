@@ -15,6 +15,16 @@ test *args:
     @just sync
     uv run pytest -n auto {{args}}
 
+# Regenerate inline stubs (src/tsujikiri/**/*.pyi) via stubgen.
+stubs:
+    @just sync
+    uv run stubgen -p tsujikiri -o src
+
+# Run mypy type checking.
+typecheck:
+    @just sync
+    uv run mypy
+
 # Run tests with coverage report.
 coverage *args:
     @just sync

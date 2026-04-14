@@ -1,4 +1,4 @@
-import clang.cindex
+import clang.cindex  # type: ignore[import-untyped]
 from pathlib import Path
 
 if __name__ == "__main__":

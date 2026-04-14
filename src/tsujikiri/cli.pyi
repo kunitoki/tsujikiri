@@ -1,0 +1,14 @@
+import argparse
+from tsujikiri.attribute_processor import AttributeProcessor as AttributeProcessor
+from tsujikiri.configurations import GenerationConfig as GenerationConfig, load_input_config as load_input_config, load_output_config as load_output_config
+from tsujikiri.filters import FilterEngine as FilterEngine
+from tsujikiri.formats import resolve_format_path as resolve_format_path
+from tsujikiri.generator import Generator as Generator
+from tsujikiri.ir import IRModule as IRModule, merge_modules as merge_modules
+from tsujikiri.manifest import compare_manifests as compare_manifests, compute_manifest as compute_manifest, load_manifest as load_manifest, save_manifest as save_manifest, suggest_version_bump as suggest_version_bump
+from tsujikiri.parser import parse_translation_unit as parse_translation_unit
+from tsujikiri.pretty_printers import pretty as pretty
+from tsujikiri.transforms import build_pipeline_from_config as build_pipeline_from_config
+
+def build_parser() -> argparse.ArgumentParser: ...
+def main() -> None: ...
