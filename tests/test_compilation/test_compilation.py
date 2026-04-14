@@ -105,9 +105,14 @@ def _cmake_configure(scenario: str) -> bool:
         "-S", str(_scenario_dir(scenario)),
         "-B", str(build_dir),
         f"-DFETCHCONTENT_BASE_DIR={_SHARED_DEPS_DIR}",
-        "-DCMAKE_BUILD_TYPE=Release",
-        "-Wno-dev",
+        "--no-warn-unused-cli",
     ]
+    # Visual Studio (multi-config) generator: specify 64-bit architecture and
+    # skip CMAKE_BUILD_TYPE (it is ignored by multi-config generators anyway).
+    if sys.platform == "win32":
+        cmake_args += ["-A", "x64"]
+    else:
+        cmake_args += ["-DCMAKE_BUILD_TYPE=Release"]
     for name, dep in _DEPS.items():
         cmake_args.append(f"-DFETCHCONTENT_SOURCE_DIR_{name.upper()}={dep['src_dir']}")
     result = subprocess.run(cmake_args, capture_output=True, text=True)
