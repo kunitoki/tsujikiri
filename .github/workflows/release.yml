@@ -29,8 +29,20 @@ jobs:
       - name: Regenerate stubs and check for drift
         run: |
           uv run stubgen -p tsujikiri -o /tmp/stubs_check
-          diff -rq --exclude="*.py" --exclude="py.typed" src/tsujikiri/ /tmp/stubs_check/tsujikiri/ \
-            || { echo "Stubs are out of date. Run 'just stubs' and commit the result."; exit 1; }
+          python3 - << 'EOF'
+          import sys, pathlib, filecmp
+          src = pathlib.Path('src/tsujikiri')
+          gen = pathlib.Path('/tmp/stubs_check/tsujikiri')
+          errors = []
+          for stub in sorted(gen.rglob('*.pyi')):
+              committed = src / stub.relative_to(gen)
+              if not committed.exists() or not filecmp.cmp(stub, committed, shallow=False):
+                  errors.append(str(committed))
+          if errors:
+              print('Stubs are out of date:\n  ' + '\n  '.join(errors))
+              print("Run 'just stubs' and commit the result.")
+              sys.exit(1)
+          EOF
 
   build:
     name: Build distribution
