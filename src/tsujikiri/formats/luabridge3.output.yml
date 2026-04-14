@@ -87,7 +87,12 @@ template: |
   {%- endfor %}
         )
   {%- else %}
-        .addFunction("{{ group.functions[0].name | camel_to_snake }}", &{{ group.functions[0].spelling }})
+  {%- set fn = group.functions[0] %}
+  {%- if fn.wrapper_code %}
+        .addFunction("{{ group.name | camel_to_snake }}", {{ fn.wrapper_code }})
+  {%- else %}
+        .addFunction("{{ group.name | camel_to_snake }}", &{{ fn.spelling }})
+  {%- endif %}
   {%- endif %}
   {%- endblock %}
   {%- endfor %}

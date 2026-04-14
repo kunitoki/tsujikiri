@@ -3,6 +3,61 @@ from pathlib import Path
 from typing import Any
 
 @dataclass
+class PrimitiveTypeEntry:
+    cpp_name: str
+    python_name: str
+
+@dataclass
+class TypedefTypeEntry:
+    cpp_name: str
+    source: str
+
+@dataclass
+class CustomTypeEntry:
+    cpp_name: str
+
+@dataclass
+class ContainerTypeEntry:
+    cpp_name: str
+    kind: str
+
+@dataclass
+class SmartPointerTypeEntry:
+    cpp_name: str
+    kind: str
+    getter: str = ...
+
+@dataclass
+class ConversionRuleEntry:
+    cpp_type: str
+    native_to_target: str
+    target_to_native: str
+
+@dataclass
+class LoadTypesystemEntry:
+    path: str
+
+@dataclass
+class DeclaredFunctionEntry:
+    name: str
+    namespace: str = ...
+    return_type: str = ...
+    parameters: list[dict[str, str]] = field(default_factory=list)
+    wrapper_code: str | None = ...
+    doc: str | None = ...
+
+@dataclass
+class TypesystemConfig:
+    primitive_types: list[PrimitiveTypeEntry] = field(default_factory=list)
+    typedef_types: list[TypedefTypeEntry] = field(default_factory=list)
+    custom_types: list[CustomTypeEntry] = field(default_factory=list)
+    container_types: list[ContainerTypeEntry] = field(default_factory=list)
+    smart_pointer_types: list[SmartPointerTypeEntry] = field(default_factory=list)
+    load_typesystems: list[LoadTypesystemEntry] = field(default_factory=list)
+    declared_functions: list[DeclaredFunctionEntry] = field(default_factory=list)
+    conversion_rules: list[ConversionRuleEntry] = field(default_factory=list)
+
+@dataclass
 class FilterPattern:
     pattern: str
     is_regex: bool = ...
@@ -12,6 +67,7 @@ class SourceConfig:
     path: str
     parse_args: list[str] = field(default_factory=list)
     include_paths: list[str] = field(default_factory=list)
+    system_include_paths: list[str] = field(default_factory=list)
     defines: list[str] = field(default_factory=list)
 
 @dataclass
@@ -109,6 +165,7 @@ class InputConfig:
     format_overrides: dict[str, FormatOverrideConfig] = field(default_factory=dict)
     pretty: bool = ...
     pretty_options: list[str] = field(default_factory=list)
+    typesystem: TypesystemConfig = field(default_factory=TypesystemConfig)
     def get_source_entries(self) -> list[SourceEntry]: ...
 
 @dataclass

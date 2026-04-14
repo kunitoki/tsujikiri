@@ -3,25 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 import pytest
 
 from tsujikiri.configurations import load_input_config
 from tsujikiri.filters import FilterEngine
+from tsujikiri.ir import merge_modules
 from tsujikiri.parser import parse_translation_unit
+from tsujikiri.transforms import build_pipeline_from_config
 
 HERE = Path(__file__).parent
 
 
 def _load_module(config_file: Path, module_name: str):
     """Parse all source entries in *config_file* and return the merged IRModule."""
-    from tsujikiri.configurations import load_input_config
-    from tsujikiri.filters import FilterEngine
-    from tsujikiri.ir import merge_modules
-    from tsujikiri.parser import parse_translation_unit
-    from tsujikiri.transforms import build_pipeline_from_config
-
     config = load_input_config(config_file)
     modules = []
     for entry in config.get_source_entries():
@@ -40,7 +35,7 @@ def _load_module(config_file: Path, module_name: str):
 
 @pytest.fixture(scope="module")
 def compilation_input_config():
-    return load_input_config(HERE / "combined.input.yml")
+    return load_input_config(HERE / "combined" / "combined.input.yml")
 
 
 @pytest.fixture(scope="module")
@@ -90,3 +85,11 @@ def audio_module():
 def samplebinding_module():
     return _load_module(HERE / "samplebinding" / "samplebinding.input.yml", "samplebinding")
 
+
+# ---------------------------------------------------------------------------
+# typesystem: primitive_types mapping, custom_types unlocking, OSType/int64_t
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def typesystem_module():
+    return _load_module(HERE / "typesystem" / "typesystem.input.yml", "typesystem")

@@ -17,6 +17,83 @@ import yaml
 
 
 # ---------------------------------------------------------------------------
+# Typesystem configuration
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PrimitiveTypeEntry:
+    """Maps a C++ type name to a target-language primitive name."""
+    cpp_name: str
+    python_name: str
+
+
+@dataclass
+class TypedefTypeEntry:
+    """Declares a C++ typedef as an alias for a target type."""
+    cpp_name: str
+    source: str
+
+
+@dataclass
+class CustomTypeEntry:
+    """Declares a type that exists externally — no binding is generated."""
+    cpp_name: str
+
+
+@dataclass
+class ContainerTypeEntry:
+    """Declares a C++ container to wrap with a Python sequence protocol."""
+    cpp_name: str
+    kind: str  # "list", "map", "set", "pair"
+
+
+@dataclass
+class SmartPointerTypeEntry:
+    """Declares a smart-pointer wrapper for ownership tracking."""
+    cpp_name: str
+    kind: str  # "shared", "unique", "weak"
+    getter: str = "get"
+
+
+@dataclass
+class ConversionRuleEntry:
+    """Declares native ↔ target conversion code for a C++ type."""
+    cpp_type: str
+    native_to_target: str   # C expression; %%in = input value
+    target_to_native: str   # C expression; %%in = input value
+
+
+@dataclass
+class LoadTypesystemEntry:
+    """Import type metadata from another project's input config."""
+    path: str
+
+
+@dataclass
+class DeclaredFunctionEntry:
+    """Manually declared function for parser-blind APIs (templates, wrappers)."""
+    name: str
+    namespace: str = ""
+    return_type: str = "void"
+    parameters: List[Dict[str, str]] = field(default_factory=list)
+    wrapper_code: Optional[str] = None
+    doc: Optional[str] = None
+
+
+@dataclass
+class TypesystemConfig:
+    """First-class typesystem declarations for the binding generator."""
+    primitive_types: List[PrimitiveTypeEntry] = field(default_factory=list)
+    typedef_types: List[TypedefTypeEntry] = field(default_factory=list)
+    custom_types: List[CustomTypeEntry] = field(default_factory=list)
+    container_types: List[ContainerTypeEntry] = field(default_factory=list)
+    smart_pointer_types: List[SmartPointerTypeEntry] = field(default_factory=list)
+    load_typesystems: List[LoadTypesystemEntry] = field(default_factory=list)
+    declared_functions: List[DeclaredFunctionEntry] = field(default_factory=list)
+    conversion_rules: List[ConversionRuleEntry] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Input configuration helpers
 # ---------------------------------------------------------------------------
 
@@ -32,6 +109,7 @@ class SourceConfig:
     path: str
     parse_args: List[str] = field(default_factory=list)
     include_paths: List[str] = field(default_factory=list)
+    system_include_paths: List[str] = field(default_factory=list)
     defines: List[str] = field(default_factory=list)
 
 
@@ -175,6 +253,8 @@ class InputConfig:
     # Post-generation pretty printing: run the language-appropriate pretty printer on output.
     pretty: bool = False
     pretty_options: List[str] = field(default_factory=list)
+    # First-class typesystem declarations (primitive, typedef, custom, container, smart-pointer types).
+    typesystem: TypesystemConfig = field(default_factory=TypesystemConfig)
 
     def get_source_entries(self) -> List[SourceEntry]:
         """Return all source entries, normalising a bare ``source:`` key into the list."""
@@ -306,11 +386,104 @@ def _parse_source_entry(entry_raw: Dict[str, Any], config_dir: Path) -> SourceEn
         path=src_path,
         parse_args=entry_raw.get("parse_args", []),
         include_paths=entry_raw.get("include_paths", []),
+        system_include_paths=entry_raw.get("system_include_paths", []),
         defines=entry_raw.get("defines", []),
     )
 
     filters, transforms, generation = _parse_optional_overrides(entry_raw)
     return SourceEntry(source=source, filters=filters, transforms=transforms, generation=generation)
+
+
+def _merge_typesystem_into(target: TypesystemConfig, source: TypesystemConfig) -> None:
+    """Prepend source entries to target. Target entries win on cpp_name collision."""
+    existing_prim = {e.cpp_name for e in target.primitive_types}
+    target.primitive_types = [e for e in source.primitive_types if e.cpp_name not in existing_prim] + target.primitive_types
+    existing_typedef = {e.cpp_name for e in target.typedef_types}
+    target.typedef_types = [e for e in source.typedef_types if e.cpp_name not in existing_typedef] + target.typedef_types
+    existing_custom = {e.cpp_name for e in target.custom_types}
+    target.custom_types = [e for e in source.custom_types if e.cpp_name not in existing_custom] + target.custom_types
+    existing_container = {e.cpp_name for e in target.container_types}
+    target.container_types = [e for e in source.container_types if e.cpp_name not in existing_container] + target.container_types
+    existing_sp = {e.cpp_name for e in target.smart_pointer_types}
+    target.smart_pointer_types = [e for e in source.smart_pointer_types if e.cpp_name not in existing_sp] + target.smart_pointer_types
+
+
+def _parse_typesystem_config(ts_raw: Dict[str, Any], config_dir: Optional[Path] = None) -> TypesystemConfig:
+    """Parse the ``typesystem:`` block from an input config dict."""
+    primitive_types = [
+        PrimitiveTypeEntry(cpp_name=e["cpp_name"], python_name=e["python_name"])
+        for e in ts_raw.get("primitive_types", [])
+    ]
+    typedef_types = [
+        TypedefTypeEntry(cpp_name=e["cpp_name"], source=e["source"])
+        for e in ts_raw.get("typedef_types", [])
+    ]
+    custom_types = [
+        CustomTypeEntry(cpp_name=e["cpp_name"])
+        for e in ts_raw.get("custom_types", [])
+    ]
+    container_types = [
+        ContainerTypeEntry(cpp_name=e["cpp_name"], kind=e["kind"])
+        for e in ts_raw.get("container_types", [])
+    ]
+    smart_pointer_types = [
+        SmartPointerTypeEntry(
+            cpp_name=e["cpp_name"],
+            kind=e["kind"],
+            getter=e.get("getter", "get"),
+        )
+        for e in ts_raw.get("smart_pointer_types", [])
+    ]
+    load_typesystems = [
+        LoadTypesystemEntry(
+            path=str((config_dir / e["path"]).resolve()) if config_dir and not Path(e["path"]).is_absolute() else e["path"]
+        )
+        for e in ts_raw.get("load_typesystems", [])
+    ]
+    declared_functions = [
+        DeclaredFunctionEntry(
+            name=e["name"],
+            namespace=e.get("namespace", ""),
+            return_type=e.get("return_type", "void"),
+            parameters=e.get("parameters", []),
+            wrapper_code=e.get("wrapper_code"),
+            doc=e.get("doc"),
+        )
+        for e in ts_raw.get("declared_functions", [])
+    ]
+    conversion_rules = [
+        ConversionRuleEntry(
+            cpp_type=e["cpp_type"],
+            native_to_target=e["native_to_target"],
+            target_to_native=e["target_to_native"],
+        )
+        for e in ts_raw.get("conversion_rules", [])
+    ]
+
+    result = TypesystemConfig(
+        primitive_types=primitive_types,
+        typedef_types=typedef_types,
+        custom_types=custom_types,
+        container_types=container_types,
+        smart_pointer_types=smart_pointer_types,
+        load_typesystems=load_typesystems,
+        declared_functions=declared_functions,
+        conversion_rules=conversion_rules,
+    )
+
+    # Resolve and merge load_typesystems (parent entries win on collision)
+    for lts in result.load_typesystems:
+        try:
+            with open(lts.path, encoding="utf-8") as f:
+                other_data = yaml.safe_load(f) or {}
+            other_ts_raw = other_data.get("typesystem", {})
+            if other_ts_raw:
+                other_ts = _parse_typesystem_config(other_ts_raw, Path(lts.path).parent)
+                _merge_typesystem_into(result, other_ts)
+        except OSError:
+            pass  # missing file silently ignored
+
+    return result
 
 
 def load_input_config(config_file: Path) -> InputConfig:
@@ -330,6 +503,7 @@ def load_input_config(config_file: Path) -> InputConfig:
             path=src_path,
             parse_args=src.get("parse_args", []),
             include_paths=src.get("include_paths", []),
+            system_include_paths=src.get("system_include_paths", []),
             defines=src.get("defines", []),
         )
 
@@ -374,6 +548,10 @@ def load_input_config(config_file: Path) -> InputConfig:
         for filters, transforms, generation in [_parse_optional_overrides(override_raw)]
     }
 
+    # --- Typesystem ---
+    ts_raw = data.get("typesystem", {})
+    typesystem = _parse_typesystem_config(ts_raw, config_dir) if ts_raw else TypesystemConfig()
+
     return InputConfig(
         source=source,
         sources=sources,
@@ -385,6 +563,7 @@ def load_input_config(config_file: Path) -> InputConfig:
         format_overrides=format_overrides,
         pretty=data.get("pretty", False),
         pretty_options=data.get("pretty_options", []),
+        typesystem=typesystem,
     )
 
 

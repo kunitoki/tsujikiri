@@ -65,6 +65,7 @@ Class-level stages use `class_is_regex: true` for the class pattern and `is_rege
 | `suppress_class` | Set `emit=False` on matching classes | `pattern` |
 | `inject_method` | Append a synthetic method to a class | `class`, `name` |
 | `inject_constructor` | Append a synthetic constructor to a class | `class` |
+| `inject_property` | Inject a synthetic getter/setter property binding | `class`, `name`, `getter` |
 | `suppress_base` | Hide a base class from the binding output | `class`, `base` |
 | `add_type_mapping` | Rewrite a C++ type spelling globally | `from`, `to` |
 | `modify_method` | Multi-field edit on matching methods | `class`, `method` |
@@ -74,6 +75,18 @@ Class-level stages use `class_is_regex: true` for the class pattern and `is_rege
 | `remove_overload` | Remove one overload of a method | `class`, `method`, `signature` |
 | `inject_code` | Insert raw code at a position in output | `target`, `position`, `code` |
 | `set_type_hint` | Override class-level type trait metadata | `class` |
+| `mark_deprecated` | Mark a class, method, function, or enum as deprecated | `target` |
+| `expand_spaceship` | Expand `operator<=>` into six comparison operators | `class` |
+| `expose_protected` | Expose protected methods via trampoline (pybind11) | `class` |
+| `resolve_using_declarations` | Copy base class methods for `using Base::method` declarations | — |
+| `OverloadPriority` | Set resolution priority for a specific method overload | `class`, `method`, `signature`, `priority` |
+| `ExceptionPolicy` | Set exception propagation policy on methods or functions | `policy` |
+
+### Exception and Overload Stages
+
+| Stage | Purpose | Required Keys |
+|-------|---------|---------------|
+| `register_exception` | Register a C++ exception type as a binding-level exception | `cpp_type` |
 
 ### Enum Stages
 
@@ -1085,6 +1098,305 @@ transforms:
     namespace: audio
     return_type: "audio::AudioEngine*"
     parameters: []
+```
+
+---
+
+## `inject_property`
+
+Injects a synthetic getter/setter property binding into a class. The property appears in the output as a named property backed by existing getter (and optionally setter) methods. No new C++ code is required — the methods must already exist on the class.
+
+```yaml
+- stage: inject_property
+  class: MyClass
+  name: arrivalMessage
+  getter: getArrivalMessage
+  setter: setArrivalMessage  # optional; omit for a read-only property
+  type: "std::string"        # optional: C++ type hint
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `class` | string | — | Target class name (required) |
+| `class_is_regex` | bool | `false` | Treat `class` as regex |
+| `name` | string | — | Property name in the binding (required) |
+| `getter` | string | — | Name of the C++ getter method (required) |
+| `setter` | string | — | Name of the C++ setter method; omit for read-only |
+| `type` | string | `""` | C++ type spelling (used as a hint in templates) |
+
+**Example — expose a getter/setter pair as a property:**
+```yaml
+transforms:
+  - stage: inject_property
+    class: AudioSource
+    name: volume
+    getter: getVolume
+    setter: setVolume
+    type: "float"
+```
+
+In LuaBridge3 this emits `.addProperty("volume", &AudioSource::getVolume, &AudioSource::setVolume)`.
+
+---
+
+## `mark_deprecated`
+
+Marks a class, method, free function, or enum as deprecated. Deprecated entities are included in the output but templates can use the `is_deprecated` and `deprecation_message` fields to emit deprecation warnings or annotations.
+
+```yaml
+- stage: mark_deprecated
+  target: method          # "class" | "method" | "function" | "enum"
+  class: MyClass
+  method: oldProcess
+  message: "Use newProcess() instead"
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `target` | string | `"method"` | Entity type to mark: `"class"` \| `"method"` \| `"function"` \| `"enum"` |
+| `class` | string | `"*"` | Class name pattern; required for `target: class` and `target: method` |
+| `class_is_regex` | bool | `false` | Treat `class` as regex |
+| `method` | string | `"*"` | Method name pattern; required for `target: method` |
+| `method_is_regex` | bool | `false` | Treat `method` as regex |
+| `function` | string | `"*"` | Function name pattern; required for `target: function` |
+| `function_is_regex` | bool | `false` | Treat `function` as regex |
+| `enum` | string | `"*"` | Enum name pattern; required for `target: enum` |
+| `enum_is_regex` | bool | `false` | Treat `enum` as regex |
+| `message` | string | — | Human-readable deprecation message (optional) |
+
+**Example — deprecate a renamed method with a migration message:**
+```yaml
+transforms:
+  - stage: mark_deprecated
+    target: method
+    class: PhysicsBody
+    method: setAngularVelocity
+    message: "Use setAngularSpeed() instead"
+```
+
+---
+
+## `expand_spaceship`
+
+Expands a C++ three-way comparison operator (`operator<=>`) into six individual comparison methods (`operator<`, `operator<=`, `operator>`, `operator>=`, `operator==`, `operator!=`). Each synthesised method is implemented as a lambda using the corresponding `std::is_lt` / `std::is_eq` etc. predicate. The original `operator<=>` is suppressed.
+
+This is necessary because binding frameworks typically register individual comparison operators rather than the spaceship operator.
+
+```yaml
+- stage: expand_spaceship
+  class: MyClass
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `class` | string | `"*"` | Class name pattern |
+| `class_is_regex` | bool | `false` | Treat `class` as regex |
+
+**Example — expand spaceship operator on a value type:**
+```yaml
+transforms:
+  - stage: expand_spaceship
+    class: Vec3
+```
+
+This produces six `IRMethod` entries on `Vec3`, each with a `wrapper_code` lambda, and suppresses the original `operator<=>`.
+
+---
+
+## `expose_protected`
+
+Exposes protected methods so they can be overridden in derived binding classes (trampolines). Sets `access` to `"public_via_trampoline"` and `emit=True` on matching protected methods. The pybind11 template uses this to emit `using Base::method;` inside the generated trampoline class body.
+
+```yaml
+- stage: expose_protected
+  class: AbstractRenderer
+  method: "*"   # all protected methods (default)
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `class` | string | `"*"` | Class name pattern |
+| `class_is_regex` | bool | `false` | Treat `class` as regex |
+| `method` | string | `"*"` | Method name pattern; only protected methods are affected |
+| `method_is_regex` | bool | `false` | Treat `method` as regex |
+
+**Example — expose specific protected virtual methods:**
+```yaml
+transforms:
+  - stage: expose_protected
+    class: Plugin
+    method: "on.*"
+    method_is_regex: true
+```
+
+Only methods that are actually protected in the C++ class are modified; public or private methods with matching names are left untouched.
+
+---
+
+## `resolve_using_declarations`
+
+Copies methods from base classes into derived classes where `using Base::method;` declarations exist, so those methods appear in the binding output. Without this stage, `using` declarations are parsed but the inherited methods are not automatically added to the derived class's method list.
+
+```yaml
+- stage: resolve_using_declarations
+  class: "*"   # all classes (default)
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `class` | string | `"*"` | Restrict to specific derived classes |
+| `class_is_regex` | bool | `false` | Treat `class` as regex |
+
+The stage looks up the base class by qualified name (or by searching all bases), then copies matching methods to the derived class with `access="public"` and `emit=True`. Methods already present on the derived class are not duplicated.
+
+**Example — resolve all using declarations in a class hierarchy:**
+```yaml
+transforms:
+  - stage: resolve_using_declarations
+```
+
+---
+
+## `register_exception`
+
+Registers a C++ exception type as a binding-level exception class. For pybind11 output, this emits `py::register_exception<CppType>(m, "Name")`. For `.pyi` stubs, it emits `class Name(BaseException): ...`.
+
+```yaml
+- stage: register_exception
+  cpp_type: "ns::MyException"
+  python_name: "MyException"   # optional; defaults to the short C++ name
+  base: "Exception"            # optional; default Python base class
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `cpp_type` | string | — | Fully-qualified C++ exception type (required) |
+| `python_name` | string | (last `::` component of `cpp_type`) | Python class name for the exception |
+| `base` | string | `"Exception"` | Python base class |
+
+**Example — register a domain exception:**
+```yaml
+transforms:
+  - stage: register_exception
+    cpp_type: "mylib::ParseError"
+    python_name: "ParseError"
+    base: "ValueError"
+```
+
+**Example — register multiple exceptions:**
+```yaml
+transforms:
+  - stage: register_exception
+    cpp_type: "mylib::NetworkError"
+
+  - stage: register_exception
+    cpp_type: "mylib::TimeoutError"
+    python_name: "TimeoutError"
+    base: "OSError"
+```
+
+---
+
+## `OverloadPriority`
+
+> **Note:** This stage name is case-sensitive and uses PascalCase (`OverloadPriority`), unlike most other stages which use `snake_case`.
+
+Assigns an explicit integer priority to a specific method overload. Lower values sort first. Binding frameworks use this order to decide which overload to try first during argument matching.
+
+```yaml
+- stage: OverloadPriority
+  class: MyClass
+  method: process
+  signature: "int process()"   # "return_type method_name(param_types...)"
+  priority: 0
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `class` | string | `"*"` | Class name; plain name or `"*"` for all classes |
+| `method` | string | — | Method name to target (required) |
+| `signature` | string | — | Full signature `"return_type method_name(comma-sep param types)"` (required) |
+| `priority` | int | — | Priority value; lower = tried first (required) |
+
+The signature format is `"return_type method_name(type1, type2, ...)"` using the exact C++ type spellings from the IR (after any `add_type_mapping` stages have run).
+
+**Example — prefer the `int` overload of `add` over the `double` one:**
+```yaml
+transforms:
+  - stage: OverloadPriority
+    class: Calculator
+    method: add
+    signature: "int add(int, int)"
+    priority: 0
+
+  - stage: OverloadPriority
+    class: Calculator
+    method: add
+    signature: "double add(double, double)"
+    priority: 1
+```
+
+---
+
+## `ExceptionPolicy`
+
+> **Note:** This stage name is case-sensitive and uses PascalCase (`ExceptionPolicy`), unlike most other stages which use `snake_case`.
+
+Sets the exception propagation policy on matching methods and/or free functions. Templates use the `exception_policy` field on `IRMethod` and `IRFunction` to decide how to wrap exceptions in the binding.
+
+```yaml
+- stage: ExceptionPolicy
+  class: "*"          # optional; default all classes
+  method: "*"         # optional; default all methods
+  function: "*"       # optional; targets free functions
+  policy: pass_through
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `class` | string | `"*"` | Class name pattern |
+| `method` | string | `"*"` | Method name pattern |
+| `function` | string | `"*"` | Free function name pattern |
+| `policy` | string | — | `"none"` \| `"pass_through"` \| `"abort"` (required) |
+
+**Policy values:**
+
+| Value | Effect |
+|-------|--------|
+| `none` | No exception handling — exceptions propagate naturally |
+| `pass_through` | Catch and re-throw; propagates C++ exceptions across the binding boundary |
+| `abort` | Catch all exceptions and call `std::abort()` |
+
+**Example — enable pass-through on all methods of a network class:**
+```yaml
+transforms:
+  - stage: ExceptionPolicy
+    class: NetworkClient
+    policy: pass_through
+```
+
+**Example — abort on any exception from free functions (safety-critical code):**
+```yaml
+transforms:
+  - stage: ExceptionPolicy
+    function: "*"
+    policy: abort
 ```
 
 ---

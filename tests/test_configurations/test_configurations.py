@@ -270,6 +270,29 @@ class TestPrettyFields:
         assert "--sort-includes" in cfg.pretty_options
 
 
+class TestSystemIncludePaths:
+    def test_source_config_system_include_paths(self, tmp_path: Path) -> None:
+        yaml_text = (
+            "source:\n"
+            "  path: test.hpp\n"
+            "  system_include_paths:\n"
+            "    - /usr/include/mylib\n"
+            "    - /opt/frameworks/include\n"
+        )
+        cfg_path = tmp_path / "test.input.yml"
+        cfg_path.write_text(yaml_text)
+        config = load_input_config(cfg_path)
+        assert config.source is not None
+        assert config.source.system_include_paths == [
+            "/usr/include/mylib",
+            "/opt/frameworks/include",
+        ]
+
+    def test_system_include_paths_defaults_empty(self) -> None:
+        cfg = SourceConfig(path="foo.hpp")
+        assert cfg.system_include_paths == []
+
+
 class TestGetSourceEntries:
     def test_single_source_normalised_to_list(self):
         cfg = InputConfig(source=SourceConfig(path="foo.hpp"))

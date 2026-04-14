@@ -223,6 +223,8 @@ tsujikiri [OPTIONS]
 | `--trace-transforms` | | | Print which transform stages ran and on what entities to stderr |
 | `--dump-ir` | | `[FILE]` | Dump the post-transform IR as JSON to FILE (default: stdout) |
 | `--validate-config` | | | Validate input config (regex patterns, stage names) and exit |
+| `--verbose` | `-v` | | Enable verbose Clang diagnostic output during parsing |
+| `--api-version` | | `VERSION` | Override the API version string used for `--embed-version` and `api_since`/`api_until` semver filtering |
 | `--help` | `-h` | | Show help and exit |
 
 ### Common Patterns

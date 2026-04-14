@@ -264,6 +264,56 @@ class TestClassnameNoMatch:
 
 
 # ---------------------------------------------------------------------------
+# Declared functions with parameters (cli.py lines 303-308)
+# ---------------------------------------------------------------------------
+
+class TestDeclaredFunctionsInjection:
+    def test_declared_function_with_parameters_appears_in_output(self, tmp_path: Path) -> None:
+        """cli.py lines 303-308: declared function parameters are built as IRParameter list."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        cfg = tmp_path / "decl.input.yml"
+        cfg.write_text(yaml.dump({
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "typesystem": {
+                "declared_functions": [
+                    {
+                        "name": "myWrapper",
+                        "namespace": "mylib",
+                        "return_type": "void",
+                        "parameters": [
+                            {"name": "x", "type": "int"},
+                            {"name": "y", "type": "float"},
+                        ],
+                    }
+                ]
+            },
+        }))
+        stdout, _ = _run("--input", str(cfg), "--target", "luabridge3", "-")
+        assert "myWrapper" in stdout
+
+    def test_declared_function_no_namespace_qualified_name(self, tmp_path: Path) -> None:
+        """cli.py line 307: qualified = fn_decl.name when namespace is empty."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        cfg = tmp_path / "decl_no_ns.input.yml"
+        cfg.write_text(yaml.dump({
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "typesystem": {
+                "declared_functions": [
+                    {
+                        "name": "bareFunc",
+                        "return_type": "int",
+                        "parameters": [{"name": "n", "type": "int"}],
+                    }
+                ]
+            },
+        }))
+        stdout, _ = _run("--input", str(cfg), "--target", "luabridge3", "-")
+        assert "bareFunc" in stdout
+
+
+# ---------------------------------------------------------------------------
 # Per-source generation.includes
 # ---------------------------------------------------------------------------
 

@@ -69,6 +69,10 @@ class IRMethod:
     is_deprecated: bool = False                  # True if marked [[deprecated]] in C++
     deprecation_message: Optional[str] = None    # optional message from [[deprecated("msg")]]
     code_injections: List[IRCodeInjection] = field(default_factory=list)
+    overload_priority: Optional[int] = None     # lower = higher priority; None = natural order
+    exception_policy: Optional[str] = None      # "none" | "pass_through" | "abort" | None = default
+    api_since: Optional[str] = None             # semver: first version this entity is available
+    api_until: Optional[str] = None             # semver: first version this entity is removed
 
 
 @dataclass
@@ -125,6 +129,8 @@ class IREnum:
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
+    api_since: Optional[str] = None
+    api_until: Optional[str] = None
 
 
 @dataclass
@@ -181,6 +187,8 @@ class IRClass:
     smart_pointer_managed_type: Optional[str] = None  # inner type name for smart pointer wrappers
     using_declarations: List[IRUsingDeclaration] = field(default_factory=list)
     code_injections: List[IRCodeInjection] = field(default_factory=list)
+    api_since: Optional[str] = None
+    api_until: Optional[str] = None
 
 
 @dataclass
@@ -214,6 +222,10 @@ class IRFunction:
     doc: Optional[str] = None                    # documentation string
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
+    overload_priority: Optional[int] = None     # lower = higher priority; None = natural order
+    exception_policy: Optional[str] = None      # "none" | "pass_through" | "abort" | None = default
+    api_since: Optional[str] = None             # semver: first version this entity is available
+    api_until: Optional[str] = None             # semver: first version this entity is removed
 
 
 @dataclass

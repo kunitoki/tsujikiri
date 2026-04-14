@@ -1,4 +1,5 @@
 - always use python via "uv python"
+- never git add or commit
 - use "just test" to test
 - use "just test -k test_method_name" to test an individual test method
 - use "just coverage" to coverage

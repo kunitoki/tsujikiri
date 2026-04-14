@@ -1,2 +1,2 @@
-build/
-.cmake_configure.lock
+*/build/
+_deps/

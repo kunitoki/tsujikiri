@@ -1,0 +1,22 @@
+sources:
+  - path: "types.hpp"
+    parse_args: ["-std=c++17"]
+
+filters:
+  namespaces: ["types"]
+  constructors:
+    include: true
+
+# Declare OSType as a known external type so getTag() is not filtered.
+# Without this, methods returning OSType would be suppressed by unsupported_types.
+typesystem:
+  custom_types:
+    - cpp_name: "OSType"
+
+format_overrides:
+  luabridge3:
+    generation:
+      includes: ['"typesystem/types.hpp"']
+  pybind11:
+    generation:
+      includes: ['"typesystem/types.hpp"']

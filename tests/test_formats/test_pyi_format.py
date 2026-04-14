@@ -412,3 +412,81 @@ class TestPyiFormatDiscovery:
         assert pyi_output_config.type_mappings["std::string"] == "str"
         assert pyi_output_config.type_mappings["bool"] == "bool"
         assert pyi_output_config.type_mappings["void"] == "None"
+
+
+# ---------------------------------------------------------------------------
+# Free-function deprecated annotation
+# ---------------------------------------------------------------------------
+
+class TestPyiFreeFunctionDeprecated:
+    def _mod(self, fn: IRFunction) -> IRModule:
+        mod = IRModule(name="test")
+        mod.functions = [fn]
+        return mod
+
+    def test_deprecated_emits_comment(self, pyi_output_config) -> None:
+        fn = IRFunction(
+            name="oldOp",
+            qualified_name="oldOp",
+            namespace="",
+            return_type="None",
+            is_deprecated=True,
+            deprecation_message="use newOp instead",
+        )
+        buf = io.StringIO()
+        Generator(pyi_output_config).generate(self._mod(fn), buf)
+        output = buf.getvalue()
+        assert "# deprecated" in output
+        assert "use newOp instead" in output
+
+    def test_not_deprecated_no_comment(self, pyi_output_config) -> None:
+        fn = IRFunction(
+            name="currentOp",
+            qualified_name="currentOp",
+            namespace="",
+            return_type="None",
+            is_deprecated=False,
+        )
+        buf = io.StringIO()
+        Generator(pyi_output_config).generate(self._mod(fn), buf)
+        output = buf.getvalue()
+        assert "# deprecated" not in output
+
+    def test_deprecated_without_message(self, pyi_output_config) -> None:
+        fn = IRFunction(
+            name="legacyOp",
+            qualified_name="legacyOp",
+            namespace="",
+            return_type="None",
+            is_deprecated=True,
+        )
+        buf = io.StringIO()
+        Generator(pyi_output_config).generate(self._mod(fn), buf)
+        output = buf.getvalue()
+        assert "# deprecated" in output
+
+    def test_overloaded_deprecated_emits_comment(self, pyi_output_config) -> None:
+        fn1 = IRFunction(
+            name="oldOp",
+            qualified_name="oldOp",
+            namespace="",
+            return_type="None",
+            is_deprecated=True,
+            deprecation_message="use newOp",
+            parameters=[IRParameter(name="x", type_spelling="int")],
+        )
+        fn2 = IRFunction(
+            name="oldOp",
+            qualified_name="oldOp",
+            namespace="",
+            return_type="None",
+            is_deprecated=False,
+            parameters=[IRParameter(name="x", type_spelling="float")],
+        )
+        mod = IRModule(name="test")
+        mod.functions = [fn1, fn2]
+        buf = io.StringIO()
+        Generator(pyi_output_config).generate(mod, buf)
+        output = buf.getvalue()
+        assert "# deprecated" in output
+        assert "use newOp" in output

@@ -46,9 +46,13 @@ from tsujikiri.ir import (
 class TransformStage:
     """Base class for all transform stages."""
     name: str = ""
+    _matched: bool = False
 
     def apply(self, module: IRModule) -> None:
         raise NotImplementedError
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(name={self.name!r})"
 
 
 _REGISTRY: Dict[str, Type[TransformStage]] = {}
@@ -70,6 +74,10 @@ class TransformPipeline:
     def run(self, module: IRModule) -> None:
         for stage in self.stages:
             stage.apply(module)
+
+    def unmatched_stages(self) -> List[str]:
+        """Return repr of stages that ran but matched nothing."""
+        return [repr(stage) for stage in self.stages if not stage._matched]
 
 
 def build_pipeline_from_config(specs: List[TransformSpec]) -> TransformPipeline:
@@ -181,6 +189,7 @@ class SuppressMethodStage(TransformStage):
             for method in cls.methods:
                 if _matches(method.name, self.pattern, self.is_regex):
                     method.emit = False
+                    self._matched = True
 
 
 class SuppressClassStage(TransformStage):
@@ -200,6 +209,7 @@ class SuppressClassStage(TransformStage):
     def apply(self, module: IRModule) -> None:
         for cls in _find_classes(module, self.pattern, self.is_regex):
             cls.emit = False
+            self._matched = True
 
 
 class InjectMethodStage(TransformStage):
@@ -476,6 +486,74 @@ class RemoveOverloadStage(TransformStage):
                     sig = ", ".join(p.type_spelling for p in method.parameters)
                     if sig == self.signature:
                         method.emit = False
+
+
+class OverloadPriorityStage(TransformStage):
+    """Assign an explicit priority index to a specific method overload.
+
+    Lower priority values sort first. Use this to control which overload
+    pybind11/LuaBridge resolves first during argument matching.
+
+    YAML::
+      stage: OverloadPriority
+      class: MyClass
+      method: process
+      signature: "int process()"   # "return_type method_name(param_types...)"
+      priority: 0
+    """
+    name = "OverloadPriority"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.class_name: str = kwargs.get("class", "*")
+        self.method_name: str = kwargs["method"]
+        self.signature: str = kwargs["signature"]
+        self.priority: int = int(kwargs["priority"])
+
+    def apply(self, module: IRModule) -> None:
+        for cls in module.classes:
+            if self.class_name not in ("*", cls.name, cls.qualified_name):
+                continue
+            for m in cls.methods:
+                if m.name != self.method_name:
+                    continue
+                sig_types = ", ".join(p.type_spelling for p in m.parameters)
+                candidate_sig = f"{m.return_type} {m.name}({sig_types})"
+                if candidate_sig == self.signature:
+                    m.overload_priority = self.priority
+
+
+class ExceptionPolicyStage(TransformStage):
+    """Set the exception propagation policy for methods and/or free functions.
+
+    YAML::
+      stage: ExceptionPolicy
+      class: MyClass        # optional, default "*" (all classes)
+      method: doWork        # optional, default "*" (all methods)
+      function: myFunc      # optional, targets free functions
+      policy: pass_through  # "none" | "pass_through" | "abort"
+    """
+    name = "ExceptionPolicy"
+    _VALID_POLICIES = frozenset({"none", "pass_through", "abort"})
+
+    def __init__(self, **kwargs: Any) -> None:
+        policy = kwargs["policy"]
+        if policy not in self._VALID_POLICIES:
+            raise ValueError(f"exception_policy must be one of {self._VALID_POLICIES}, got {policy!r}")
+        self._policy = policy
+        self._class_name: str = kwargs.get("class", "*")
+        self._method: str = kwargs.get("method", "*")
+        self._function: str = kwargs.get("function", "*")
+
+    def apply(self, module: IRModule) -> None:
+        for cls in module.classes:
+            if self._class_name not in ("*", cls.name, cls.qualified_name):
+                continue
+            for m in cls.methods:
+                if self._method in ("*", m.name):
+                    m.exception_policy = self._policy
+        for fn in module.functions:
+            if self._function in ("*", fn.name):
+                fn.exception_policy = self._policy
 
 
 class InjectCodeStage(TransformStage):
@@ -1215,5 +1293,9 @@ for _stage_cls in [
     ResolveUsingDeclarationsStage,
     # Exception registration
     RegisterExceptionStage,
+    # Overload priority
+    OverloadPriorityStage,
+    # Exception policy
+    ExceptionPolicyStage,
 ]:
     register_stage(_stage_cls.name, _stage_cls)

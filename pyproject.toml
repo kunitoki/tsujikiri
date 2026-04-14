@@ -61,6 +61,7 @@ version = { attr = "tsujikiri.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+norecursedirs = ["_deps", "*/build", "__pycache__", ".venv"]
 
 [tool.mypy]
 python_version = "3.12"

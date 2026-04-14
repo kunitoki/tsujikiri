@@ -168,6 +168,10 @@ template: |
   {%- block function_group_overloaded scoped %}
   {%- for fn in group.functions %}
   {%- block function_overloaded scoped %}
+  {%- if fn.is_deprecated %}
+
+  # deprecated{% if fn.deprecation_message %}: {{ fn.deprecation_message }}{% endif %}
+  {%- endif %}
 
   @overload
   def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}: ...
@@ -177,6 +181,10 @@ template: |
   {%- else %}
   {%- set fn = group.functions[0] %}
   {%- block function scoped %}
+  {%- if fn.is_deprecated %}
+
+  # deprecated{% if fn.deprecation_message %}: {{ fn.deprecation_message }}{% endif %}
+  {%- endif %}
 
   def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}: ...
   {%- if fn.doc %}
