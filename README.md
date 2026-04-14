@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=4)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
 [![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=4)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=4)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
 [![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=4)](https://tsujikiri.readthedocs.io/en/latest/)
 [![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=4)](https://pypi.org/project/tsujikiri/)
 [![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=4)](https://pypi.org/project/tsujikiri/)
