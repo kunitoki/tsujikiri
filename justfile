@@ -37,6 +37,6 @@ publish version:
 
 # Remove build artifacts.
 clean:
-    rm -rf dist build .venv
-    rm -rf src/*.egg-info src/**/.pytest_cache .pytest_cache .coverage htmlcov
+    rm -rf dist build .venv src/*.egg-info
+    rm -rf src/**/.pytest_cache .pytest_cache .mypy_cache .coverage htmlcov
     rm -rf tests/test_compilation/build/ tests/test_compilation/.cmake_configure.lock

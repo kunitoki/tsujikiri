@@ -706,6 +706,7 @@ class TestCMakeBuild:
         assert _cmake_build("test_combined_luabridge3"), "combined luabridge3 build failed"
 
     def test_combined_luabridge3_runs(self):
+        _cmake_build("test_combined_luabridge3")
         assert _run_executable("test_combined_luabridge3"), "combined luabridge3 run failed"
 
     # --- geo ---
@@ -714,12 +715,14 @@ class TestCMakeBuild:
         assert _cmake_build("test_geo_luabridge3"), "geo luabridge3 build failed"
 
     def test_geo_luabridge3_runs(self):
+        _cmake_build("test_geo_luabridge3")
         assert _run_executable("test_geo_luabridge3"), "geo luabridge3 run failed"
 
     def test_geo_pybind11_builds(self):
         assert _cmake_build("geo_py"), "geo pybind11 build failed"
 
     def test_geo_pybind11_runs(self):
+        _cmake_build("geo_py")
         assert _run_pybind11_verify(HERE / "geo" / "pybind11_verify.py"), "geo pybind11 verify failed"
 
     # --- engine ---
@@ -728,12 +731,14 @@ class TestCMakeBuild:
         assert _cmake_build("test_engine_luabridge3"), "engine luabridge3 build failed"
 
     def test_engine_luabridge3_runs(self):
+        _cmake_build("test_engine_luabridge3")
         assert _run_executable("test_engine_luabridge3"), "engine luabridge3 run failed"
 
     def test_engine_pybind11_builds(self):
         assert _cmake_build("engine_py"), "engine pybind11 build failed"
 
     def test_engine_pybind11_runs(self):
+        _cmake_build("engine_py")
         assert _run_pybind11_verify(HERE / "engine" / "pybind11_verify.py"), "engine pybind11 verify failed"
 
     # --- audio ---
@@ -742,12 +747,14 @@ class TestCMakeBuild:
         assert _cmake_build("test_audio_luabridge3"), "audio luabridge3 build failed"
 
     def test_audio_luabridge3_runs(self):
+        _cmake_build("test_audio_luabridge3")
         assert _run_executable("test_audio_luabridge3"), "audio luabridge3 run failed"
 
     def test_audio_pybind11_builds(self):
         assert _cmake_build("audio_py"), "audio pybind11 build failed"
 
     def test_audio_pybind11_runs(self):
+        _cmake_build("audio_py")
         assert _run_pybind11_verify(HERE / "audio" / "pybind11_verify.py"), "audio pybind11 verify failed"
 
     # --- samplebinding ---
@@ -756,6 +763,7 @@ class TestCMakeBuild:
         assert _cmake_build("samplebinding_py"), "samplebinding pybind11 build failed"
 
     def test_samplebinding_pybind11_runs(self):
+        _cmake_build("samplebinding_py")
         assert _run_pybind11_verify(HERE / "samplebinding" / "pybind11_verify.py"), "samplebinding pybind11 verify failed"
 
     # --- typesystem ---
@@ -764,10 +772,12 @@ class TestCMakeBuild:
         assert _cmake_build("test_typesystem_luabridge3"), "typesystem luabridge3 build failed"
 
     def test_typesystem_luabridge3_runs(self):
+        _cmake_build("test_typesystem_luabridge3")
         assert _run_executable("test_typesystem_luabridge3"), "typesystem luabridge3 run failed"
 
     def test_typesystem_pybind11_builds(self):
         assert _cmake_build("typesystem_py"), "typesystem pybind11 build failed"
 
     def test_typesystem_pybind11_runs(self):
+        _cmake_build("typesystem_py")
         assert _run_pybind11_verify(HERE / "typesystem" / "pybind11_verify.py"), "typesystem pybind11 verify failed"
