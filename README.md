@@ -12,7 +12,7 @@
 
 > **Cut through C++ bindings**
 
-tsujikiri parses C++ headers via **libclang** and generates binding code through a **template-driven pipeline**. Define what to expose, plug in a target format, and get ready-to-compile bindings.
+tsujikiri parses C++ headers via **libclang**, **filters** by namespace and pattern, **transforms** symbols — rename, remap types, inject code — then **renders** ready-to-compile bindings through a Jinja2 template. Precise control, zero boilerplate.
 
 Built-in support for [LuaBridge3](https://github.com/kunitoki/LuaBridge3) (Lua bindings), [LuaLS](https://luals.github.io/) (Lua Language Server annotations), [pybind11](https://pybind11.readthedocs.io/) (Python bindings), and Python type stubs (`.pyi`). Custom formats are first-class.
 
