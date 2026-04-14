@@ -12,11 +12,16 @@ from clang import cindex as ci
 from clang.cindex import CursorKind
 from tsujikiri.configurations import SourceConfig
 from tsujikiri.clang_base_enumerations import CursorKind, AccessSpecifier
+from tsujikiri.clang_base_enumerations import AccessSpecifier, AvailabilityKind
 from tsujikiri.parser import (
     parse_translation_unit,
+    _canonicalize_operator,
     _collect_attr_blocks,
     _get_attributes,
     _get_default_value,
+    _get_deprecation_message,
+    _is_scoped_enum,
+    _parse_class,
     _parse_enum,
     _read_source_lines,
     _source_file,
@@ -1026,3 +1031,151 @@ class TestTypeFromTokensNamespaces:
         assert self._fn_types(type_tokens_module, "m_function_nested") == [
             "::std::function<outer::inner::Nested (::std::string, outer::Mid)>"
         ]
+
+
+# ---------------------------------------------------------------------------
+# _canonicalize_operator
+# ---------------------------------------------------------------------------
+
+class TestCanonicalizeOperator:
+    def test_binary_minus_unchanged(self) -> None:
+        assert _canonicalize_operator("operator-", 1) == "operator-"
+
+    def test_unary_minus(self) -> None:
+        assert _canonicalize_operator("operator-", 0) == "operator-unary"
+
+    def test_unary_plus(self) -> None:
+        assert _canonicalize_operator("operator+", 0) == "operator+unary"
+
+    def test_binary_plus_unchanged(self) -> None:
+        assert _canonicalize_operator("operator+", 1) == "operator+"
+
+    def test_prefix_increment(self) -> None:
+        assert _canonicalize_operator("operator++", 0) == "operator++prefix"
+
+    def test_postfix_increment(self) -> None:
+        assert _canonicalize_operator("operator++", 1) == "operator++postfix"
+
+    def test_prefix_decrement(self) -> None:
+        assert _canonicalize_operator("operator--", 0) == "operator--prefix"
+
+    def test_postfix_decrement(self) -> None:
+        assert _canonicalize_operator("operator--", 1) == "operator--postfix"
+
+    def test_other_operator_passthrough(self) -> None:
+        assert _canonicalize_operator("operator==", 1) == "operator=="
+        assert _canonicalize_operator("operator<<", 1) == "operator<<"
+        assert _canonicalize_operator("operator[]", 1) == "operator[]"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _get_deprecation_message edge cases (parser.py lines 208, 211)
+# ---------------------------------------------------------------------------
+
+class TestGetDeprecationMessageEdgeCases:
+    def test_no_file_returns_none(self) -> None:
+        """cursor.location.file is None → returns None immediately (line 208)."""
+        tok = MagicMock()
+        tok.spelling = "deprecated"
+
+        location = MagicMock()
+        location.file = None
+
+        cursor = MagicMock()
+        cursor.get_tokens.return_value = [tok]
+        cursor.location = location
+
+        assert _get_deprecation_message(cursor) is None
+
+    def test_empty_file_returns_none(self) -> None:
+        """_read_source_lines returns [] → returns None immediately (line 211)."""
+        import os
+        import tempfile
+
+        tok = MagicMock()
+        tok.spelling = "deprecated"
+
+        with tempfile.NamedTemporaryFile(suffix=".hpp", delete=False) as f:
+            temp_path = f.name  # empty file
+
+        try:
+            _SOURCE_CACHE.pop(temp_path, None)
+
+            location_file = MagicMock()
+            location_file.name = temp_path
+
+            location = MagicMock()
+            location.file = location_file
+
+            cursor = MagicMock()
+            cursor.get_tokens.return_value = [tok]
+            cursor.location = location
+
+            assert _get_deprecation_message(cursor) is None
+        finally:
+            os.unlink(temp_path)
+
+
+# ---------------------------------------------------------------------------
+# Unit test for _is_scoped_enum with leading non-"enum" token (line 263->262)
+# ---------------------------------------------------------------------------
+
+class TestIsScopedEnumLeadingToken:
+    def test_typedef_enum_not_scoped(self) -> None:
+        """Tokens start with 'typedef' before 'enum' — exercises 263->262 False branch."""
+        tok_typedef = MagicMock()
+        tok_typedef.spelling = "typedef"
+        tok_enum = MagicMock()
+        tok_enum.spelling = "enum"
+        tok_name = MagicMock()
+        tok_name.spelling = "OldStyle"
+
+        cursor = MagicMock()
+        cursor.get_tokens.return_value = [tok_typedef, tok_enum, tok_name]
+
+        assert _is_scoped_enum(cursor) is False
+
+    def test_typedef_enum_class_is_scoped(self) -> None:
+        """Tokens 'typedef enum class' — leading 'typedef' False branch then 'class' True."""
+        tok_typedef = MagicMock()
+        tok_typedef.spelling = "typedef"
+        tok_enum = MagicMock()
+        tok_enum.spelling = "enum"
+        tok_class = MagicMock()
+        tok_class.spelling = "class"
+        tok_name = MagicMock()
+        tok_name.spelling = "Scoped"
+
+        cursor = MagicMock()
+        cursor.get_tokens.return_value = [tok_typedef, tok_enum, tok_class, tok_name]
+
+        assert _is_scoped_enum(cursor) is True
+
+
+# ---------------------------------------------------------------------------
+# Unit test for _parse_class USING_DECLARATION with no TYPE_REF child (487->491)
+# ---------------------------------------------------------------------------
+
+class TestParseClassUsingDeclNoTypeRef:
+    def test_using_decl_no_type_ref_child(self) -> None:
+        """USING_DECLARATION child has no TYPE_REF child → loop exhausts (487->491 branch)."""
+        # Mock USING_DECLARATION cursor with empty children (no TYPE_REF)
+        using_decl = MagicMock()
+        using_decl.kind = CursorKind.USING_DECLARATION
+        using_decl.access_specifier = AccessSpecifier.PUBLIC
+        using_decl.spelling = "process"
+        using_decl.get_children.return_value = []  # empty → loop exhausts → 487->491
+
+        # Mock class cursor — location.file = None avoids file I/O in _get_attributes
+        class_cursor = MagicMock()
+        class_cursor.spelling = "MockClass"
+        class_cursor.kind = CursorKind.STRUCT_DECL
+        class_cursor.location.file = None
+        class_cursor.get_children.return_value = [using_decl]
+        class_cursor.availability = MagicMock()  # != AvailabilityKind.DEPRECATED → not deprecated
+
+        ir_cls = _parse_class(class_cursor, "ns")
+
+        assert len(ir_cls.using_declarations) == 1
+        assert ir_cls.using_declarations[0].member_name == "process"
+        assert ir_cls.using_declarations[0].base_qualified_name == ""  # stays empty

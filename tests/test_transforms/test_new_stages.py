@@ -15,9 +15,11 @@ from tsujikiri.ir import (
     IRMethod,
     IRModule,
     IRParameter,
+    IRProperty,
 )
 from tsujikiri.transforms import (
     InjectCodeStage,
+    InjectPropertyStage,
     ModifyArgumentStage,
     ModifyConstructorStage,
     ModifyFieldStage,
@@ -109,6 +111,11 @@ class TestModifyMethodStage:
         mod = _simple_module()
         ModifyMethodStage(**{"class": "Cls", "method": "getValue", "return_ownership": "cpp"}).apply(mod)
         assert _get_method(mod, "getValue").return_ownership == "cpp"
+
+    def test_return_keep_alive(self):
+        mod = _simple_module()
+        ModifyMethodStage(**{"class": "Cls", "method": "getValue", "return_keep_alive": True}).apply(mod)
+        assert _get_method(mod, "getValue").return_keep_alive is True
 
     def test_allow_thread(self):
         mod = _simple_module()
@@ -434,3 +441,56 @@ class TestSetTypeHintStage:
         mod = _simple_module()
         SetTypeHintStage(**{"class": "Other", "force_abstract": True}).apply(mod)
         assert _get_cls(mod).force_abstract is False
+
+
+# ---------------------------------------------------------------------------
+# InjectPropertyStage
+# ---------------------------------------------------------------------------
+
+class TestInjectPropertyStage:
+    def test_inject_readwrite_property(self):
+        mod = _simple_module()
+        InjectPropertyStage(**{
+            "class": "Cls",
+            "name": "arrivalMessage",
+            "getter": "getArrivalMessage",
+            "setter": "setArrivalMessage",
+            "type": "std::string",
+        }).apply(mod)
+        cls = _get_cls(mod)
+        assert len(cls.properties) == 1
+        prop = cls.properties[0]
+        assert prop.name == "arrivalMessage"
+        assert prop.getter == "getArrivalMessage"
+        assert prop.setter == "setArrivalMessage"
+        assert prop.type_spelling == "std::string"
+        assert prop.emit is True
+
+    def test_inject_readonly_property(self):
+        mod = _simple_module()
+        InjectPropertyStage(**{
+            "class": "Cls",
+            "name": "label",
+            "getter": "getLabel",
+        }).apply(mod)
+        prop = _get_cls(mod).properties[0]
+        assert prop.setter is None
+        assert prop.getter == "getLabel"
+
+    def test_inject_property_no_match_is_noop(self):
+        mod = _simple_module()
+        InjectPropertyStage(**{
+            "class": "Other",
+            "name": "x",
+            "getter": "getX",
+        }).apply(mod)
+        assert len(_get_cls(mod).properties) == 0
+
+    def test_inject_multiple_properties(self):
+        mod = _simple_module()
+        InjectPropertyStage(**{"class": "Cls", "name": "a", "getter": "getA"}).apply(mod)
+        InjectPropertyStage(**{"class": "Cls", "name": "b", "getter": "getB", "setter": "setB"}).apply(mod)
+        props = _get_cls(mod).properties
+        assert len(props) == 2
+        assert props[0].name == "a"
+        assert props[1].name == "b"

@@ -135,7 +135,7 @@ class Generator:
         flat_classes: List[Dict[str, Any]] = []
         for cls in topo:
             if cls.emit:
-                flat_classes.extend(self._flatten_class_ctx(cls))
+                flat_classes.extend(self._flatten_class_ctx(cls, module.functions))
 
         return {
             "module_name": module.name,
@@ -144,21 +144,35 @@ class Generator:
             "function_groups": self._build_function_group_ctxs(module.functions),
             "classes": flat_classes,
             "api_version": api_version,
+            "operator_mappings": dict(self.cfg.operator_mappings),
             "code_injections": [{"position": c.position, "code": c.code} for c in module.code_injections],
+            "exception_registrations": [
+                {
+                    "cpp_type": er.cpp_exception_type,
+                    "python_name": er.python_exception_name,
+                    "base": er.base_python_exception,
+                }
+                for er in module.exception_registrations
+            ],
         }
 
-    def _flatten_class_ctx(self, ir_class: IRClass) -> List[Dict[str, Any]]:
+    def _flatten_class_ctx(self, ir_class: IRClass, module_functions: Optional[List[IRFunction]] = None) -> List[Dict[str, Any]]:
         """Return class ctx followed by inner-class ctxs (recursive, flattened)."""
-        result = [self._build_class_ctx(ir_class)]
+        result = [self._build_class_ctx(ir_class, module_functions)]
         for inner in ir_class.inner_classes:
             if inner.emit:
-                result.extend(self._flatten_class_ctx(inner))
+                result.extend(self._flatten_class_ctx(inner, module_functions))
         return result
 
     def _build_enum_ctx(self, enum: IREnum) -> Dict[str, Any]:
         return {
             "name": enum.rename or enum.name,
             "qualified_name": enum.qualified_name,
+            "is_scoped": enum.is_scoped,
+            "is_anonymous": enum.is_anonymous,
+            "is_arithmetic": enum.is_arithmetic,
+            "is_deprecated": enum.is_deprecated,
+            "deprecation_message": enum.deprecation_message or "",
             "doc": enum.doc,
             "attributes": list(enum.attributes),
             "values": [
@@ -212,12 +226,15 @@ class Generator:
                     "return_type": self._map_type(eff_return),
                     "raw_return_type": eff_return,
                     "return_ownership": fn.return_ownership,
+                    "return_keep_alive": fn.return_keep_alive,
                     "allow_thread": fn.allow_thread,
                     "wrapper_code": fn.wrapper_code,
                     "overload_kind": "overload",
                     "overload_separator": "" if is_last else ",",
                     "overload_index": i,
                     "is_noexcept": fn.is_noexcept,
+                    "is_deprecated": fn.is_deprecated,
+                    "deprecation_message": fn.deprecation_message or "",
                     "doc": fn.doc,
                     "attributes": list(fn.attributes),
                 })
@@ -228,7 +245,7 @@ class Generator:
             })
         return result
 
-    def _build_class_ctx(self, ir_class: IRClass) -> Dict[str, Any]:
+    def _build_class_ctx(self, ir_class: IRClass, module_functions: Optional[List[IRFunction]] = None) -> Dict[str, Any]:
         name = ir_class.rename or ir_class.name
 
         # Only emit=True public bases for deriveClass<> template usage
@@ -237,6 +254,32 @@ class Generator:
             if b.emit and b.access == "public"
         ]
         base_name = public_bases[0].qualified_name if public_bases else ""
+
+        # Virtual methods list for trampoline generation (ungrouped, each override individually)
+        virtual_methods_ctx = []
+        exposed_protected_ctx = []
+        for m in ir_class.methods:
+            if m.is_virtual or m.is_pure_virtual:
+                if m.emit:
+                    eff_rt = m.return_type_override or m.return_type
+                    virtual_methods_ctx.append({
+                        "name": m.spelling,
+                        "return_type": self._map_type(eff_rt),
+                        "raw_return_type": eff_rt,
+                        "is_const": m.is_const,
+                        "is_pure_virtual": m.is_pure_virtual,
+                        "params": [
+                            {
+                                "name": p.rename or p.name,
+                                "type": self._map_type(p.type_override or p.type_spelling),
+                                "raw_type": p.type_override or p.type_spelling,
+                            }
+                            for p in m.parameters
+                            if p.emit
+                        ],
+                    })
+            if m.access == "public_via_trampoline":
+                exposed_protected_ctx.append({"spelling": m.spelling})
 
         # Constructor group
         ctors = [c for c in ir_class.constructors if c.emit]
@@ -304,6 +347,7 @@ class Generator:
                     "return_type": self._map_type(effective_return(m)),
                     "raw_return_type": effective_return(m),
                     "return_ownership": m.return_ownership,
+                    "return_keep_alive": m.return_keep_alive,
                     "allow_thread": m.allow_thread,
                     "wrapper_code": m.wrapper_code,
                     "overload_kind": self._compute_overload_kind(group, m),
@@ -312,7 +356,14 @@ class Generator:
                     "is_virtual": m.is_virtual,
                     "is_pure_virtual": m.is_pure_virtual,
                     "is_noexcept": m.is_noexcept,
+                    "is_operator": m.is_operator,
+                    "operator_type": m.operator_type or "",
+                    "operator_name": self.cfg.operator_mappings.get(m.operator_type or "", "") if m.is_operator else "",
+                    "is_conversion_operator": m.is_conversion_operator,
+                    "conversion_target_type": m.conversion_target_type or "",
                     "overload_index": i,
+                    "is_deprecated": m.is_deprecated,
+                    "deprecation_message": m.deprecation_message or "",
                     "doc": m.doc,
                     "attributes": list(m.attributes),
                     "code_injections": [{"position": c.position, "code": c.code} for c in m.code_injections],
@@ -331,6 +382,7 @@ class Generator:
                 "type": self._map_type(f.type_override or f.type_spelling),
                 "raw_type": f.type_override or f.type_spelling,
                 "is_const": f.is_const,
+                "is_static": f.is_static,
                 "read_only": f.read_only or f.is_const,
                 "doc": f.doc,
             }
@@ -338,11 +390,44 @@ class Generator:
             if f.emit and not self._is_unsupported(f.type_override or f.type_spelling)
         ]
 
+        # Synthetic getter/setter properties
+        properties = [
+            {
+                "name": p.name,
+                "getter": p.getter,
+                "setter": p.setter,
+                "type": self._map_type(p.type_spelling),
+                "raw_type": p.type_spelling,
+                "doc": p.doc,
+            }
+            for p in ir_class.properties
+            if p.emit
+        ]
+
+        # Detect free-function operator<< for this class (for __repr__ generation)
+        has_free_ostream_op = False
+        if module_functions:
+            for fn in module_functions:
+                if fn.emit and fn.is_operator and fn.operator_type == "operator<<":
+                    params = [p for p in fn.parameters if p.emit]
+                    if len(params) == 2:
+                        second = params[1].type_spelling
+                        if ir_class.name in second or ir_class.qualified_name in second:
+                            has_free_ostream_op = True
+                            break
+
         return {
             "name": name,
+            "cpp_name": ir_class.name,
             "qualified_name": ir_class.qualified_name,
             "doc": ir_class.doc,
             "attributes": list(ir_class.attributes),
+            "is_deprecated": ir_class.is_deprecated,
+            "deprecation_message": ir_class.deprecation_message or "",
+            "has_deleted_copy_constructor": ir_class.has_deleted_copy_constructor,
+            "has_deleted_move_constructor": ir_class.has_deleted_move_constructor,
+            "generate_hash": ir_class.generate_hash,
+            "has_free_ostream_op": has_free_ostream_op,
             "bases": [
                 {"qualified_name": b.qualified_name, "access": b.access, "emit": b.emit}
                 for b in ir_class.bases
@@ -362,11 +447,18 @@ class Generator:
             "copyable": ir_class.copyable,
             "movable": ir_class.movable,
             "force_abstract": ir_class.force_abstract,
+            "holder_type": ir_class.holder_type or "",
+            "trampoline_name": f"{self.generation.trampoline_prefix if self.generation else 'Py'}{ir_class.name}",
+            "virtual_methods": virtual_methods_ctx,
+            "exposed_protected_methods": exposed_protected_ctx,
+            "has_exposed_protected": len(exposed_protected_ctx) > 0,
             "constructor_group": ctor_group,
             "method_groups": method_groups,
             "fields": fields,
+            "properties": properties,
             "enums": [self._build_enum_ctx(e) for e in ir_class.enums if e.emit],
             "code_injections": [{"position": c.position, "code": c.code} for c in ir_class.code_injections],
+            "declaration_injections": [{"position": c.position, "code": c.code} for c in ir_class.code_injections if c.position == "declaration"],
         }
 
     def _compute_overload_kind(self, group: List[IRMethod], method: IRMethod) -> str:

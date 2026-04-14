@@ -50,6 +50,10 @@ template: |
 
   ---{{ cls.doc }}
   {%- endif %}
+  {%- if cls.is_deprecated %}
+
+  ---@deprecated {% if cls.deprecation_message %}{{ cls.deprecation_message }}{% endif %}
+  {%- endif %}
 
   ---@class {{ cls.name }} {% if cls.base_name %}: {{ cls.base_short_name }}{% endif %}
   {%- block class_fields scoped %}
@@ -58,7 +62,7 @@ template: |
   {%- if field.doc %}
   ---{{ field.doc }}
   {%- endif %}
-  ---@field {{ field.name }} {{ field.type }}{% if field.read_only %} (readonly){% endif %}
+  ---@field {{ field.name }} {{ field.type }}{% if field.read_only %} (readonly){% endif %}{% if field.is_static %} (static){% endif %}
   {%- endblock %}
   {%- endfor %}
   {%- endblock %}
@@ -133,9 +137,18 @@ template: |
   {%- endfor %}
   {%- for enum in enums %}
   {%- block enum scoped %}
+  {%- if enum.is_anonymous %}
+  {%- for value in enum.values %}
+
+  {{ value.name }} = {{ value.number }}
+  {%- endfor %}
+  {%- else %}
   {%- if enum.doc %}
 
   ---{{ enum.doc }}
+  {%- endif %}
+  {%- if enum.is_deprecated %}
+  ---@deprecated {% if enum.deprecation_message %}{{ enum.deprecation_message }}{% endif %}
   {%- endif %}
 
   ---@enum {{ enum.name }}
@@ -146,6 +159,7 @@ template: |
   {%- endblock %}
   {%- endfor %}
   }
+  {%- endif %}
 
   {%- endblock %}
   {%- endfor %}

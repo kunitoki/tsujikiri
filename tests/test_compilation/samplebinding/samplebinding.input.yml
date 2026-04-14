@@ -1,0 +1,22 @@
+sources:
+  - path: "samplebinding.hpp"
+    parse_args: ["-std=c++17"]
+
+filters:
+  namespaces: ["sample"]
+  constructors:
+    include: true
+
+transforms:
+  - stage: set_type_hint
+    class: Icecream
+    holder_type: std::shared_ptr
+  - stage: suppress_base
+    class: Icecream
+    base: "std::enable_shared_from_this.*"
+    is_regex: true
+
+format_overrides:
+  pybind11:
+    generation:
+      includes: ['"samplebinding/samplebinding.hpp"']

@@ -200,15 +200,16 @@ class TestGeoPybind11Generation:
     """Fast generation tests for the geo scenario with pybind11."""
 
     def test_circle_class_with_base(self, geo_module, pybind11_output_config):
-        assert "py::class_<geo::Circle, geo::Shape>" in _generate(geo_module, pybind11_output_config)
+        assert "py::class_<geo::Circle, PyCircle, geo::Shape>" in _generate(geo_module, pybind11_output_config)
 
     def test_rectangle_class_with_base(self, geo_module, pybind11_output_config):
-        assert "py::class_<geo::Rectangle, geo::Shape>" in _generate(geo_module, pybind11_output_config)
+        assert "py::class_<geo::Rectangle, PyRectangle, geo::Shape>" in _generate(geo_module, pybind11_output_config)
 
     def test_color_enum(self, geo_module, pybind11_output_config):
         out = _generate(geo_module, pybind11_output_config)
         assert 'py::enum_<geo::Color>(m, "Color")' in out
-        assert ".export_values();" in out
+        # geo::Color is "enum class" (scoped), so .export_values() must NOT appear
+        assert ".export_values();" not in out
 
     def test_overloaded_resize_fixed(self, geo_module, pybind11_output_config):
         # Verify the fixed template: no spurious py::overload_cast<...> as 2nd arg
@@ -221,7 +222,7 @@ class TestGeoPybind11Generation:
 
     def test_no_duplicate_shape(self, geo_module, pybind11_output_config):
         out = _generate(geo_module, pybind11_output_config)
-        assert out.count('py::class_<geo::Shape>') == 1
+        assert out.count('py::class_<geo::Shape, PyShape>') == 1
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +268,7 @@ class TestEnginePybind11Generation:
         assert 'py::class_<math::Vec3>(m, "Vec3")' in _generate(engine_module, pybind11_output_config)
 
     def test_player_derives_entity(self, engine_module, pybind11_output_config):
-        assert "py::class_<engine::Player, engine::Entity>" in _generate(engine_module, pybind11_output_config)
+        assert "py::class_<engine::Player, PyPlayer, engine::Entity>" in _generate(engine_module, pybind11_output_config)
 
     def test_cross_namespace_binding(self, engine_module, pybind11_output_config):
         assert "&engine::Entity::setPosition" in _generate(engine_module, pybind11_output_config)
@@ -319,13 +320,13 @@ class TestAudioPybind11Generation:
     """Fast generation tests for the audio scenario with pybind11."""
 
     def test_audio_node_class(self, audio_module, pybind11_output_config):
-        assert 'py::class_<audio::AudioNode>(m, "AudioNode")' in _generate(audio_module, pybind11_output_config)
+        assert 'py::class_<audio::AudioNode, PyAudioNode>' in _generate(audio_module, pybind11_output_config)
 
     def test_reverb_deep_inheritance(self, audio_module, pybind11_output_config):
-        assert "py::class_<audio::Reverb, audio::AudioEffect>" in _generate(audio_module, pybind11_output_config)
+        assert "py::class_<audio::Reverb, PyReverb, audio::AudioEffect>" in _generate(audio_module, pybind11_output_config)
 
     def test_delay_deep_inheritance(self, audio_module, pybind11_output_config):
-        assert "py::class_<audio::Delay, audio::AudioEffect>" in _generate(audio_module, pybind11_output_config)
+        assert "py::class_<audio::Delay, PyDelay, audio::AudioEffect>" in _generate(audio_module, pybind11_output_config)
 
     def test_reverb_static_factories_pybind11(self, audio_module, pybind11_output_config):
         out = _generate(audio_module, pybind11_output_config)
@@ -335,6 +336,44 @@ class TestAudioPybind11Generation:
     def test_node_type_enum_pybind11(self, audio_module, pybind11_output_config):
         out = _generate(audio_module, pybind11_output_config)
         assert 'py::enum_<audio::NodeType>' in out
+
+
+# ---------------------------------------------------------------------------
+# samplebinding — virtual methods, trampolines, shared_ptr holder
+# ---------------------------------------------------------------------------
+
+class TestSamplebindingPybind11Generation:
+    """Fast generation tests for the samplebinding scenario with pybind11."""
+
+    def test_trampoline_class_generated(self, samplebinding_module, pybind11_output_config):
+        out = _generate(samplebinding_module, pybind11_output_config)
+        assert "class PyIcecream : public sample::Icecream" in out
+
+    def test_trampoline_using_constructor(self, samplebinding_module, pybind11_output_config):
+        out = _generate(samplebinding_module, pybind11_output_config)
+        assert "using sample::Icecream::Icecream" in out
+
+    def test_trampoline_override_get_flavor(self, samplebinding_module, pybind11_output_config):
+        out = _generate(samplebinding_module, pybind11_output_config)
+        assert 'PYBIND11_OVERRIDE_NAME(std::string, sample::Icecream, "get_flavor", getFlavor)' in out
+
+    def test_trampoline_override_clone(self, samplebinding_module, pybind11_output_config):
+        out = _generate(samplebinding_module, pybind11_output_config)
+        assert 'PYBIND11_OVERRIDE_NAME(' in out
+        assert 'sample::Icecream, "clone", clone' in out
+
+    def test_icecream_class_with_trampoline_and_holder(self, samplebinding_module, pybind11_output_config):
+        out = _generate(samplebinding_module, pybind11_output_config)
+        assert "py::class_<sample::Icecream, PyIcecream, std::shared_ptr<sample::Icecream>>" in out
+
+    def test_truck_class_no_trampoline(self, samplebinding_module, pybind11_output_config):
+        out = _generate(samplebinding_module, pybind11_output_config)
+        assert 'py::class_<sample::Truck>(m, "Truck")' in out
+
+    def test_add_flavor_bound(self, samplebinding_module, pybind11_output_config):
+        out = _generate(samplebinding_module, pybind11_output_config)
+        assert '"add_flavor"' in out
+        assert "&sample::Truck::addFlavor" in out
 
 
 # ---------------------------------------------------------------------------
@@ -399,3 +438,11 @@ class TestCMakeBuild:
 
     def test_audio_pybind11_runs(self):
         assert _run_pybind11_verify(HERE / "audio" / "pybind11_verify.py"), "audio pybind11 verify failed"
+
+    # --- samplebinding ---
+
+    def test_samplebinding_pybind11_builds(self):
+        assert _cmake_build("samplebinding_py"), "samplebinding pybind11 build failed"
+
+    def test_samplebinding_pybind11_runs(self):
+        assert _run_pybind11_verify(HERE / "samplebinding" / "pybind11_verify.py"), "samplebinding pybind11 verify failed"

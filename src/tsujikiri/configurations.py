@@ -116,6 +116,7 @@ class GenerationConfig:
     prefix: str = ""
     postfix: str = ""
     embed_version: bool = False
+    trampoline_prefix: str = "Py"  # prefix for generated trampoline class names
 
 
 @dataclass
@@ -195,6 +196,7 @@ class OutputConfig:
     description: str = ""
     language: str = ""  # target language, e.g. "cpp" or "lua"
     type_mappings: Dict[str, str] = field(default_factory=dict)
+    operator_mappings: Dict[str, str] = field(default_factory=dict)  # C++ operator → binding name
     unsupported_types: List[str] = field(default_factory=list)
     template: str = ""  # full Jinja2 template (single-template system)
 
@@ -277,6 +279,7 @@ def _parse_generation_config(gen_raw: Dict[str, Any]) -> GenerationConfig:
         prefix=gen_raw.get("prefix", "") or "",
         postfix=gen_raw.get("postfix", "") or "",
         embed_version=gen_raw.get("embed_version", False),
+        trampoline_prefix=gen_raw.get("trampoline_prefix", "Py"),
     )
 
 
@@ -395,6 +398,7 @@ def load_output_config(config_file: Path) -> OutputConfig:
         description=data.get("description", ""),
         language=data.get("language", ""),
         type_mappings=data.get("type_mappings", {}),
+        operator_mappings=data.get("operator_mappings", {}),
         unsupported_types=data.get("unsupported_types", []),
         template=data.get("template", "") or "",
     )

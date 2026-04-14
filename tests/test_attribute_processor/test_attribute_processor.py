@@ -484,3 +484,51 @@ class TestBuiltinTypeMap:
         method = _make_method(attrs=['tsujikiri::type_map("only_one")'])
         cls = _make_class(methods=[method])
         _processor().apply(_make_module(cls))  # no crash
+
+
+# ---------------------------------------------------------------------------
+# tsujikiri::arithmetic and tsujikiri::hashable (Gap 10 / Gap 15)
+# ---------------------------------------------------------------------------
+
+class TestArithmeticAttribute:
+    def test_arithmetic_sets_flag_on_enum(self):
+        enum = IREnum(name="Flags", qualified_name="ns::Flags",
+                      attributes=["tsujikiri::arithmetic"])
+        mod = IRModule(name="m", enums=[enum])
+        _processor().apply(mod)
+        assert enum.is_arithmetic is True
+
+    def test_arithmetic_noop_on_node_without_flag(self):
+        """Applying arithmetic to a node that lacks is_arithmetic is a no-op."""
+        method = _make_method(attrs=["tsujikiri::arithmetic"])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))  # no crash, no attribute set
+        # IRMethod has no is_arithmetic attribute — no side effects expected
+        assert method.is_deprecated is False  # unrelated field unchanged
+
+    def test_arithmetic_via_apply_complex_builtin_false_branch(self):
+        """Direct call: node without is_arithmetic should not raise."""
+        method = _make_method()
+        _apply_complex_builtin("tsujikiri::arithmetic", [], method)
+        # No is_arithmetic on IRMethod — should be a no-op
+
+
+class TestHashableAttribute:
+    def test_hashable_sets_flag_on_class(self):
+        cls = _make_class(attributes=["tsujikiri::hashable"])
+        _processor().apply(_make_module(cls))
+        assert cls.generate_hash is True
+
+    def test_hashable_noop_on_node_without_flag(self):
+        """Applying hashable to a node that lacks generate_hash is a no-op."""
+        method = _make_method(attrs=["tsujikiri::hashable"])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))  # no crash
+        # IRMethod has no generate_hash attribute — no side effects
+        assert method.is_deprecated is False  # unrelated field unchanged
+
+    def test_hashable_via_apply_complex_builtin_false_branch(self):
+        """Direct call: node without generate_hash should not raise."""
+        method = _make_method()
+        _apply_complex_builtin("tsujikiri::hashable", [], method)
+        # No generate_hash on IRMethod — should be a no-op

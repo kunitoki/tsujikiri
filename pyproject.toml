@@ -42,6 +42,8 @@ dev = [
   "pytest-xdist>=3.8.0",
   "cmake>=3.20",
   "zig-bin>=0.15.2",
+  "mypy>=1.10",
+  "types-PyYAML>=6.0",
 ]
 
 [tool.setuptools]
@@ -52,10 +54,18 @@ where = ["src"]
 include = ["tsujikiri*"]
 
 [tool.setuptools.package-data]
-tsujikiri = ["formats/*.yml"]
+tsujikiri = ["py.typed", "*.pyi", "formats/*.pyi", "formats/*.yml"]
 
 [tool.setuptools.dynamic]
 version = { attr = "tsujikiri.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+show_error_codes = true
+files = ["src/tsujikiri"]

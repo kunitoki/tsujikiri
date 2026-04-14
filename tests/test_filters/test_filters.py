@@ -366,3 +366,50 @@ class TestPreSuppressedNodes:
             classes=ClassFilter(blacklist=[FilterPattern("Inner")])
         )).apply(mod)
         assert inner.emit is False
+
+
+# ---------------------------------------------------------------------------
+# Varargs suppression (Gap 16)
+# ---------------------------------------------------------------------------
+
+class TestVarargsFilter:
+    def test_varargs_method_suppressed(self):
+        varargs_m = IRMethod(
+            name="log", spelling="log", qualified_name="ns::Foo::log",
+            return_type="void", is_varargs=True,
+        )
+        normal_m = IRMethod(
+            name="info", spelling="info", qualified_name="ns::Foo::info",
+            return_type="void", is_varargs=False,
+        )
+        cls = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
+                      methods=[varargs_m, normal_m])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        FilterEngine(FilterConfig()).apply(mod)
+        assert varargs_m.emit is False
+        assert normal_m.emit is True
+
+    def test_varargs_function_suppressed(self):
+        vfn = IRFunction(
+            name="printf", qualified_name="ns::printf", namespace="ns",
+            return_type="int", is_varargs=True,
+        )
+        normal_fn = IRFunction(
+            name="puts", qualified_name="ns::puts", namespace="ns",
+            return_type="int", is_varargs=False,
+        )
+        mod = IRModule(name="m", functions=[vfn, normal_fn])
+        FilterEngine(FilterConfig()).apply(mod)
+        assert vfn.emit is False
+        assert normal_fn.emit is True
+
+    def test_non_varargs_not_affected(self):
+        m = IRMethod(
+            name="compute", spelling="compute", qualified_name="ns::Foo::compute",
+            return_type="int", is_varargs=False,
+        )
+        cls = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
+                      methods=[m])
+        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        FilterEngine(FilterConfig()).apply(mod)
+        assert m.emit is True

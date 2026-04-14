@@ -11,6 +11,23 @@ unsupported_types:
 # Optional C++ → target-language type remapping (use add_type_mapping transform)
 type_mappings: {}
 
+# C++ operator overload → Lua metamethod name mapping
+# operator<< maps to __tostring to generate a lambda using std::ostringstream
+operator_mappings:
+  "operator+": "__add"
+  "operator+unary": "__unm"
+  "operator-": "__sub"
+  "operator-unary": "__unm"
+  "operator*": "__mul"
+  "operator/": "__div"
+  "operator%": "__mod"
+  "operator==": "__eq"
+  "operator<": "__lt"
+  "operator<=": "__le"
+  "operator<<": "__tostring"
+  "operator[]": "__index"
+  "operator()": "__call"
+
 template: |
   {%- block prologue -%}
   // DO NOT EDIT - Auto-generated LuaBridge3 bindings for {{ module_name }} by tsujikiri
@@ -84,11 +101,19 @@ template: |
   {{ cls.code_injections | code_at("beginning") }}
   {%- block class_constructors scoped %}
   {%- if not cls.force_abstract and cls.constructor_group.constructors %}
+  {%- if cls.holder_type %}
+  {%- set ns = namespace(ctors=[]) %}
+  {%- for ctor in cls.constructor_group.constructors %}
+  {%- set ns.ctors = ns.ctors + ["void(" + (ctor.params | map(attribute='raw_type') | join(', ')) + ")"] %}
+  {%- endfor %}
+          .addConstructorFrom<{{ cls.holder_type }}<{{ cls.qualified_name }}>, {{ ns.ctors | join(', ') }}>()
+  {%- else %}
   {%- set ns = namespace(ctors=[]) %}
   {%- for ctor in cls.constructor_group.constructors %}
   {%- set ns.ctors = ns.ctors + ["void (*)(" + (ctor.params | map(attribute='raw_type') | join(', ')) + ")"] %}
   {%- endfor %}
           .addConstructor<{{ ns.ctors | join(', ') }}>()
+  {%- endif %}
   {%- endif %}
   {%- endblock %}
   {%- block class_methods scoped %}
@@ -114,16 +139,34 @@ template: |
   {%- else %}
   {%- block class_method_group scoped %}
   {%- if group.is_overloaded %}
+  {%- set method0 = group.methods[0] %}
+  {%- if method0.is_operator and method0.operator_name %}
+  {%- if method0.operator_name == "__tostring" %}
+          .addMetaMethod("__tostring", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
+  {%- else %}
+          .addMetaMethod("{{ method0.operator_name }}",
+  {%- for method in group.methods %}
+  {% block class_overloaded_metamethod scoped %}          {% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
+  {%- endblock %}
+  {%- endfor %}
+          )
+  {%- endif %}
+  {%- else %}
           .addFunction("{{ group.name | camel_to_snake }}",
   {%- for method in group.methods %}
   {% block class_overloaded_method scoped %}          {% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
   {%- endblock %}
   {%- endfor %}
           )
+  {%- endif %}
   {%- else %}
   {%- set method = group.methods[0] %}
   {%- if method.wrapper_code %}
           .addFunction("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }})
+  {%- elif method.is_operator and method.operator_name == "__tostring" %}
+          .addMetaMethod("__tostring", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
+  {%- elif method.is_operator and method.operator_name %}
+          .addMetaMethod("{{ method.operator_name }}", &{{ cls.qualified_name }}::{{ method.spelling }})
   {%- else %}
           .addFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }})
   {%- endif %}
@@ -135,10 +178,29 @@ template: |
   {%- block class_fields scoped %}
   {%- for field in cls.fields %}
   {%- block class_field scoped %}
+  {%- if field.is_static %}
+  {%- if field.read_only %}
+          .addStaticProperty("{{ field.name | camel_to_snake }}", +[] () { return {{ cls.qualified_name }}::{{ field.name }}; }, nullptr)
+  {%- else %}
+          .addStaticProperty("{{ field.name | camel_to_snake }}", +[] () { return {{ cls.qualified_name }}::{{ field.name }}; }, +[] (const decltype({{ cls.qualified_name }}::{{ field.name }})& v) { {{ cls.qualified_name }}::{{ field.name }} = v; })
+  {%- endif %}
+  {%- else %}
   {%- if field.read_only %}
           .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}, nullptr)
   {%- else %}
           .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }})
+  {%- endif %}
+  {%- endif %}
+  {%- endblock %}
+  {%- endfor %}
+  {%- endblock %}
+  {%- block class_properties scoped %}
+  {%- for prop in cls.properties %}
+  {%- block class_property scoped %}
+  {%- if prop.setter %}
+          .addProperty("{{ prop.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ prop.getter }}, &{{ cls.qualified_name }}::{{ prop.setter }})
+  {%- else %}
+          .addProperty("{{ prop.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ prop.getter }}, nullptr)
   {%- endif %}
   {%- endblock %}
   {%- endfor %}

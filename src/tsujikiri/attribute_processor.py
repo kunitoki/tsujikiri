@@ -46,6 +46,8 @@ _COMPLEX_BUILTINS = frozenset({
     "tsujikiri::doc",
     "tsujikiri::rename_argument",
     "tsujikiri::type_map",
+    "tsujikiri::arithmetic",
+    "tsujikiri::hashable",
 })
 
 
@@ -89,6 +91,12 @@ def _apply_complex_builtin(attr_name: str, args: List[str], node: Any) -> None:
             node.return_type_override = tgt_type
         if getattr(node, "type_spelling", None) == src_type and hasattr(node, "type_override"):
             node.type_override = tgt_type
+    elif attr_name == "tsujikiri::arithmetic":
+        if hasattr(node, "is_arithmetic"):
+            node.is_arithmetic = True
+    elif attr_name == "tsujikiri::hashable":
+        if hasattr(node, "generate_hash"):
+            node.generate_hash = True
 
 
 def _apply_attrs(node: Any, handlers: Dict[str, str]) -> None:

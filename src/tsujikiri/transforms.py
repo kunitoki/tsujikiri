@@ -19,6 +19,7 @@ Third-party code can register custom stages via::
 
 from __future__ import annotations
 
+import copy
 import re
 from typing import Any, Callable, Dict, List, Optional, Type
 
@@ -28,11 +29,13 @@ from tsujikiri.ir import (
     IRCodeInjection,
     IRConstructor,
     IREnum,
+    IRExceptionRegistration,
     IRField,
     IRFunction,
     IRMethod,
     IRModule,
     IRParameter,
+    IRProperty,
 )
 
 
@@ -301,6 +304,7 @@ class ModifyMethodStage(TransformStage):
         self.remove: bool = kwargs.get("remove", False)
         self.return_type: Optional[str] = kwargs.get("return_type")
         self.return_ownership: Optional[str] = kwargs.get("return_ownership")
+        self.return_keep_alive: Optional[bool] = kwargs.get("return_keep_alive")
         self.allow_thread: Optional[bool] = kwargs.get("allow_thread")
         self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
 
@@ -316,6 +320,8 @@ class ModifyMethodStage(TransformStage):
                         method.return_type_override = self.return_type
                     if self.return_ownership is not None:
                         method.return_ownership = self.return_ownership
+                    if self.return_keep_alive is not None:
+                        method.return_keep_alive = self.return_keep_alive
                     if self.allow_thread is not None:
                         method.allow_thread = self.allow_thread
                     if self.wrapper_code is not None:
@@ -522,9 +528,13 @@ class SetTypeHintStage(TransformStage):
     YAML::
       stage: set_type_hint
       class: MyClass
-      copyable: false      # optional: override copy-constructibility
-      movable: true        # optional: override move-constructibility
-      force_abstract: true # optional: suppress constructor binding
+      copyable: false              # optional: override copy-constructibility
+      movable: true                # optional: override move-constructibility
+      force_abstract: true         # optional: suppress constructor binding
+      holder_type: std::shared_ptr # optional: smart pointer holder for binding declaration
+      generate_hash: true          # optional: emit __hash__ using std::hash<T>
+      smart_pointer_kind: shared   # optional: "shared", "unique", or "weak"
+      smart_pointer_managed_type: MyClass  # optional: inner type for smart pointer
     """
     name = "set_type_hint"
 
@@ -534,6 +544,10 @@ class SetTypeHintStage(TransformStage):
         self.copyable: Optional[bool] = kwargs.get("copyable")
         self.movable: Optional[bool] = kwargs.get("movable")
         self.force_abstract: Optional[bool] = kwargs.get("force_abstract")
+        self.holder_type: Optional[str] = kwargs.get("holder_type")
+        self.generate_hash: Optional[bool] = kwargs.get("generate_hash")
+        self.smart_pointer_kind: Optional[str] = kwargs.get("smart_pointer_kind")
+        self.smart_pointer_managed_type: Optional[str] = kwargs.get("smart_pointer_managed_type")
 
     def apply(self, module: IRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
@@ -543,6 +557,14 @@ class SetTypeHintStage(TransformStage):
                 cls.movable = self.movable
             if self.force_abstract is not None:
                 cls.force_abstract = self.force_abstract
+            if self.holder_type is not None:
+                cls.holder_type = self.holder_type
+            if self.generate_hash is not None:
+                cls.generate_hash = self.generate_hash
+            if self.smart_pointer_kind is not None:
+                cls.smart_pointer_kind = self.smart_pointer_kind
+            if self.smart_pointer_managed_type is not None:
+                cls.smart_pointer_managed_type = self.smart_pointer_managed_type
 
 
 # ---------------------------------------------------------------------------
@@ -670,6 +692,7 @@ class ModifyEnumStage(TransformStage):
       enum: Color
       rename: Colour       # optional: new binding name
       remove: false        # optional: set emit=False
+      arithmetic: true     # optional: enable bitwise ops (py::arithmetic())
     """
     name = "modify_enum"
 
@@ -678,6 +701,7 @@ class ModifyEnumStage(TransformStage):
         self.enum_is_regex: bool = kwargs.get("enum_is_regex", False)
         self.rename: Optional[str] = kwargs.get("rename")
         self.remove: bool = kwargs.get("remove", False)
+        self.arithmetic: Optional[bool] = kwargs.get("arithmetic")
 
     def apply(self, module: IRModule) -> None:
         for enum in _find_enums(module, self.enum_pattern, self.enum_is_regex):
@@ -685,6 +709,8 @@ class ModifyEnumStage(TransformStage):
                 enum.rename = self.rename
             if self.remove:
                 enum.emit = False
+            if self.arithmetic is not None:
+                enum.is_arithmetic = self.arithmetic
 
 
 # ---------------------------------------------------------------------------
@@ -756,6 +782,7 @@ class ModifyFunctionStage(TransformStage):
         self.remove: bool = kwargs.get("remove", False)
         self.return_type: Optional[str] = kwargs.get("return_type")
         self.return_ownership: Optional[str] = kwargs.get("return_ownership")
+        self.return_keep_alive: Optional[bool] = kwargs.get("return_keep_alive")
         self.allow_thread: Optional[bool] = kwargs.get("allow_thread")
         self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
 
@@ -770,6 +797,8 @@ class ModifyFunctionStage(TransformStage):
                     fn.return_type_override = self.return_type
                 if self.return_ownership is not None:
                     fn.return_ownership = self.return_ownership
+                if self.return_keep_alive is not None:
+                    fn.return_keep_alive = self.return_keep_alive
                 if self.allow_thread is not None:
                     fn.allow_thread = self.allow_thread
                 if self.wrapper_code is not None:
@@ -876,6 +905,272 @@ class SuppressBaseStage(TransformStage):
                     base.emit = False
 
 
+class InjectPropertyStage(TransformStage):
+    """Inject a synthetic getter/setter property binding on a class.
+
+    YAML::
+      stage: inject_property
+      class: MyClass
+      name: arrivalMessage
+      getter: getArrivalMessage
+      setter: setArrivalMessage  # optional; omit for read-only
+      type: "std::string"        # optional
+    """
+    name = "inject_property"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.class_pattern: str = kwargs["class"]
+        self.class_is_regex: bool = kwargs.get("class_is_regex", False)
+        self.prop_name: str = kwargs["name"]
+        self.getter: str = kwargs["getter"]
+        self.setter: Optional[str] = kwargs.get("setter")
+        self.type_spelling: str = kwargs.get("type", "")
+
+    def apply(self, module: IRModule) -> None:
+        for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
+            cls.properties.append(IRProperty(
+                name=self.prop_name,
+                getter=self.getter,
+                setter=self.setter,
+                type_spelling=self.type_spelling,
+            ))
+
+
+# ---------------------------------------------------------------------------
+# Deprecation stage
+# ---------------------------------------------------------------------------
+
+class MarkDeprecatedStage(TransformStage):
+    """Mark a class, method, function, or enum as deprecated.
+
+    YAML::
+      stage: mark_deprecated
+      target: method            # "class" | "method" | "function" | "enum"
+      class: MyClass            # required for target "class" or "method"
+      method: oldMethod         # required for target "method"
+      function: oldFn           # required for target "function"
+      enum: OldEnum             # required for target "enum"
+      message: "Use newMethod"  # optional deprecation message
+    """
+    name = "mark_deprecated"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.target: str = kwargs.get("target", "method")
+        self.class_pattern: str = kwargs.get("class", "*")
+        self.class_is_regex: bool = kwargs.get("class_is_regex", False)
+        self.method_pattern: str = kwargs.get("method", "*")
+        self.method_is_regex: bool = kwargs.get("method_is_regex", False)
+        self.function_pattern: str = kwargs.get("function", "*")
+        self.function_is_regex: bool = kwargs.get("function_is_regex", False)
+        self.enum_pattern: str = kwargs.get("enum", "*")
+        self.enum_is_regex: bool = kwargs.get("enum_is_regex", False)
+        self.message: Optional[str] = kwargs.get("message")
+
+    def apply(self, module: IRModule) -> None:
+        if self.target == "class":
+            for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
+                cls.is_deprecated = True
+                if self.message is not None:
+                    cls.deprecation_message = self.message
+        elif self.target == "method":
+            for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
+                for method in cls.methods:
+                    if _matches(method.name, self.method_pattern, self.method_is_regex):
+                        method.is_deprecated = True
+                        if self.message is not None:
+                            method.deprecation_message = self.message
+        elif self.target == "function":
+            for fn in module.functions:
+                if _matches(fn.name, self.function_pattern, self.function_is_regex):
+                    fn.is_deprecated = True
+                    if self.message is not None:
+                        fn.deprecation_message = self.message
+        elif self.target == "enum":
+            for enum in _find_enums(module, self.enum_pattern, self.enum_is_regex):
+                enum.is_deprecated = True
+                if self.message is not None:
+                    enum.deprecation_message = self.message
+
+
+# ---------------------------------------------------------------------------
+# Spaceship operator expansion stage
+# ---------------------------------------------------------------------------
+
+class ExpandSpaceshipStage(TransformStage):
+    """Expand operator<=> into six comparison operator methods.
+
+    For each class method with operator_type == "operator<=>", synthesizes
+    six IRMethod entries (operator<, operator<=, operator>, operator>=,
+    operator==, operator!=) using std::is_lt etc., then suppresses the
+    original operator<=>.
+
+    YAML::
+      stage: expand_spaceship
+      class: MyClass    # plain name, '*', or regex
+    """
+    name = "expand_spaceship"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.class_pattern: str = kwargs.get("class", "*")
+        self.class_is_regex: bool = kwargs.get("class_is_regex", False)
+
+    def apply(self, module: IRModule) -> None:
+        _OPS: List[tuple] = [
+            ("operator<",  "__lt__",  "std::is_lt"),
+            ("operator<=", "__le__",  "std::is_lteq"),
+            ("operator>",  "__gt__",  "std::is_gt"),
+            ("operator>=", "__ge__",  "std::is_gteq"),
+            ("operator==", "__eq__",  "std::is_eq"),
+            ("operator!=", "__ne__",  "std::is_neq"),
+        ]
+        for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
+            new_methods: List[IRMethod] = []
+            for method in cls.methods:
+                if method.operator_type == "operator<=>":
+                    method.emit = False
+                    qname = cls.qualified_name
+                    param_types = ", ".join(
+                        (p.type_override or p.type_spelling) for p in method.parameters if p.emit
+                    )
+                    for op_spelling, _dunder, std_fn in _OPS:
+                        wrapper = (
+                            f"[](const {qname}& a, {param_types or f'const {qname}&'} b)"
+                            f" {{ return {std_fn}(a <=> b); }}"
+                        )
+                        new_methods.append(IRMethod(
+                            name=op_spelling,
+                            spelling=op_spelling,
+                            qualified_name=f"{qname}::{op_spelling}",
+                            return_type="bool",
+                            parameters=list(method.parameters),
+                            is_static=False,
+                            is_const=method.is_const,
+                            is_operator=True,
+                            operator_type=op_spelling,
+                            wrapper_code=wrapper,
+                        ))
+            cls.methods.extend(new_methods)
+
+
+# ---------------------------------------------------------------------------
+# Protected member exposure stage (Gap 4)
+# ---------------------------------------------------------------------------
+
+class ExposeProtectedStage(TransformStage):
+    """Expose protected methods for trampoline override in pybind11.
+
+    Sets access="public_via_trampoline" and emit=True on matching protected
+    methods, causing pybind11 templates to emit ``using Base::method;`` inside
+    the trampoline class body.
+
+    YAML::
+      stage: expose_protected
+      class: MyClass        # plain name, '*', or regex
+      method: "*"           # optional: method pattern (default = all protected)
+      class_is_regex: false
+      method_is_regex: false
+    """
+    name = "expose_protected"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.class_pattern: str = kwargs.get("class", "*")
+        self.class_is_regex: bool = kwargs.get("class_is_regex", False)
+        self.method_pattern: str = kwargs.get("method", "*")
+        self.method_is_regex: bool = kwargs.get("method_is_regex", False)
+
+    def apply(self, module: IRModule) -> None:
+        for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
+            for method in cls.methods:
+                if method.access == "protected" and _matches(method.name, self.method_pattern, self.method_is_regex):
+                    method.access = "public_via_trampoline"
+                    method.emit = True
+
+
+# ---------------------------------------------------------------------------
+# Using declaration resolution stage (Gap 14)
+# ---------------------------------------------------------------------------
+
+class ResolveUsingDeclarationsStage(TransformStage):
+    """Copy methods from base classes into derived classes for using declarations.
+
+    For each ``using Base::method;`` declaration on a class, finds the matching
+    method in a base class in the module and copies it to the derived class so
+    it appears in the binding output.
+
+    YAML::
+      stage: resolve_using_declarations
+      class: "*"   # optional: restrict to specific derived classes
+    """
+    name = "resolve_using_declarations"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.class_pattern: str = kwargs.get("class", "*")
+        self.class_is_regex: bool = kwargs.get("class_is_regex", False)
+
+    def apply(self, module: IRModule) -> None:
+        # Build lookup from qualified_name → IRClass
+        by_qname: Dict[str, IRClass] = {c.qualified_name: c for c in module.classes}
+
+        for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
+            for ud in cls.using_declarations:
+                if not ud.emit:
+                    continue
+                # Find base class: first try exact qualified name, then search all bases
+                base_cls: Optional[IRClass] = None
+                if ud.base_qualified_name:
+                    base_cls = by_qname.get(ud.base_qualified_name)
+                if base_cls is None:
+                    for base in cls.bases:
+                        candidate = by_qname.get(base.qualified_name)
+                        if candidate is not None:
+                            has_match = any(m.name == ud.member_name for m in candidate.methods)
+                            if has_match:
+                                base_cls = candidate
+                                break
+                if base_cls is None:
+                    continue
+                # Copy matching methods from base class
+                existing_names = {m.name for m in cls.methods}
+                for method in base_cls.methods:
+                    if method.name == ud.member_name and method.name not in existing_names:
+                        new_method = copy.copy(method)
+                        new_method.access = "public"
+                        new_method.emit = True
+                        cls.methods.append(new_method)
+
+
+# ---------------------------------------------------------------------------
+# Exception registration stage (Gap 12)
+# ---------------------------------------------------------------------------
+
+class RegisterExceptionStage(TransformStage):
+    """Register a C++ exception type as a Python exception class.
+
+    Adds an IRExceptionRegistration to the module, which causes pybind11
+    output to emit ``py::register_exception<CppType>(m, "Name")`` and pyi
+    output to emit ``class Name(BaseException): ...``.
+
+    YAML::
+      stage: register_exception
+      cpp_type: "ns::MyException"    # C++ qualified type
+      python_name: "MyException"     # Python class name (defaults to cpp_type)
+      base: "Exception"              # Python base class (defaults to "Exception")
+    """
+    name = "register_exception"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.cpp_exception_type: str = kwargs["cpp_type"]
+        self.python_exception_name: str = kwargs.get("python_name", kwargs["cpp_type"].split("::")[-1])
+        self.base_python_exception: str = kwargs.get("base", "Exception")
+
+    def apply(self, module: IRModule) -> None:
+        module.exception_registrations.append(IRExceptionRegistration(
+            cpp_exception_type=self.cpp_exception_type,
+            python_exception_name=self.python_exception_name,
+            base_python_exception=self.base_python_exception,
+        ))
+
+
 # ---------------------------------------------------------------------------
 # Register all built-in stages
 # ---------------------------------------------------------------------------
@@ -907,7 +1202,18 @@ for _stage_cls in [
     # Injection stages
     InjectConstructorStage,
     InjectFunctionStage,
+    InjectPropertyStage,
     # Base-class suppression
     SuppressBaseStage,
+    # Deprecation
+    MarkDeprecatedStage,
+    # Spaceship expansion
+    ExpandSpaceshipStage,
+    # Protected member exposure
+    ExposeProtectedStage,
+    # Using declaration resolution
+    ResolveUsingDeclarationsStage,
+    # Exception registration
+    RegisterExceptionStage,
 ]:
     register_stage(_stage_cls.name, _stage_cls)
