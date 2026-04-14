@@ -1,11 +1,11 @@
-![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=6)
+![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=7)
 
-[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=6)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
-[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=6)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
-[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=6)](https://codecov.io/gh/kunitoki/tsujikiri)
-[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=6)](https://tsujikiri.readthedocs.io/en/latest/)
-[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=6)](https://pypi.org/project/tsujikiri/)
-[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=6)](https://pypi.org/project/tsujikiri/)
+[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=7)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
+[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=7)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
+[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=7)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=7)](https://tsujikiri.readthedocs.io/en/latest/)
+[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=7)](https://pypi.org/project/tsujikiri/)
+[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=7)](https://pypi.org/project/tsujikiri/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 # tsujikiri — 辻斬り

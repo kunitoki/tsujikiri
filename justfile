@@ -6,32 +6,27 @@ sync:
     uv sync --extra dev
 
 # Build wheel and source distribution.
-wheel:
-    @just sync
+wheel: sync
     uv build
 
 # Run test suite.
-test *args:
-    @just sync
+test *args: sync
     uv run pytest -n auto {{args}}
 
 # Regenerate inline stubs (src/tsujikiri/**/*.pyi) via stubgen.
-stubs:
-    @just sync
+stubs: sync
     uv run stubgen -p tsujikiri -o src
 
 # Run mypy type checking.
-typecheck:
-    @just sync
+typecheck: sync
     uv run mypy
 
 # Run tests with coverage report.
-coverage *args:
-    @just sync
+coverage *args: sync
     uv run pytest -n auto --cov=tsujikiri --cov-branch --cov-report=term-missing {{args}}
 
 # Publish a release (build + PyPI publish handled by .github/workflows/release.yml on tag push)
-publish version:
+publish version: typecheck stubs
     echo "__version__ = \"{{version}}\"" > src/tsujikiri/__init__.py
     perl -0pi -e 's/x=(\d+)/"x=" . ($1 + 1)/ge' README.md
 
