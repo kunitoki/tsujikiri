@@ -19,10 +19,7 @@ import pytest
 HERE = Path(__file__).parent
 
 CMAKE_AVAILABLE = shutil.which("cmake") is not None
-
-_SCENARIOS = ["combined", "geo", "engine", "audio", "samplebinding", "typesystem"]
 _SHARED_DEPS_DIR = HERE / "_deps"
-
 _DEPS: dict[str, dict[str, str | Path]] = {
     "lua": {
         "url": "https://github.com/lua/lua.git",
@@ -120,18 +117,6 @@ def _cmake_configure(scenario: str) -> bool:
     return result.returncode == 0
 
 
-def _cmake_build(scenario: str, target: str) -> bool:
-    """Build a single target inside a scenario's isolated build dir."""
-    cmd = ["cmake", "--build", str(_build_dir(scenario)), "--target", target]
-    # Multi-config generators (MSVC on Windows, Xcode on macOS) need an
-    # explicit config; single-config generators (Ninja/Make on Linux) do not.
-    if sys.platform != "linux":
-        cmd += ["--config", "Release"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    print(result.stdout + result.stderr)
-    return result.returncode == 0
-
-
 def _cmake_build_all(scenario: str) -> bool:
     """Build all targets for a scenario.
 
@@ -208,89 +193,37 @@ class TestCMakeBuild:
     def cmake_configured(self) -> None:
         """Clone deps once, configure every scenario, then build all upfront."""
         _fetch_all_deps()
-        for scenario in _SCENARIOS:
-            assert _cmake_configure(scenario), f"{scenario} cmake configure failed"
-        for scenario in _SCENARIOS:
-            assert _cmake_build_all(scenario), f"{scenario} cmake build failed"
 
-    # --- combined ---
-
-    def test_combined_luabridge3_builds(self) -> None:
-        assert _cmake_build("combined", "test_combined_luabridge3"), "combined luabridge3 build failed"
-
-    def test_combined_luabridge3_runs(self) -> None:
-        _cmake_build("combined", "test_combined_luabridge3")
+    def test_combined(self) -> None:
+        assert _cmake_configure("combined"), "combined cmake configure failed"
+        assert _cmake_build_all("combined"), "combined build failed"
         assert _run_executable("combined", "test_combined_luabridge3"), "combined luabridge3 run failed"
 
-    # --- geo ---
-
-    def test_geo_luabridge3_builds(self) -> None:
-        assert _cmake_build("geo", "test_geo_luabridge3"), "geo luabridge3 build failed"
-
-    def test_geo_luabridge3_runs(self) -> None:
-        _cmake_build("geo", "test_geo_luabridge3")
+    def test_geo(self) -> None:
+        assert _cmake_configure("geo"), "geo cmake configure failed"
+        assert _cmake_build_all("geo"), "geo build failed"
         assert _run_executable("geo", "test_geo_luabridge3"), "geo luabridge3 run failed"
-
-    def test_geo_pybind11_builds(self) -> None:
-        assert _cmake_build("geo", "geo_py"), "geo pybind11 build failed"
-
-    def test_geo_pybind11_runs(self) -> None:
-        _cmake_build("geo", "geo_py")
         assert _run_pybind11_verify("geo"), "geo pybind11 verify failed"
 
-    # --- engine ---
-
-    def test_engine_luabridge3_builds(self) -> None:
-        assert _cmake_build("engine", "test_engine_luabridge3"), "engine luabridge3 build failed"
-
-    def test_engine_luabridge3_runs(self) -> None:
-        _cmake_build("engine", "test_engine_luabridge3")
+    def test_engine(self) -> None:
+        assert _cmake_configure("engine"), "engine cmake configure failed"
+        assert _cmake_build_all("engine"), "engine build failed"
         assert _run_executable("engine", "test_engine_luabridge3"), "engine luabridge3 run failed"
-
-    def test_engine_pybind11_builds(self) -> None:
-        assert _cmake_build("engine", "engine_py"), "engine pybind11 build failed"
-
-    def test_engine_pybind11_runs(self) -> None:
-        _cmake_build("engine", "engine_py")
         assert _run_pybind11_verify("engine"), "engine pybind11 verify failed"
 
-    # --- audio ---
-
-    def test_audio_luabridge3_builds(self) -> None:
-        assert _cmake_build("audio", "test_audio_luabridge3"), "audio luabridge3 build failed"
-
-    def test_audio_luabridge3_runs(self) -> None:
-        _cmake_build("audio", "test_audio_luabridge3")
+    def test_audio(self) -> None:
+        assert _cmake_configure("audio"), "audio cmake configure failed"
+        assert _cmake_build_all("audio"), "audio build failed"
         assert _run_executable("audio", "test_audio_luabridge3"), "audio luabridge3 run failed"
-
-    def test_audio_pybind11_builds(self) -> None:
-        assert _cmake_build("audio", "audio_py"), "audio pybind11 build failed"
-
-    def test_audio_pybind11_runs(self) -> None:
-        _cmake_build("audio", "audio_py")
         assert _run_pybind11_verify("audio"), "audio pybind11 verify failed"
 
-    # --- samplebinding ---
-
-    def test_samplebinding_pybind11_builds(self) -> None:
-        assert _cmake_build("samplebinding", "samplebinding_py"), "samplebinding pybind11 build failed"
-
-    def test_samplebinding_pybind11_runs(self) -> None:
-        _cmake_build("samplebinding", "samplebinding_py")
+    def test_samplebinding(self) -> None:
+        assert _cmake_configure("samplebinding"), "samplebinding cmake configure failed"
+        assert _cmake_build_all("samplebinding"), "samplebinding build failed"
         assert _run_pybind11_verify("samplebinding"), "samplebinding pybind11 verify failed"
 
-    # --- typesystem ---
-
-    def test_typesystem_luabridge3_builds(self) -> None:
-        assert _cmake_build("typesystem", "test_typesystem_luabridge3"), "typesystem luabridge3 build failed"
-
-    def test_typesystem_luabridge3_runs(self) -> None:
-        _cmake_build("typesystem", "test_typesystem_luabridge3")
+    def test_typesystem(self) -> None:
+        assert _cmake_configure("typesystem"), "typesystem cmake configure failed"
+        assert _cmake_build_all("typesystem"), "typesystem build failed"
         assert _run_executable("typesystem", "test_typesystem_luabridge3"), "typesystem luabridge3 run failed"
-
-    def test_typesystem_pybind11_builds(self) -> None:
-        assert _cmake_build("typesystem", "typesystem_py"), "typesystem pybind11 build failed"
-
-    def test_typesystem_pybind11_runs(self) -> None:
-        _cmake_build("typesystem", "typesystem_py")
         assert _run_pybind11_verify("typesystem"), "typesystem pybind11 verify failed"
