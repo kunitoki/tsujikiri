@@ -39,4 +39,4 @@ publish version:
 clean:
     rm -rf dist build .venv src/*.egg-info
     rm -rf src/**/.pytest_cache .pytest_cache .mypy_cache .coverage htmlcov
-    rm -rf tests/test_compilation/build/ tests/test_compilation/.cmake_*.lock
+    rm -rf tests/test_compilation/_deps/ tests/test_compilation/**/build/

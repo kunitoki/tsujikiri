@@ -1,18 +1,13 @@
-"""Compilation tests — generate bindings and optionally compile + run with CMake.
+"""CMake compilation tests — build generated bindings and run them.
 
-Each test class either:
-  - Checks generated output for expected strings (fast, no build required), or
-  - Uses CMake FetchContent to build real executables / Python extension modules
-    and runs them to verify the bindings work at runtime.
-
-The cmake build directory (``build/`` next to this file) is persistent so
-FetchContent downloads are cached between runs.
+Each test in TestCMakeBuild compiles a scenario's generated C++/pybind11 code
+via CMake and verifies the resulting executable or Python extension works at
+runtime.  FetchContent dependencies are pre-cloned once by _fetch_all_deps()
+so cmake never races to clone the same repo from multiple xdist workers.
 """
 
 from __future__ import annotations
 
-import copy
-import io
 import os
 import shutil
 import subprocess
@@ -24,115 +19,141 @@ import pytest
 HERE = Path(__file__).parent
 
 CMAKE_AVAILABLE = shutil.which("cmake") is not None
-CMAKE_BUILD_DIR = HERE / "build"
-PYTHON_MODULES_DIR = CMAKE_BUILD_DIR / "python_modules"
+
+_SCENARIOS = ["combined", "geo", "engine", "audio", "samplebinding", "typesystem"]
+_SHARED_DEPS_DIR = HERE / "_deps"
+
+_DEPS: dict[str, dict[str, str | Path]] = {
+    "lua": {
+        "url": "https://github.com/lua/lua.git",
+        "tag": "v5.4.8",
+        "src_dir": _SHARED_DEPS_DIR / "lua-src",
+    },
+    "luabridge3": {
+        "url": "https://github.com/kunitoki/LuaBridge3.git",
+        "tag": "master",
+        "src_dir": _SHARED_DEPS_DIR / "luabridge3-src",
+    },
+    "pybind11": {
+        "url": "https://github.com/pybind/pybind11.git",
+        "tag": "v2.13.6",
+        "src_dir": _SHARED_DEPS_DIR / "pybind11-src",
+    },
+}
+
+
+def _scenario_dir(scenario: str) -> Path:
+    return HERE / scenario
+
+
+def _build_dir(scenario: str) -> Path:
+    return HERE / scenario / "build"
+
+
+def _python_modules_dir(scenario: str) -> Path:
+    return _build_dir(scenario) / "python_modules"
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# CMake helpers
 # ---------------------------------------------------------------------------
 
-def _generate(module, output_config, generation=None) -> str:
-    from tsujikiri.generator import Generator
-    buf = io.StringIO()
-    Generator(output_config, generation=generation).generate(module, buf)
-    return buf.getvalue()
+def _fetch_all_deps() -> None:
+    """Shallow-clone every FetchContent dependency into _deps/ if not already present.
 
-
-def _generate_with_options(module, output_config, generation=None, api_version: str = "", typesystem=None) -> str:
-    from tsujikiri.generator import Generator
-    buf = io.StringIO()
-    Generator(output_config, generation=generation, typesystem=typesystem).generate(module, buf, api_version=api_version)
-    return buf.getvalue()
-
-
-def _cmake_configure() -> bool:
-    """Run cmake configure, serialized via a file lock to avoid parallel conflicts."""
-    CMAKE_BUILD_DIR.mkdir(parents=True, exist_ok=True)
-    lock_path = CMAKE_BUILD_DIR.parent / ".cmake_configure.lock"
-    with open(lock_path, "w") as lock_f:
-        if sys.platform != "win32":
-            import fcntl
-            fcntl.flock(lock_f, fcntl.LOCK_EX)
-        # Skip if already configured — FETCHCONTENT_UPDATES_DISCONNECTED makes
-        # re-configures fast and safe, but skipping avoids redundant work.
-        if (CMAKE_BUILD_DIR / "CMakeCache.txt").exists():
-            return True
-        # Fresh configure — invalidate any prior build-complete sentinel.
-        (CMAKE_BUILD_DIR / ".build_complete").unlink(missing_ok=True)
+    Running git clone here (once, serially) avoids the race that occurs when
+    multiple cmake configure processes try to clone into the same directory at
+    the same time — which causes 'shallow.lock already exists' failures.
+    """
+    _SHARED_DEPS_DIR.mkdir(parents=True, exist_ok=True)
+    for name, dep in _DEPS.items():
+        src_dir = dep["src_dir"]
+        assert isinstance(src_dir, Path)
+        if (src_dir / ".git").exists():
+            continue
+        if src_dir.exists():
+            shutil.rmtree(src_dir)  # remove partial/corrupt clone
         result = subprocess.run(
             [
-                "cmake",
-                "-S", str(HERE),
-                "-B", str(CMAKE_BUILD_DIR),
-                "-DCMAKE_BUILD_TYPE=Release",
-                "-Wno-dev",
+                "git", "clone",
+                "--depth", "1",
+                "--branch", str(dep["tag"]),
+                "--single-branch",
+                str(dep["url"]),
+                str(src_dir),
             ],
             capture_output=True,
             text=True,
         )
         print(result.stdout + result.stderr)
-        return result.returncode == 0
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to clone dep '{name}': {result.stderr}")
 
 
-def _cmake_build(target: str) -> bool:
-    """Build a specific cmake target, serialized via a file lock.
+def _cmake_configure(scenario: str) -> bool:
+    """Configure a scenario's isolated build dir.
 
-    The lock prevents concurrent cmake invocations from different xdist workers
-    corrupting shared build artifacts (e.g. static libraries being ranlib-ed
-    while another process writes object files into the same archive).
+    Deps are pre-cloned by _fetch_all_deps(); cmake is pointed at the local
+    source dirs via FETCHCONTENT_SOURCE_DIR_<NAME> so it never clones anything.
     """
-    lock_path = CMAKE_BUILD_DIR.parent / ".cmake_build.lock"
-    with open(lock_path, "a") as lock_f:
-        if sys.platform != "win32":
-            import fcntl
-            fcntl.flock(lock_f, fcntl.LOCK_EX)
-        cmd = ["cmake", "--build", str(CMAKE_BUILD_DIR), "--target", target]
-        # Multi-config generators (e.g. MSVC/Xcode) require an explicit config.
-        if sys.platform != "linux":
-            cmd += ["--config", "Release"]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        print(result.stdout + result.stderr)
-        return result.returncode == 0
+    build_dir = _build_dir(scenario)
+    build_dir.mkdir(parents=True, exist_ok=True)
+    if (build_dir / "CMakeCache.txt").exists():
+        return True
+    cmake_args = [
+        "cmake",
+        "-S", str(_scenario_dir(scenario)),
+        "-B", str(build_dir),
+        f"-DFETCHCONTENT_BASE_DIR={_SHARED_DEPS_DIR}",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-Wno-dev",
+    ]
+    for name, dep in _DEPS.items():
+        cmake_args.append(f"-DFETCHCONTENT_SOURCE_DIR_{name.upper()}={dep['src_dir']}")
+    result = subprocess.run(cmake_args, capture_output=True, text=True)
+    print(result.stdout + result.stderr)
+    return result.returncode == 0
 
 
-def _cmake_build_all() -> bool:
-    """Build all cmake targets in a single locked invocation.
+def _cmake_build(scenario: str, target: str) -> bool:
+    """Build a single target inside a scenario's isolated build dir."""
+    cmd = ["cmake", "--build", str(_build_dir(scenario)), "--target", target]
+    # Multi-config generators (MSVC on Windows, Xcode on macOS) need an
+    # explicit config; single-config generators (Ninja/Make on Linux) do not.
+    if sys.platform != "linux":
+        cmd += ["--config", "Release"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    print(result.stdout + result.stderr)
+    return result.returncode == 0
 
-    Uses a sentinel file so multiple workers (or repeated fixture calls) only
-    build once.  The lock prevents concurrent builds from different xdist
-    workers that may bypass the xdist_group guarantee.
+
+def _cmake_build_all(scenario: str) -> bool:
+    """Build all targets for a scenario.
+
+    A sentinel file skips the build on repeated calls so individual
+    _cmake_build() calls in tests are fast (cmake no-ops when up-to-date).
     """
-    sentinel = CMAKE_BUILD_DIR / ".build_complete"
-    lock_path = CMAKE_BUILD_DIR.parent / ".cmake_build.lock"
-    with open(lock_path, "a") as lock_f:
-        if sys.platform != "win32":
-            import fcntl
-            fcntl.flock(lock_f, fcntl.LOCK_EX)
-        if sentinel.exists():
-            return True
-        cmd = ["cmake", "--build", str(CMAKE_BUILD_DIR)]
-        if sys.platform != "linux":
-            cmd += ["--config", "Release"]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        print(result.stdout + result.stderr)
-        if result.returncode == 0:
-            sentinel.touch()
-        return result.returncode == 0
+    sentinel = _build_dir(scenario) / ".build_complete"
+    if sentinel.exists():
+        return True
+    cmd = ["cmake", "--build", str(_build_dir(scenario))]
+    if sys.platform != "linux":
+        cmd += ["--config", "Release"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    print(result.stdout + result.stderr)
+    if result.returncode == 0:
+        sentinel.touch()
+    return result.returncode == 0
 
 
-def _run_executable(name: str) -> bool:
-    """Run a built executable in the cmake build directory.
-
-    Checks multiple candidate paths to support both single-config generators
-    (Ninja/Make: ``build/name`` on Unix, ``build/name.exe`` on Windows) and
-    multi-config generators (MSVC: ``build/Release/name.exe``).
-    """
+def _run_executable(scenario: str, name: str) -> bool:
+    """Run a built executable from a scenario's build directory."""
+    build_dir = _build_dir(scenario)
     suffix = ".exe" if sys.platform == "win32" else ""
     candidates = [
-        CMAKE_BUILD_DIR / f"{name}{suffix}",
-        CMAKE_BUILD_DIR / "Release" / f"{name}{suffix}",
-        CMAKE_BUILD_DIR / "Debug" / f"{name}{suffix}",
+        build_dir / f"{name}{suffix}",
+        build_dir / "Release" / f"{name}{suffix}",
+        build_dir / "Debug" / f"{name}{suffix}",
     ]
     exe = next((p for p in candidates if p.exists()), None)
     if exe is None:
@@ -146,16 +167,14 @@ def _run_executable(name: str) -> bool:
     return result.returncode == 0
 
 
-def _run_pybind11_verify(script: Path) -> bool:
-    """Run a pybind11 verify script with PYTHONPATH pointing to built modules.
-
-    Includes Release/ and Debug/ subdirectories so that multi-config generators
-    (MSVC on Windows) are handled correctly alongside single-config layouts.
-    """
-    dirs = [PYTHON_MODULES_DIR] + [
-        PYTHON_MODULES_DIR / cfg
+def _run_pybind11_verify(scenario: str) -> bool:
+    """Run a scenario's pybind11_verify.py with PYTHONPATH pointing to its modules."""
+    script = _scenario_dir(scenario) / "pybind11_verify.py"
+    py_dir = _python_modules_dir(scenario)
+    dirs = [py_dir] + [
+        py_dir / cfg
         for cfg in ("Release", "Debug")
-        if (PYTHON_MODULES_DIR / cfg).exists()
+        if (py_dir / cfg).exists()
     ]
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(str(d) for d in dirs)}
     result = subprocess.run(
@@ -172,650 +191,101 @@ def _run_pybind11_verify(script: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# combined — original single-namespace, single-header (LuaBridge3)
-# ---------------------------------------------------------------------------
-
-class TestCombinedLuaBridge3Generation:
-    """Fast generation tests for the original combined scenario."""
-
-    def test_begin_class_shape(self, compiled_module, luabridge3_output_config):
-        assert '.beginClass<mylib::Shape>("Shape")' in _generate(compiled_module, luabridge3_output_config)
-
-    def test_derive_class_circle(self, compiled_module, luabridge3_output_config):
-        assert '.deriveClass<mylib::Circle, mylib::Shape>("Circle")' in _generate(compiled_module, luabridge3_output_config)
-
-    def test_constructors(self, compiled_module, luabridge3_output_config):
-        assert "addConstructor<void (*)()>" in _generate(compiled_module, luabridge3_output_config)
-
-    def test_overloaded_method_cast(self, compiled_module, luabridge3_output_config):
-        assert "luabridge::overload<int, int>(&mylib::Calculator::add)" in _generate(compiled_module, luabridge3_output_config)
-
-    def test_enum_namespace(self, compiled_module, luabridge3_output_config):
-        out = _generate(compiled_module, luabridge3_output_config)
-        assert '.beginNamespace("Color")' in out
-        assert ".endNamespace()" in out
-
-
-# ---------------------------------------------------------------------------
-# geo — multi-header, single namespace, Circle/Rectangle : Shape
-# ---------------------------------------------------------------------------
-
-class TestGeoLuaBridge3Generation:
-    """Fast generation tests for the geo multi-header scenario."""
-
-    def test_begin_class_shape(self, geo_module, luabridge3_output_config):
-        assert '.beginClass<geo::Shape>("Shape")' in _generate(geo_module, luabridge3_output_config)
-
-    def test_derive_class_circle(self, geo_module, luabridge3_output_config):
-        assert '.deriveClass<geo::Circle, geo::Shape>("Circle")' in _generate(geo_module, luabridge3_output_config)
-
-    def test_derive_class_rectangle(self, geo_module, luabridge3_output_config):
-        assert '.deriveClass<geo::Rectangle, geo::Shape>("Rectangle")' in _generate(geo_module, luabridge3_output_config)
-
-    def test_color_enum_registered(self, geo_module, luabridge3_output_config):
-        out = _generate(geo_module, luabridge3_output_config)
-        assert '.beginNamespace("Color")' in out
-        assert "geo::Color::Red" in out
-        assert "geo::Color::Green" in out
-        assert "geo::Color::Blue" in out
-
-    def test_overloaded_resize(self, geo_module, luabridge3_output_config):
-        out = _generate(geo_module, luabridge3_output_config)
-        assert "luabridge::overload<double>(&geo::Circle::resize)" in out
-        assert "luabridge::overload<double, double>(&geo::Circle::resize)" in out
-
-    def test_static_factory_circle(self, geo_module, luabridge3_output_config):
-        assert "&geo::Circle::unit" in _generate(geo_module, luabridge3_output_config)
-
-    def test_static_factory_rectangle(self, geo_module, luabridge3_output_config):
-        assert "&geo::Rectangle::square" in _generate(geo_module, luabridge3_output_config)
-
-    def test_free_function_overloads(self, geo_module, luabridge3_output_config):
-        out = _generate(geo_module, luabridge3_output_config)
-        assert "luabridge::overload<double>(&geo::computeArea)" in out
-        assert "luabridge::overload<double, double>(&geo::computeArea)" in out
-
-    def test_no_duplicate_shape_class(self, geo_module, luabridge3_output_config):
-        # Multi-source dedup: Shape must appear exactly once in the output
-        out = _generate(geo_module, luabridge3_output_config)
-        assert out.count('beginClass<geo::Shape>') + out.count('deriveClass<geo::Shape') == 1
-
-
-class TestGeoPybind11Generation:
-    """Fast generation tests for the geo scenario with pybind11."""
-
-    def test_circle_class_with_base(self, geo_module, pybind11_output_config):
-        assert "py::class_<geo::Circle, PyCircle, geo::Shape>" in _generate(geo_module, pybind11_output_config)
-
-    def test_rectangle_class_with_base(self, geo_module, pybind11_output_config):
-        assert "py::class_<geo::Rectangle, PyRectangle, geo::Shape>" in _generate(geo_module, pybind11_output_config)
-
-    def test_color_enum(self, geo_module, pybind11_output_config):
-        out = _generate(geo_module, pybind11_output_config)
-        assert 'py::enum_<geo::Color>(m, "Color")' in out
-        # geo::Color is "enum class" (scoped), so .export_values() must NOT appear
-        assert ".export_values();" not in out
-
-    def test_overloaded_resize_fixed(self, geo_module, pybind11_output_config):
-        # Verify the fixed template: no spurious py::overload_cast<...> as 2nd arg
-        out = _generate(geo_module, pybind11_output_config)
-        assert "py::overload_cast<double>(&geo::Circle::resize)" in out
-        assert "py::overload_cast<double, double>(&geo::Circle::resize)" in out
-
-    def test_static_factory(self, geo_module, pybind11_output_config):
-        assert '.def_static("unit"' in _generate(geo_module, pybind11_output_config)
-
-    def test_no_duplicate_shape(self, geo_module, pybind11_output_config):
-        out = _generate(geo_module, pybind11_output_config)
-        assert out.count('py::class_<geo::Shape, PyShape>') == 1
-
-
-# ---------------------------------------------------------------------------
-# engine — multi-header, two namespaces (math + engine), cross-references
-# ---------------------------------------------------------------------------
-
-class TestEngineLuaBridge3Generation:
-    """Fast generation tests for the engine multi-namespace scenario."""
-
-    def test_vec3_registered(self, engine_module, luabridge3_output_config):
-        assert '.beginClass<math::Vec3>("Vec3")' in _generate(engine_module, luabridge3_output_config)
-
-    def test_entity_registered(self, engine_module, luabridge3_output_config):
-        assert '.beginClass<engine::Entity>("Entity")' in _generate(engine_module, luabridge3_output_config)
-
-    def test_player_derives_entity(self, engine_module, luabridge3_output_config):
-        assert '.deriveClass<engine::Player, engine::Entity>("Player")' in _generate(engine_module, luabridge3_output_config)
-
-    def test_entity_type_enum(self, engine_module, luabridge3_output_config):
-        out = _generate(engine_module, luabridge3_output_config)
-        assert '.beginNamespace("EntityType")' in out
-        assert "engine::EntityType::Static" in out
-        assert "engine::EntityType::Dynamic" in out
-
-    def test_cross_namespace_method(self, engine_module, luabridge3_output_config):
-        # setPosition takes math::Vec3 — verify it appears in binding code
-        assert "&engine::Entity::setPosition" in _generate(engine_module, luabridge3_output_config)
-
-    def test_free_functions_dot_cross(self, engine_module, luabridge3_output_config):
-        out = _generate(engine_module, luabridge3_output_config)
-        assert "&math::dot" in out
-        assert "&math::cross" in out
-
-    def test_no_duplicate_vec3(self, engine_module, luabridge3_output_config):
-        out = _generate(engine_module, luabridge3_output_config)
-        assert out.count('beginClass<math::Vec3>') == 1
-
-
-class TestEnginePybind11Generation:
-    """Fast generation tests for the engine scenario with pybind11."""
-
-    def test_vec3_class(self, engine_module, pybind11_output_config):
-        assert 'py::class_<math::Vec3>(m, "Vec3")' in _generate(engine_module, pybind11_output_config)
-
-    def test_player_derives_entity(self, engine_module, pybind11_output_config):
-        assert "py::class_<engine::Player, PyPlayer, engine::Entity>" in _generate(engine_module, pybind11_output_config)
-
-    def test_cross_namespace_binding(self, engine_module, pybind11_output_config):
-        assert "&engine::Entity::setPosition" in _generate(engine_module, pybind11_output_config)
-
-    def test_no_duplicate_vec3(self, engine_module, pybind11_output_config):
-        out = _generate(engine_module, pybind11_output_config)
-        assert out.count('py::class_<math::Vec3>') == 1
-
-
-# ---------------------------------------------------------------------------
-# audio — single header, 3-level deep inheritance chain
-# ---------------------------------------------------------------------------
-
-class TestAudioLuaBridge3Generation:
-    """Fast generation tests for the audio 3-level hierarchy."""
-
-    def test_audio_node_base_class(self, audio_module, luabridge3_output_config):
-        assert '.beginClass<audio::AudioNode>("AudioNode")' in _generate(audio_module, luabridge3_output_config)
-
-    def test_audio_source_derives_node(self, audio_module, luabridge3_output_config):
-        assert '.deriveClass<audio::AudioSource, audio::AudioNode>("AudioSource")' in _generate(audio_module, luabridge3_output_config)
-
-    def test_audio_effect_derives_node(self, audio_module, luabridge3_output_config):
-        assert '.deriveClass<audio::AudioEffect, audio::AudioNode>("AudioEffect")' in _generate(audio_module, luabridge3_output_config)
-
-    def test_reverb_derives_effect(self, audio_module, luabridge3_output_config):
-        assert '.deriveClass<audio::Reverb, audio::AudioEffect>("Reverb")' in _generate(audio_module, luabridge3_output_config)
-
-    def test_delay_derives_effect(self, audio_module, luabridge3_output_config):
-        assert '.deriveClass<audio::Delay, audio::AudioEffect>("Delay")' in _generate(audio_module, luabridge3_output_config)
-
-    def test_reverb_static_factories(self, audio_module, luabridge3_output_config):
-        out = _generate(audio_module, luabridge3_output_config)
-        assert "&audio::Reverb::room" in out
-        assert "&audio::Reverb::chamber" in out
-
-    def test_delay_static_factories(self, audio_module, luabridge3_output_config):
-        out = _generate(audio_module, luabridge3_output_config)
-        assert "&audio::Delay::echo" in out
-        assert "&audio::Delay::slap" in out
-
-    def test_node_type_enum(self, audio_module, luabridge3_output_config):
-        out = _generate(audio_module, luabridge3_output_config)
-        assert '.beginNamespace("NodeType")' in out
-        assert "audio::NodeType::Source" in out
-
-
-class TestAudioPybind11Generation:
-    """Fast generation tests for the audio scenario with pybind11."""
-
-    def test_audio_node_class(self, audio_module, pybind11_output_config):
-        assert 'py::class_<audio::AudioNode, PyAudioNode>' in _generate(audio_module, pybind11_output_config)
-
-    def test_reverb_deep_inheritance(self, audio_module, pybind11_output_config):
-        assert "py::class_<audio::Reverb, PyReverb, audio::AudioEffect>" in _generate(audio_module, pybind11_output_config)
-
-    def test_delay_deep_inheritance(self, audio_module, pybind11_output_config):
-        assert "py::class_<audio::Delay, PyDelay, audio::AudioEffect>" in _generate(audio_module, pybind11_output_config)
-
-    def test_reverb_static_factories_pybind11(self, audio_module, pybind11_output_config):
-        out = _generate(audio_module, pybind11_output_config)
-        assert '.def_static("room"' in out
-        assert '.def_static("chamber"' in out
-
-    def test_node_type_enum_pybind11(self, audio_module, pybind11_output_config):
-        out = _generate(audio_module, pybind11_output_config)
-        assert 'py::enum_<audio::NodeType>' in out
-
-
-# ---------------------------------------------------------------------------
-# samplebinding — virtual methods, trampolines, shared_ptr holder
-# ---------------------------------------------------------------------------
-
-class TestSamplebindingPybind11Generation:
-    """Fast generation tests for the samplebinding scenario with pybind11."""
-
-    def test_trampoline_class_generated(self, samplebinding_module, pybind11_output_config):
-        out = _generate(samplebinding_module, pybind11_output_config)
-        assert "class PyIcecream : public sample::Icecream" in out
-
-    def test_trampoline_using_constructor(self, samplebinding_module, pybind11_output_config):
-        out = _generate(samplebinding_module, pybind11_output_config)
-        assert "using sample::Icecream::Icecream" in out
-
-    def test_trampoline_override_get_flavor(self, samplebinding_module, pybind11_output_config):
-        out = _generate(samplebinding_module, pybind11_output_config)
-        assert 'PYBIND11_OVERRIDE_NAME(std::string, sample::Icecream, "get_flavor", getFlavor)' in out
-
-    def test_trampoline_override_clone(self, samplebinding_module, pybind11_output_config):
-        out = _generate(samplebinding_module, pybind11_output_config)
-        assert 'PYBIND11_OVERRIDE_NAME(' in out
-        assert 'sample::Icecream, "clone", clone' in out
-
-    def test_icecream_class_with_trampoline_and_holder(self, samplebinding_module, pybind11_output_config):
-        out = _generate(samplebinding_module, pybind11_output_config)
-        assert "py::class_<sample::Icecream, PyIcecream, std::shared_ptr<sample::Icecream>>" in out
-
-    def test_truck_class_no_trampoline(self, samplebinding_module, pybind11_output_config):
-        out = _generate(samplebinding_module, pybind11_output_config)
-        assert 'py::class_<sample::Truck>(m, "Truck")' in out
-
-    def test_add_flavor_bound(self, samplebinding_module, pybind11_output_config):
-        out = _generate(samplebinding_module, pybind11_output_config)
-        assert '"add_flavor"' in out
-        assert "&sample::Truck::addFlavor" in out
-
-
-# ---------------------------------------------------------------------------
-# api_version — version gating and constant emission (0.7.0)
-# ---------------------------------------------------------------------------
-
-class TestApiVersionGeneration:
-    """Generator api_version parameter: constant emission and entity gating."""
-
-    def test_luabridge3_emits_api_version_constant(self, geo_module, luabridge3_output_config):
-        out = _generate_with_options(geo_module, luabridge3_output_config, api_version="1.0.0")
-        assert 'k_geo_api_version = "1.0.0"' in out
-        assert "get_geo_api_version" in out
-
-    def test_pybind11_emits_api_version_constant_and_attr(self, geo_module, pybind11_output_config):
-        out = _generate_with_options(geo_module, pybind11_output_config, api_version="2.3.0")
-        assert 'k_geo_api_version = "2.3.0"' in out
-        assert 'm.attr("__api_version__")' in out
-
-    def test_no_api_version_no_constant(self, geo_module, luabridge3_output_config):
-        out = _generate(geo_module, luabridge3_output_config)
-        assert "k_geo_api_version" not in out
-
-    def test_class_filtered_below_api_since(self, geo_module, luabridge3_output_config):
-        module = copy.deepcopy(geo_module)
-        circle = next(c for c in module.classes if c.name == "Circle")
-        circle.api_since = "2.0.0"
-        out = _generate_with_options(module, luabridge3_output_config, api_version="1.0.0")
-        assert "beginClass<geo::Circle>" not in out
-        assert "deriveClass<geo::Circle" not in out
-
-    def test_class_visible_from_api_since(self, geo_module, luabridge3_output_config):
-        module = copy.deepcopy(geo_module)
-        circle = next(c for c in module.classes if c.name == "Circle")
-        circle.api_since = "2.0.0"
-        out = _generate_with_options(module, luabridge3_output_config, api_version="2.0.0")
-        assert "deriveClass<geo::Circle" in out
-
-    def test_class_excluded_at_api_until(self, geo_module, pybind11_output_config):
-        module = copy.deepcopy(geo_module)
-        circle = next(c for c in module.classes if c.name == "Circle")
-        circle.api_until = "3.0.0"
-        out_before = _generate_with_options(module, pybind11_output_config, api_version="2.9.0")
-        out_at = _generate_with_options(module, pybind11_output_config, api_version="3.0.0")
-        assert "geo::Circle" in out_before
-        assert "geo::Circle" not in out_at
-
-    def test_method_filtered_below_api_since(self, geo_module, luabridge3_output_config):
-        module = copy.deepcopy(geo_module)
-        circle = next(c for c in module.classes if c.name == "Circle")
-        for m in circle.methods:
-            if m.name == "setRadius":
-                m.api_since = "5.0.0"
-        out = _generate_with_options(module, luabridge3_output_config, api_version="1.0.0")
-        assert "&geo::Circle::setRadius" not in out
-
-    def test_method_visible_from_api_since(self, geo_module, luabridge3_output_config):
-        module = copy.deepcopy(geo_module)
-        circle = next(c for c in module.classes if c.name == "Circle")
-        for m in circle.methods:
-            if m.name == "setRadius":
-                m.api_since = "5.0.0"
-        out = _generate_with_options(module, luabridge3_output_config, api_version="5.0.0")
-        assert "&geo::Circle::setRadius" in out
-
-    def test_method_excluded_at_api_until(self, geo_module, luabridge3_output_config):
-        module = copy.deepcopy(geo_module)
-        circle = next(c for c in module.classes if c.name == "Circle")
-        for m in circle.methods:
-            if m.name == "getRadius":
-                m.api_until = "2.0.0"
-        out_before = _generate_with_options(module, luabridge3_output_config, api_version="1.9.0")
-        out_at = _generate_with_options(module, luabridge3_output_config, api_version="2.0.0")
-        assert "&geo::Circle::getRadius" in out_before
-        assert "&geo::Circle::getRadius" not in out_at
-
-    def test_enum_filtered_below_api_since(self, engine_module, luabridge3_output_config):
-        module = copy.deepcopy(engine_module)
-        for e in module.enums:
-            if e.name == "EntityType":
-                e.api_since = "10.0.0"
-        out = _generate_with_options(module, luabridge3_output_config, api_version="1.0.0")
-        assert 'beginNamespace("EntityType")' not in out
-
-    def test_enum_visible_from_api_since(self, engine_module, luabridge3_output_config):
-        module = copy.deepcopy(engine_module)
-        for e in module.enums:
-            if e.name == "EntityType":
-                e.api_since = "10.0.0"
-        out = _generate_with_options(module, luabridge3_output_config, api_version="10.0.0")
-        assert 'beginNamespace("EntityType")' in out
-
-    def test_free_function_filtered_by_api_since(self, engine_module, luabridge3_output_config):
-        module = copy.deepcopy(engine_module)
-        for fn in module.functions:
-            if fn.name == "dot":
-                fn.api_since = "99.0.0"
-        out = _generate_with_options(module, luabridge3_output_config, api_version="1.0.0")
-        assert "&math::dot" not in out
-
-    def test_free_function_visible_from_api_since(self, engine_module, luabridge3_output_config):
-        module = copy.deepcopy(engine_module)
-        for fn in module.functions:
-            if fn.name == "dot":
-                fn.api_since = "99.0.0"
-        out = _generate_with_options(module, luabridge3_output_config, api_version="99.0.0")
-        assert "&math::dot" in out
-
-    def test_api_version_engine_pybind11_constant(self, engine_module, pybind11_output_config):
-        out = _generate_with_options(engine_module, pybind11_output_config, api_version="3.1.4")
-        assert 'k_engine_api_version = "3.1.4"' in out
-
-
-# ---------------------------------------------------------------------------
-# typesystem — primitive_types and custom_types (0.7.0)
-# ---------------------------------------------------------------------------
-
-class TestTypesystemScenarioLuaBridge3Generation:
-    """Typesystem config integration with luabridge3 generation."""
-
-    def test_typed_class_registered(self, typesystem_module, luabridge3_output_config):
-        assert '.beginClass<types::TypedClass>("TypedClass")' in _generate(typesystem_module, luabridge3_output_config)
-
-    def test_int_method_always_visible(self, typesystem_module, luabridge3_output_config):
-        assert "&types::TypedClass::getValue" in _generate(typesystem_module, luabridge3_output_config)
-
-    def test_getter_with_ostype_return_absent_by_default(self, typesystem_module, luabridge3_output_config):
-        # getTag returns OSType which is in unsupported_types → filtered
-        out = _generate(typesystem_module, luabridge3_output_config)
-        assert "&types::TypedClass::getTag" not in out
-
-    def test_setter_with_ostype_param_present_by_default(self, typesystem_module, luabridge3_output_config):
-        # setTag returns void (not OSType) → NOT filtered; unsupported check is return-type only
-        out = _generate(typesystem_module, luabridge3_output_config)
-        assert "&types::TypedClass::setTag" in out
-
-    def test_custom_type_unlocks_ostype_getter(self, typesystem_module, luabridge3_output_config):
-        from tsujikiri.configurations import CustomTypeEntry, TypesystemConfig
-        ts = TypesystemConfig(custom_types=[CustomTypeEntry(cpp_name="OSType")])
-        out = _generate_with_options(typesystem_module, luabridge3_output_config, typesystem=ts)
-        assert "&types::TypedClass::getTag" in out
-
-    def test_ostype_free_function_absent_by_default(self, typesystem_module, luabridge3_output_config):
-        # Free function overloads using int64_t are present; OSType-param methods are not
-        out = _generate(typesystem_module, luabridge3_output_config)
-        assert "computeId" in out  # int64_t overloads are fine by default
-
-    def test_primitive_type_mapping_in_overload_template(self, typesystem_module, luabridge3_output_config):
-        # luabridge3 overload<type> uses mapped type — verify int64_t → I64 via typesystem
-        from tsujikiri.configurations import PrimitiveTypeEntry, TypesystemConfig
-        ts = TypesystemConfig(primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", python_name="I64")])
-        out = _generate_with_options(typesystem_module, luabridge3_output_config, typesystem=ts)
-        assert "luabridge::overload<I64>" in out
-
-    def test_no_typesystem_raw_int64_in_overload(self, typesystem_module, luabridge3_output_config):
-        out = _generate(typesystem_module, luabridge3_output_config)
-        assert "luabridge::overload<int64_t>" in out
-
-    def test_int64_method_visible_without_typesystem(self, typesystem_module, luabridge3_output_config):
-        assert "&types::TypedClass::getId" in _generate(typesystem_module, luabridge3_output_config)
-
-
-class TestTypesystemScenarioPybind11Generation:
-    """Typesystem config integration with pybind11 generation."""
-
-    def test_typed_class_registered(self, typesystem_module, pybind11_output_config):
-        assert 'py::class_<types::TypedClass' in _generate(typesystem_module, pybind11_output_config)
-
-    def test_getter_with_ostype_return_absent_by_default(self, typesystem_module, pybind11_output_config):
-        # getTag returns OSType → filtered; pybind11 also uses unsupported_types
-        out = _generate(typesystem_module, pybind11_output_config)
-        assert "&types::TypedClass::getTag" not in out
-
-    def test_setter_with_ostype_param_present_by_default(self, typesystem_module, pybind11_output_config):
-        # setTag returns void → not filtered
-        out = _generate(typesystem_module, pybind11_output_config)
-        assert "&types::TypedClass::setTag" in out
-
-    def test_custom_type_unlocks_ostype_getter(self, typesystem_module, pybind11_output_config):
-        from tsujikiri.configurations import CustomTypeEntry, TypesystemConfig
-        ts = TypesystemConfig(custom_types=[CustomTypeEntry(cpp_name="OSType")])
-        out = _generate_with_options(typesystem_module, pybind11_output_config, typesystem=ts)
-        assert "&types::TypedClass::getTag" in out
-
-    def test_int_method_always_visible(self, typesystem_module, pybind11_output_config):
-        assert "&types::TypedClass::getValue" in _generate(typesystem_module, pybind11_output_config)
-
-    def test_int64_method_visible_by_default(self, typesystem_module, pybind11_output_config):
-        # int64_t is not in unsupported_types, so getId/setId are always present
-        out = _generate(typesystem_module, pybind11_output_config)
-        assert "&types::TypedClass::getId" in out
-        assert "&types::TypedClass::setId" in out
-
-    def test_api_version_with_typesystem(self, typesystem_module, pybind11_output_config):
-        from tsujikiri.configurations import CustomTypeEntry, TypesystemConfig
-        ts = TypesystemConfig(custom_types=[CustomTypeEntry(cpp_name="OSType")])
-        out = _generate_with_options(typesystem_module, pybind11_output_config, api_version="1.0.0", typesystem=ts)
-        assert 'k_typesystem_api_version = "1.0.0"' in out
-        assert "&types::TypedClass::getTag" in out
-
-
-# ---------------------------------------------------------------------------
-# Transform pipeline integration — OverloadPriority + ExceptionPolicy (0.7.0)
-# ---------------------------------------------------------------------------
-
-class TestTransformPipelineIntegration:
-    """OverloadPriority and ExceptionPolicy transforms via full parse → transform pipeline."""
-
-    def test_overload_priority_sets_ir_field_on_parsed_overload(self, geo_module):
-        from tsujikiri.configurations import TransformSpec
-        from tsujikiri.transforms import build_pipeline_from_config
-        module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="OverloadPriority", kwargs={
-            "class": "Circle",
-            "method": "resize",
-            "signature": "void resize(double, double)",
-            "priority": 0,
-        })]
-        build_pipeline_from_config(specs).run(module)
-        circle = next(c for c in module.classes if c.name == "Circle")
-        matched = [m for m in circle.methods if m.name == "resize" and m.overload_priority == 0]
-        assert len(matched) == 1
-        assert matched[0].parameters[1].type_spelling == "double"
-
-    def test_overload_priority_leaves_other_overload_unchanged(self, geo_module):
-        from tsujikiri.configurations import TransformSpec
-        from tsujikiri.transforms import build_pipeline_from_config
-        module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="OverloadPriority", kwargs={
-            "class": "Circle",
-            "method": "resize",
-            "signature": "void resize(double, double)",
-            "priority": 0,
-        })]
-        build_pipeline_from_config(specs).run(module)
-        circle = next(c for c in module.classes if c.name == "Circle")
-        single_param = [m for m in circle.methods if m.name == "resize" and len(m.parameters) == 1]
-        assert single_param[0].overload_priority is None
-
-    def test_exception_policy_on_parsed_method(self, audio_module):
-        from tsujikiri.configurations import TransformSpec
-        from tsujikiri.transforms import build_pipeline_from_config
-        module = copy.deepcopy(audio_module)
-        specs = [TransformSpec(stage="ExceptionPolicy", kwargs={
-            "class": "Reverb",
-            "method": "process",
-            "policy": "pass_through",
-        })]
-        build_pipeline_from_config(specs).run(module)
-        reverb = next(c for c in module.classes if c.name == "Reverb")
-        for m in reverb.methods:
-            if m.name == "process":
-                assert m.exception_policy == "pass_through"
-
-    def test_exception_policy_wildcard_applies_to_all_classes(self, geo_module):
-        from tsujikiri.configurations import TransformSpec
-        from tsujikiri.transforms import build_pipeline_from_config
-        module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="ExceptionPolicy", kwargs={
-            "policy": "abort",
-        })]
-        build_pipeline_from_config(specs).run(module)
-        for cls in module.classes:
-            for m in cls.methods:
-                assert m.exception_policy == "abort"
-
-    def test_exception_policy_on_free_function(self, engine_module):
-        from tsujikiri.configurations import TransformSpec
-        from tsujikiri.transforms import build_pipeline_from_config
-        module = copy.deepcopy(engine_module)
-        specs = [TransformSpec(stage="ExceptionPolicy", kwargs={
-            "function": "dot",
-            "policy": "none",
-        })]
-        build_pipeline_from_config(specs).run(module)
-        dot_fn = next(fn for fn in module.functions if fn.name == "dot")
-        assert dot_fn.exception_policy == "none"
-
-    def test_unmatched_stages_detected_after_transform(self, geo_module):
-        from tsujikiri.configurations import TransformSpec
-        from tsujikiri.transforms import build_pipeline_from_config
-        module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="suppress_method", kwargs={
-            "class": "NonExistentClass",
-            "pattern": "nonExistentMethod",
-        })]
-        pipeline = build_pipeline_from_config(specs)
-        pipeline.run(module)
-        unmatched = pipeline.unmatched_stages()
-        assert len(unmatched) == 1
-        assert "suppress_method" in unmatched[0]
-
-    def test_matched_stage_not_in_unmatched(self, geo_module):
-        from tsujikiri.configurations import TransformSpec
-        from tsujikiri.transforms import build_pipeline_from_config
-        module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="suppress_method", kwargs={
-            "class": "Circle",
-            "pattern": "getRadius",
-        })]
-        pipeline = build_pipeline_from_config(specs)
-        pipeline.run(module)
-        assert pipeline.unmatched_stages() == []
-
-
-# ---------------------------------------------------------------------------
 # CMake build + run tests
 # ---------------------------------------------------------------------------
 
 @pytest.mark.skipif(not CMAKE_AVAILABLE, reason="cmake not installed")
 @pytest.mark.xdist_group("cmake_build")
 class TestCMakeBuild:
-    """CMake FetchContent build tests — compile and run every scenario."""
+    """CMake build tests — compile and run every scenario."""
 
     @pytest.fixture(scope="class", autouse=True)
-    def cmake_configured(self):
-        assert _cmake_configure(), "cmake configure failed"
-        assert _cmake_build_all(), "cmake build all failed"
+    def cmake_configured(self) -> None:
+        """Clone deps once, configure every scenario, then build all upfront."""
+        _fetch_all_deps()
+        for scenario in _SCENARIOS:
+            assert _cmake_configure(scenario), f"{scenario} cmake configure failed"
+        for scenario in _SCENARIOS:
+            assert _cmake_build_all(scenario), f"{scenario} cmake build failed"
 
     # --- combined ---
 
-    def test_combined_luabridge3_builds(self):
-        assert _cmake_build("test_combined_luabridge3"), "combined luabridge3 build failed"
+    def test_combined_luabridge3_builds(self) -> None:
+        assert _cmake_build("combined", "test_combined_luabridge3"), "combined luabridge3 build failed"
 
-    def test_combined_luabridge3_runs(self):
-        _cmake_build("test_combined_luabridge3")
-        assert _run_executable("test_combined_luabridge3"), "combined luabridge3 run failed"
+    def test_combined_luabridge3_runs(self) -> None:
+        _cmake_build("combined", "test_combined_luabridge3")
+        assert _run_executable("combined", "test_combined_luabridge3"), "combined luabridge3 run failed"
 
     # --- geo ---
 
-    def test_geo_luabridge3_builds(self):
-        assert _cmake_build("test_geo_luabridge3"), "geo luabridge3 build failed"
+    def test_geo_luabridge3_builds(self) -> None:
+        assert _cmake_build("geo", "test_geo_luabridge3"), "geo luabridge3 build failed"
 
-    def test_geo_luabridge3_runs(self):
-        _cmake_build("test_geo_luabridge3")
-        assert _run_executable("test_geo_luabridge3"), "geo luabridge3 run failed"
+    def test_geo_luabridge3_runs(self) -> None:
+        _cmake_build("geo", "test_geo_luabridge3")
+        assert _run_executable("geo", "test_geo_luabridge3"), "geo luabridge3 run failed"
 
-    def test_geo_pybind11_builds(self):
-        assert _cmake_build("geo_py"), "geo pybind11 build failed"
+    def test_geo_pybind11_builds(self) -> None:
+        assert _cmake_build("geo", "geo_py"), "geo pybind11 build failed"
 
-    def test_geo_pybind11_runs(self):
-        _cmake_build("geo_py")
-        assert _run_pybind11_verify(HERE / "geo" / "pybind11_verify.py"), "geo pybind11 verify failed"
+    def test_geo_pybind11_runs(self) -> None:
+        _cmake_build("geo", "geo_py")
+        assert _run_pybind11_verify("geo"), "geo pybind11 verify failed"
 
     # --- engine ---
 
-    def test_engine_luabridge3_builds(self):
-        assert _cmake_build("test_engine_luabridge3"), "engine luabridge3 build failed"
+    def test_engine_luabridge3_builds(self) -> None:
+        assert _cmake_build("engine", "test_engine_luabridge3"), "engine luabridge3 build failed"
 
-    def test_engine_luabridge3_runs(self):
-        _cmake_build("test_engine_luabridge3")
-        assert _run_executable("test_engine_luabridge3"), "engine luabridge3 run failed"
+    def test_engine_luabridge3_runs(self) -> None:
+        _cmake_build("engine", "test_engine_luabridge3")
+        assert _run_executable("engine", "test_engine_luabridge3"), "engine luabridge3 run failed"
 
-    def test_engine_pybind11_builds(self):
-        assert _cmake_build("engine_py"), "engine pybind11 build failed"
+    def test_engine_pybind11_builds(self) -> None:
+        assert _cmake_build("engine", "engine_py"), "engine pybind11 build failed"
 
-    def test_engine_pybind11_runs(self):
-        _cmake_build("engine_py")
-        assert _run_pybind11_verify(HERE / "engine" / "pybind11_verify.py"), "engine pybind11 verify failed"
+    def test_engine_pybind11_runs(self) -> None:
+        _cmake_build("engine", "engine_py")
+        assert _run_pybind11_verify("engine"), "engine pybind11 verify failed"
 
     # --- audio ---
 
-    def test_audio_luabridge3_builds(self):
-        assert _cmake_build("test_audio_luabridge3"), "audio luabridge3 build failed"
+    def test_audio_luabridge3_builds(self) -> None:
+        assert _cmake_build("audio", "test_audio_luabridge3"), "audio luabridge3 build failed"
 
-    def test_audio_luabridge3_runs(self):
-        _cmake_build("test_audio_luabridge3")
-        assert _run_executable("test_audio_luabridge3"), "audio luabridge3 run failed"
+    def test_audio_luabridge3_runs(self) -> None:
+        _cmake_build("audio", "test_audio_luabridge3")
+        assert _run_executable("audio", "test_audio_luabridge3"), "audio luabridge3 run failed"
 
-    def test_audio_pybind11_builds(self):
-        assert _cmake_build("audio_py"), "audio pybind11 build failed"
+    def test_audio_pybind11_builds(self) -> None:
+        assert _cmake_build("audio", "audio_py"), "audio pybind11 build failed"
 
-    def test_audio_pybind11_runs(self):
-        _cmake_build("audio_py")
-        assert _run_pybind11_verify(HERE / "audio" / "pybind11_verify.py"), "audio pybind11 verify failed"
+    def test_audio_pybind11_runs(self) -> None:
+        _cmake_build("audio", "audio_py")
+        assert _run_pybind11_verify("audio"), "audio pybind11 verify failed"
 
     # --- samplebinding ---
 
-    def test_samplebinding_pybind11_builds(self):
-        assert _cmake_build("samplebinding_py"), "samplebinding pybind11 build failed"
+    def test_samplebinding_pybind11_builds(self) -> None:
+        assert _cmake_build("samplebinding", "samplebinding_py"), "samplebinding pybind11 build failed"
 
-    def test_samplebinding_pybind11_runs(self):
-        _cmake_build("samplebinding_py")
-        assert _run_pybind11_verify(HERE / "samplebinding" / "pybind11_verify.py"), "samplebinding pybind11 verify failed"
+    def test_samplebinding_pybind11_runs(self) -> None:
+        _cmake_build("samplebinding", "samplebinding_py")
+        assert _run_pybind11_verify("samplebinding"), "samplebinding pybind11 verify failed"
 
     # --- typesystem ---
 
-    def test_typesystem_luabridge3_builds(self):
-        assert _cmake_build("test_typesystem_luabridge3"), "typesystem luabridge3 build failed"
+    def test_typesystem_luabridge3_builds(self) -> None:
+        assert _cmake_build("typesystem", "test_typesystem_luabridge3"), "typesystem luabridge3 build failed"
 
-    def test_typesystem_luabridge3_runs(self):
-        _cmake_build("test_typesystem_luabridge3")
-        assert _run_executable("test_typesystem_luabridge3"), "typesystem luabridge3 run failed"
+    def test_typesystem_luabridge3_runs(self) -> None:
+        _cmake_build("typesystem", "test_typesystem_luabridge3")
+        assert _run_executable("typesystem", "test_typesystem_luabridge3"), "typesystem luabridge3 run failed"
 
-    def test_typesystem_pybind11_builds(self):
-        assert _cmake_build("typesystem_py"), "typesystem pybind11 build failed"
+    def test_typesystem_pybind11_builds(self) -> None:
+        assert _cmake_build("typesystem", "typesystem_py"), "typesystem pybind11 build failed"
 
-    def test_typesystem_pybind11_runs(self):
-        _cmake_build("typesystem_py")
-        assert _run_pybind11_verify(HERE / "typesystem" / "pybind11_verify.py"), "typesystem pybind11 verify failed"
+    def test_typesystem_pybind11_runs(self) -> None:
+        _cmake_build("typesystem", "typesystem_py")
+        assert _run_pybind11_verify("typesystem"), "typesystem pybind11 verify failed"
