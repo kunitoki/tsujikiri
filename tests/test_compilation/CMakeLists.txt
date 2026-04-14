@@ -229,3 +229,22 @@ add_pybind11_binding_test(
     INPUT_FILE   "${_samplebinding_dir}/samplebinding.input.yml"
     INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}"
     HEADERS      ${_samplebinding_headers})
+
+# ============================================================
+# Test: typesystem — primitive_types, custom_types, OSType round-trip, int64_t
+# ============================================================
+set(_typesystem_dir     "${CMAKE_CURRENT_SOURCE_DIR}/typesystem")
+set(_typesystem_headers "${_typesystem_dir}/types.hpp")
+
+add_luabridge3_binding_test(
+    NAME         typesystem
+    INPUT_FILE   "${_typesystem_dir}/typesystem.input.yml"
+    MAIN_SRC     "${_typesystem_dir}/luabridge3_main.cpp"
+    INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}"
+    HEADERS      ${_typesystem_headers})
+
+add_pybind11_binding_test(
+    NAME         typesystem
+    INPUT_FILE   "${_typesystem_dir}/typesystem.input.yml"
+    INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}"
+    HEADERS      ${_typesystem_headers})

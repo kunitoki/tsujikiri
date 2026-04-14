@@ -90,3 +90,12 @@ def audio_module():
 def samplebinding_module():
     return _load_module(HERE / "samplebinding" / "samplebinding.input.yml", "samplebinding")
 
+
+# ---------------------------------------------------------------------------
+# typesystem: primitive_types mapping, custom_types unlocking, OSType/int64_t
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def typesystem_module():
+    return _load_module(HERE / "typesystem" / "typesystem.input.yml", "typesystem")
+
