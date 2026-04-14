@@ -58,6 +58,8 @@ def _cmake_configure() -> bool:
         # re-configures fast and safe, but skipping avoids redundant work.
         if (CMAKE_BUILD_DIR / "CMakeCache.txt").exists():
             return True
+        # Fresh configure — invalidate any prior build-complete sentinel.
+        (CMAKE_BUILD_DIR / ".build_complete").unlink(missing_ok=True)
         result = subprocess.run(
             [
                 "cmake",
@@ -74,14 +76,49 @@ def _cmake_configure() -> bool:
 
 
 def _cmake_build(target: str) -> bool:
-    """Build a specific cmake target."""
-    cmd = ["cmake", "--build", str(CMAKE_BUILD_DIR), "--target", target]
-    # Multi-config generators (e.g. MSVC on Windows) require an explicit config.
-    if sys.platform == "win32":
-        cmd += ["--config", "Release"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    print(result.stdout + result.stderr)
-    return result.returncode == 0
+    """Build a specific cmake target, serialized via a file lock.
+
+    The lock prevents concurrent cmake invocations from different xdist workers
+    corrupting shared build artifacts (e.g. static libraries being ranlib-ed
+    while another process writes object files into the same archive).
+    """
+    lock_path = CMAKE_BUILD_DIR.parent / ".cmake_build.lock"
+    with open(lock_path, "a") as lock_f:
+        if sys.platform != "win32":
+            import fcntl
+            fcntl.flock(lock_f, fcntl.LOCK_EX)
+        cmd = ["cmake", "--build", str(CMAKE_BUILD_DIR), "--target", target]
+        # Multi-config generators (e.g. MSVC/Xcode) require an explicit config.
+        if sys.platform != "linux":
+            cmd += ["--config", "Release"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        print(result.stdout + result.stderr)
+        return result.returncode == 0
+
+
+def _cmake_build_all() -> bool:
+    """Build all cmake targets in a single locked invocation.
+
+    Uses a sentinel file so multiple workers (or repeated fixture calls) only
+    build once.  The lock prevents concurrent builds from different xdist
+    workers that may bypass the xdist_group guarantee.
+    """
+    sentinel = CMAKE_BUILD_DIR / ".build_complete"
+    lock_path = CMAKE_BUILD_DIR.parent / ".cmake_build.lock"
+    with open(lock_path, "a") as lock_f:
+        if sys.platform != "win32":
+            import fcntl
+            fcntl.flock(lock_f, fcntl.LOCK_EX)
+        if sentinel.exists():
+            return True
+        cmd = ["cmake", "--build", str(CMAKE_BUILD_DIR)]
+        if sys.platform != "linux":
+            cmd += ["--config", "Release"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        print(result.stdout + result.stderr)
+        if result.returncode == 0:
+            sentinel.touch()
+        return result.returncode == 0
 
 
 def _run_executable(name: str) -> bool:
@@ -699,6 +736,7 @@ class TestCMakeBuild:
     @pytest.fixture(scope="class", autouse=True)
     def cmake_configured(self):
         assert _cmake_configure(), "cmake configure failed"
+        assert _cmake_build_all(), "cmake build all failed"
 
     # --- combined ---
 
