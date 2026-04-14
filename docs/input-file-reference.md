@@ -20,6 +20,7 @@ An **input file** (conventionally named `*.input.yml`) is the primary configurat
 | `format_overrides` | mapping | no | `{}` | Per-format filter/transform/generation overrides |
 | `pretty` | bool | no | `false` | Run the language-appropriate pretty printer on generated output |
 | `pretty_options` | list of strings | no | `[]` | Extra arguments forwarded to the pretty printer CLI |
+| `typesystem` | mapping | no | (empty) | Type system declarations: primitive types, typedefs, custom types, containers, smart pointers, conversion rules, and declared functions |
 
 The module name used in the generated output (e.g. `register_myproject`) is derived from the input file name: `myproject.input.yml` → `myproject`.
 
@@ -46,6 +47,7 @@ source:
 | `path` | string | yes | — | Relative to the input YAML's directory |
 | `parse_args` | list of strings | no | `[]` | Any clang flag: `-std=c++17`, `-x c++` |
 | `include_paths` | list of strings | no | `[]` | Equivalent to `-I` flags; added after `parse_args` |
+| `system_include_paths` | list of strings | no | `[]` | Equivalent to `-isystem` flags; searched after `include_paths`, suppresses warnings from those directories |
 | `defines` | list of strings | no | `[]` | Preprocessor definitions; equivalent to `-D` flags, added after `include_paths` |
 
 ---
@@ -147,7 +149,7 @@ transforms:
 
 Transforms mutate the Intermediate Representation in-place. The pipeline runs in list order — earlier stages affect what later stages see.
 
-See [Transforms](transforms.md) for all 24 built-in stages with full reference and examples.
+See [Transforms](transforms.md) for all 32 built-in stages with full reference and examples.
 
 ---
 
@@ -401,9 +403,139 @@ The pretty printer is invoked with `-` as the filename so it reads from stdin an
 
 ---
 
+## `typesystem` — Type System Declarations
+
+The `typesystem` section provides first-class type metadata to the generator. It lets you declare how C++ types map to target-language types, define container and smart-pointer wrappers, supply conversion rules, and declare functions that the parser cannot see (e.g. templates or generated wrappers).
+
+```yaml
+typesystem:
+  primitive_types:
+    - { cpp_name: "int32_t",    python_name: "int" }
+    - { cpp_name: "float",      python_name: "float" }
+    - { cpp_name: "std::string", python_name: "str" }
+
+  typedef_types:
+    - { cpp_name: "EntityId", source: "int32_t" }
+
+  custom_types:
+    - { cpp_name: "lua_State" }
+
+  container_types:
+    - { cpp_name: "std::vector",  kind: "list" }
+    - { cpp_name: "std::map",     kind: "map" }
+    - { cpp_name: "std::set",     kind: "set" }
+    - { cpp_name: "std::pair",    kind: "pair" }
+
+  smart_pointer_types:
+    - { cpp_name: "std::shared_ptr", kind: "shared", getter: "get" }
+    - { cpp_name: "std::unique_ptr", kind: "unique", getter: "get" }
+
+  load_typesystems:
+    - { path: "../common/base.input.yml" }
+
+  declared_functions:
+    - name: makeCircle
+      namespace: mylib
+      return_type: "mylib::Circle*"
+      parameters:
+        - { name: radius, type: double }
+      wrapper_code: "+[](double r) { return mylib::Circle::create(r); }"
+      doc: "Factory helper for Circle objects"
+
+  conversion_rules:
+    - cpp_type: "mylib::Color"
+      native_to_target: "%%in.toInt()"
+      target_to_native: "mylib::Color::fromInt(%%in)"
+```
+
+### Sub-keys
+
+| Key | Type | Purpose |
+|-----|------|---------|
+| `primitive_types` | list | Map a C++ type name to a target-language primitive name |
+| `typedef_types` | list | Declare a C++ typedef as an alias to another known type |
+| `custom_types` | list | Declare types that exist externally — no binding is generated, but the type is recognised |
+| `container_types` | list | Declare C++ container templates and their sequence protocol kind |
+| `smart_pointer_types` | list | Declare smart pointer templates with their kind and inner-object accessor |
+| `load_typesystems` | list | Import type metadata from another input config (merged into this config) |
+| `declared_functions` | list | Manually declare functions the parser cannot see (templates, wrappers) |
+| `conversion_rules` | list | Provide native ↔ target conversion code for a C++ type |
+
+### `primitive_types`
+
+Each entry maps one C++ type spelling to a target-language name:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `cpp_name` | string | Exact C++ type spelling (e.g. `"std::string"`) |
+| `python_name` | string | Target type name (e.g. `"str"`) |
+
+### `typedef_types`
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `cpp_name` | string | Typedef name (e.g. `"EntityId"`) |
+| `source` | string | Underlying type (e.g. `"int32_t"`) |
+
+### `custom_types`
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `cpp_name` | string | The C++ type name — recognised as a known external type |
+
+### `container_types`
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `cpp_name` | string | Template name (e.g. `"std::vector"`) |
+| `kind` | string | `"list"` \| `"map"` \| `"set"` \| `"pair"` |
+
+### `smart_pointer_types`
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `cpp_name` | string | — | Template name (e.g. `"std::shared_ptr"`) |
+| `kind` | string | — | `"shared"` \| `"unique"` \| `"weak"` |
+| `getter` | string | `"get"` | Member function returning the raw pointer |
+
+### `load_typesystems`
+
+Inherits type entries from another project's input config. The path resolves relative to the current config file.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `path` | string | Path to another `.input.yml` file whose `typesystem:` block is merged in |
+
+**Collision semantics:** The current config wins on `cpp_name` collisions — entries from the loaded config are prepended, but any same-named entry already in the current config takes precedence.
+
+### `declared_functions`
+
+Allows the generator to include functions the libclang parser cannot see (template wrappers, factory helpers, etc.).
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `name` | string | — | Function name (required) |
+| `namespace` | string | `""` | C++ namespace (qualified name becomes `namespace::name`) |
+| `return_type` | string | `"void"` | C++ return type spelling |
+| `parameters` | list | `[]` | Each item: `{ name: "...", type: "..." }` |
+| `wrapper_code` | string | — | Lambda or callable to emit instead of `&qualifiedName` |
+| `doc` | string | — | Documentation string attached to the function |
+
+### `conversion_rules`
+
+Provides native-to-target and target-to-native conversion expressions for a C++ type. Templates use these to emit appropriate conversion code.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `cpp_type` | string | C++ type spelling (required) |
+| `native_to_target` | string | Expression converting C++ value to target; `%%in` is the input value |
+| `target_to_native` | string | Expression converting target value to C++; `%%in` is the input value |
+
+---
+
 ## See Also
 
 - [Filtering](filtering.md) — complete mechanics for every filter type
-- [Transforms](transforms.md) — all 24 transform stages with examples
+- [Transforms](transforms.md) — all 32 transform stages with examples
 - [Output Formats](output-formats.md) — format files, custom formats, template_extends
 - [Attributes](attributes.md) — C++ attribute system
