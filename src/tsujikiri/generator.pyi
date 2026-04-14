@@ -4,9 +4,10 @@ from _typeshed import Incomplete
 from tsujikiri.configurations import GenerationConfig as GenerationConfig, OutputConfig as OutputConfig
 from tsujikiri.generator_filters import camel_to_snake as camel_to_snake, code_at as code_at, param_pairs as param_pairs
 from tsujikiri.ir import IRClass as IRClass, IREnum as IREnum, IRFunction as IRFunction, IRMethod as IRMethod, IRModule as IRModule
+from typing import Any
 
 class ItemFirstEnvironment(jinja2.Environment):
-    def getattr(self, obj: object, attribute: str) -> object: ...
+    def getattr(self, obj: object, attribute: str) -> Any: ...
 
 class Generator:
     cfg: Incomplete

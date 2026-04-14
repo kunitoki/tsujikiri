@@ -4,7 +4,7 @@ import clang.cindex
 from enum import Enum
   
 class CursorKind(Enum):
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     """Overrides the default implementation"""
     if isinstance(other, clang.cindex.CursorKind):
         return self.name == other.name
@@ -260,7 +260,7 @@ class CursorKind(Enum):
   OVERLOAD_CANDIDATE = clang.cindex.CursorKind.from_id(700)
 
 class TemplateArgumentKind(Enum):
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     """Overrides the default implementation"""
     if isinstance(other, clang.cindex.TemplateArgumentKind):
         return self.name == other.name
@@ -273,7 +273,7 @@ class TemplateArgumentKind(Enum):
   INTEGRAL = clang.cindex.TemplateArgumentKind.from_id(4)
 
 class ExceptionSpecificationKind(Enum):
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     """Overrides the default implementation"""
     if isinstance(other, clang.cindex.ExceptionSpecificationKind):
         return self.name == other.name
@@ -290,7 +290,7 @@ class ExceptionSpecificationKind(Enum):
   UNPARSED = clang.cindex.ExceptionSpecificationKind.from_id(8)
 
 class AvailabilityKind(Enum):
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     """Overrides the default implementation"""
     if isinstance(other, clang.cindex.AvailabilityKind):
         return self.name == other.name
@@ -302,7 +302,7 @@ class AvailabilityKind(Enum):
   NOT_ACCESSIBLE = clang.cindex.AvailabilityKind.from_id(3)
 
 class AccessSpecifier(Enum):
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     """Overrides the default implementation"""
     if isinstance(other, clang.cindex.AccessSpecifier):
         return self.name == other.name
@@ -315,7 +315,7 @@ class AccessSpecifier(Enum):
   NONE = clang.cindex.AccessSpecifier.from_id(4)
 
 class TypeKind(Enum):
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     """Overrides the default implementation"""
     if isinstance(other, clang.cindex.TypeKind):
         return self.name == other.name
@@ -419,7 +419,7 @@ class TypeKind(Enum):
   ATOMIC = clang.cindex.TypeKind.from_id(177)
 
 class RefQualifierKind(Enum):
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     """Overrides the default implementation"""
     if isinstance(other, clang.cindex.RefQualifierKind):
         return self.name == other.name
@@ -430,7 +430,7 @@ class RefQualifierKind(Enum):
   RVALUE = clang.cindex.RefQualifierKind.from_id(2)
 
 class LinkageKind(Enum):
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     """Overrides the default implementation"""
     if isinstance(other, clang.cindex.LinkageKind):
         return self.name == other.name
@@ -443,7 +443,7 @@ class LinkageKind(Enum):
   EXTERNAL = clang.cindex.LinkageKind.from_id(4)
 
 class TLSKind(Enum):
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     """Overrides the default implementation"""
     if isinstance(other, clang.cindex.TLSKind):
         return self.name == other.name

@@ -11,7 +11,7 @@ from enum import Enum
   for klazz in clang.cindex.BaseEnumeration.__subclasses__():
     buf += f"""
 class {klazz.__name__}(Enum):
-  def __eq__(self, other):
+  def __eq__(self, other: object) -> bool:
     \"\"\"Overrides the default implementation\"\"\"
     if isinstance(other, clang.cindex.{klazz.__name__}):
         return self.name == other.name

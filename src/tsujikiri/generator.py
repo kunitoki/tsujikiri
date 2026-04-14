@@ -40,7 +40,7 @@ class ItemFirstEnvironment(jinja2.Environment):
     ``enum['values']``) take priority over Python built-in dict methods like
     ``dict.values()``, which would otherwise shadow same-named keys."""
 
-    def getattr(self, obj, attribute):  # type: ignore[override]
+    def getattr(self, obj: object, attribute: str) -> Any:
         try:
             return obj[attribute]
         except (TypeError, LookupError, AttributeError):
