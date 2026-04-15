@@ -257,6 +257,7 @@ class CursorKind(Enum):
   TYPE_ALIAS_TEMPLATE_DECL = clang.cindex.CursorKind.from_id(601)
   STATIC_ASSERT = clang.cindex.CursorKind.from_id(602)
   FRIEND_DECL = clang.cindex.CursorKind.from_id(603)
+  CONCEPT_DECL = clang.cindex.CursorKind.from_id(604)
   OVERLOAD_CANDIDATE = clang.cindex.CursorKind.from_id(700)
 
 class TemplateArgumentKind(Enum):
