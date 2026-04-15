@@ -904,3 +904,28 @@ class TestValidateConfig:
 
         _, stderr = _run("--input", str(p), "--validate-config")
         assert "valid" in stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# --verbose (cli.py lines 235-244)
+# ---------------------------------------------------------------------------
+
+class TestVerbose:
+    def test_verbose_emitted_line_printed(self, simple_input_yml: Path) -> None:
+        """--verbose prints [filter] emitted line to stderr (lines 236-242)."""
+        _, stderr = _run(
+            "--input", str(simple_input_yml),
+            "--target", "luabridge3", "-",
+            "--verbose",
+        )
+        assert "[filter] emitted:" in stderr
+
+    def test_verbose_suppressed_line_printed_when_classname_filter(self, simple_input_yml: Path) -> None:
+        """--verbose + --classname=NonExistent suppresses Widget → suppressed line printed (lines 243-244)."""
+        _, stderr = _run(
+            "--input", str(simple_input_yml),
+            "--target", "luabridge3", "-",
+            "--verbose",
+            "--classname", "NonExistent",
+        )
+        assert "[filter] suppressed:" in stderr

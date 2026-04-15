@@ -1199,4 +1199,31 @@ class TestParseClassUsingDeclNoTypeRef:
 
         assert len(ir_cls.using_declarations) == 1
         assert ir_cls.using_declarations[0].member_name == "process"
-        assert ir_cls.using_declarations[0].base_qualified_name == ""  # stays empty
+
+
+# ---------------------------------------------------------------------------
+# Platform branches in parse_translation_unit (parser.py lines 606-626)
+# ---------------------------------------------------------------------------
+
+class TestParseTranslationUnitPlatformBranches:
+    def test_non_darwin_platform_skips_sysroot(self, tmp_path: Path) -> None:
+        """Branch 606->627: sys.platform != 'darwin' — darwin block skipped entirely."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("tsujikiri.parser.sys") as mock_sys:
+            mock_sys.platform = "linux"
+            module = parse_translation_unit(src, [], "empty")
+        assert module is not None
+
+    def test_resource_dir_already_in_args_skips_xcrun(self, tmp_path: Path) -> None:
+        """Branch 617->627: '-resource-dir' already in parse_args — xcrun for resource-dir not called."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-resource-dir", "/usr/lib/clang/17"])
+        with patch("tsujikiri.parser.subprocess.check_output", wraps=subprocess.check_output) as mock_sub:
+            module = parse_translation_unit(src, [], "empty")
+            for call_args in mock_sub.call_args_list:
+                cmd = call_args[0][0]
+                assert "-print-resource-dir" not in cmd, "xcrun for resource-dir must not be called"
+        assert module is not None

@@ -339,7 +339,7 @@ def main() -> None:
         manifest_path = Path(args.manifest_file)
         if manifest_path.exists():
             old_manifest = load_manifest(manifest_path)
-            if old_manifest["uid"] != manifest["uid"]:
+            if "uid" in old_manifest and old_manifest["uid"] != manifest["uid"]:
                 report = compare_manifests(old_manifest, manifest)
                 if report.additive_changes:
                     print("WARNING: Additive API changes:", file=sys.stderr)
@@ -357,8 +357,6 @@ def main() -> None:
                     old_version = old_manifest["version"]
                     if new_version != old_version:
                         print(f"INFO: Suggested version bump: {old_version} -> {new_version}", file=sys.stderr)
-            elif "version" in old_manifest:
-                manifest["version"] = old_manifest["version"]
 
     base_gen = input_config.generation
     fmt_override_first = input_config.format_overrides.get(first_output_config.format_name)
