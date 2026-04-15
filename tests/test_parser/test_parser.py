@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -556,6 +557,26 @@ class TestIsysrootNotDuplicated:
             module = parse_translation_unit(src, ["ns"], "sysroot_test")
         assert module is not None
         assert any(f.name == "foo" for f in module.functions)
+
+    def test_darwin_sysroot_fallback_when_xcrun_fails(self, tmp_path: Path) -> None:
+        """On darwin, fallback sysroot used when xcrun raises CalledProcessError."""
+        hpp = tmp_path / "sysroot_fallback.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("sys.platform", "darwin"), \
+             patch("subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "xcrun")):
+            module = parse_translation_unit(src, ["ns"], "sysroot_fallback_test")
+        assert module is not None
+
+    def test_darwin_sysroot_skipped_when_empty(self, tmp_path: Path) -> None:
+        """On darwin, no -isysroot added when xcrun returns empty string."""
+        hpp = tmp_path / "sysroot_empty.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("sys.platform", "darwin"), \
+             patch("subprocess.check_output", return_value=""):
+            module = parse_translation_unit(src, ["ns"], "sysroot_empty_test")
+        assert module is not None
 
 
 # ---------------------------------------------------------------------------

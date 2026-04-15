@@ -585,7 +585,10 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
     # Ensure we parse as C++ by default if not already specified
     if "-x" not in args:
         args = ["-x", "c++"] + args
-    # Ensure sysroot on darwin
+    # Ensure sysroot and C++ stdlib headers on darwin.
+    # libclang Python package bundles its own dylib but does not ship the system
+    # SDK or C++ stdlib headers.  We derive both from xcrun so that tsujikiri only
+    # requires Xcode / Command Line Tools — no separate LLVM installation needed.
     if sys.platform == "darwin" and "-isysroot" not in args:
         try:
             sysroot = subprocess.check_output(
@@ -595,6 +598,11 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
             sysroot = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
         if sysroot:
             args += ["-isysroot", sysroot]
+            # libclang 18 does not reliably pick up Apple's libc++ headers via
+            # -isysroot alone on all SDK versions; add the path explicitly.
+            cxx_include = Path(sysroot) / "usr" / "include" / "c++" / "v1"
+            if cxx_include.is_dir():
+                args += [f"-isystem{cxx_include}"]
 
     index = cindex.Index.create()
     tu = index.parse(str(source_path.absolute()), args=args)
