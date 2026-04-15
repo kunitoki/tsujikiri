@@ -31,8 +31,8 @@ operator_mappings:
 template: |
   {%- block prologue -%}
   // DO NOT EDIT - Auto-generated LuaBridge3 bindings for {{ module_name }} by tsujikiri
-
-  {%- block prologue_includes -%}
+  
+  {% block prologue_includes -%}
   extern "C" {
   #include <lua.h>
   #include <lualib.h>
