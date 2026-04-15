@@ -572,6 +572,15 @@ def load_output_config(config_file: Path) -> OutputConfig:
     with open(config_file, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
+    template = data.get("template", "") or ""
+    template_file = data.get("template_file", "") or ""
+    if template_file:
+        template_path = Path(template_file)
+        if not template_path.is_absolute():
+            template_path = config_file.parent / template_path
+        with open(template_path, "r", encoding="utf-8") as tf:
+            template = tf.read()
+
     return OutputConfig(
         format_name=data.get("format_name", ""),
         format_version=str(data.get("format_version", "1.0")),
@@ -581,5 +590,5 @@ def load_output_config(config_file: Path) -> OutputConfig:
         type_mappings=data.get("type_mappings", {}),
         operator_mappings=data.get("operator_mappings", {}),
         unsupported_types=data.get("unsupported_types", []),
-        template=data.get("template", "") or "",
+        template=template,
     )

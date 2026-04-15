@@ -1,10 +1,10 @@
 """Generate binding code from an IRModule using a single Jinja2 template.
 
 Each output format defines a ``template:`` key in its ``.output.yml`` file
-containing a full Jinja2 template with named ``{% block %}`` tags.  Users
-can extend a built-in format template using standard Jinja2 template
-inheritance (``{% extends "luabridge3.tpl" %}``) and override specific
-blocks.
+or a ``template_file:`` key referencing an external file containing a full
+Jinja2 template with named ``{% block %}`` tags.  Users can extend a built-in
+format template using standard Jinja2 template inheritance 
+(``{% extends "luabridge3.tpl" %}``) and override specific blocks.
 
 The complete IR is serialised into a plain-data context dict before
 rendering, so templates iterate over the data themselves rather than

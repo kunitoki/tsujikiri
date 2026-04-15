@@ -54,7 +54,7 @@ where = ["src"]
 include = ["tsujikiri*"]
 
 [tool.setuptools.package-data]
-tsujikiri = ["py.typed", "*.pyi", "formats/*.pyi", "formats/*.yml"]
+tsujikiri = ["py.typed", "*.pyi", "formats/*.pyi", "formats/*.yml", "formats/*.tpl"]
 
 [tool.setuptools.dynamic]
 version = { attr = "tsujikiri.__version__" }
