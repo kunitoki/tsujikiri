@@ -16,7 +16,7 @@ from tsujikiri.attribute_processor import AttributeProcessor
 from tsujikiri.configurations import GenerationConfig, load_input_config, load_output_config
 from tsujikiri.filters import FilterEngine
 from tsujikiri.pretty_printers import pretty
-from tsujikiri.formats import resolve_format_path
+from tsujikiri.formats import apply_format_inheritance, resolve_format_path
 from tsujikiri.generator import Generator
 from tsujikiri.ir import IRModule, merge_modules
 from tsujikiri.manifest import compare_manifests, compute_manifest, load_manifest, save_manifest, suggest_version_bump
@@ -305,7 +305,7 @@ def main() -> None:
     # Load the first target's output config for manifest computation and dry-run.
     first_fmt, first_outfile = args.target[0]
     first_fmt_path = resolve_format_path(first_fmt, extra_dirs=extra_dirs)
-    first_output_config = load_output_config(first_fmt_path)
+    first_output_config = apply_format_inheritance(load_output_config(first_fmt_path), extra_dirs=extra_dirs)
 
     merged, all_includes = _process_sources(
         input_config, source_entries, first_output_config, module_name, args.classname, trace_stream,
@@ -404,7 +404,7 @@ def main() -> None:
             target_includes = all_includes
         else:
             fmt_path = resolve_format_path(fmt, extra_dirs=extra_dirs)
-            output_config = load_output_config(fmt_path)
+            output_config = apply_format_inheritance(load_output_config(fmt_path), extra_dirs=extra_dirs)
             target_merged, target_includes = _process_sources(
                 input_config, source_entries, output_config, module_name, args.classname, trace_stream,
                 verbose=args.verbose,
@@ -438,6 +438,7 @@ def main() -> None:
             extra_unsupported_types=extra_unsupported,
             template_extends=template_extends,
             typesystem=input_config.typesystem,
+            extra_dirs=extra_dirs,
         )
 
         buf = StringIO()

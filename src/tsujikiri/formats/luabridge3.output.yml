@@ -31,6 +31,8 @@ operator_mappings:
 template: |
   {%- block prologue -%}
   // DO NOT EDIT - Auto-generated LuaBridge3 bindings for {{ module_name }} by tsujikiri
+
+  {%- block prologue_includes -%}
   extern "C" {
   #include <lua.h>
   #include <lualib.h>
@@ -38,26 +40,23 @@ template: |
   } // extern "C"
 
   #include <LuaBridge/LuaBridge.h>
+  {%- endblock %}
 
   #include <utility>
   {% for inc in includes %}
   #include {{ inc }}
   {%- endfor %}
+
   {%- block api_version %}
   {%- if api_version %}
-
   static constexpr const char* k_{{ module_name }}_api_version = "{{ api_version }}";
-
-  const char* get_{{ module_name }}_api_version()
-  {
-    return k_{{ module_name }}_api_version;
-  }
+  const char* get_{{ module_name }}_api_version() { return k_{{ module_name }}_api_version; }
   {%- endif %}
   {%- endblock %}
 
-  void register_{{ module_name }}(lua_State* L)
+  void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State* L{% block prologue_params %}{% endblock %})
   {
-    luabridge::getGlobalNamespace(L)
+    {% block prologue_entry_method %}luabridge::getGlobalNamespace{% endblock %}(L)
       .beginNamespace("{{ module_name }}")
   {{- code_injections | code_at("beginning") }}
   {%- endblock %}

@@ -19,6 +19,7 @@ never sees them.
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import jinja2
@@ -59,12 +60,14 @@ class Generator:
         extra_unsupported_types: Optional[List[str]] = None,
         template_extends: Optional[str] = None,
         typesystem: Optional[TypesystemConfig] = None,
+        extra_dirs: Optional[List[Path]] = None,
     ) -> None:
         self.cfg = output_config
         self.generation = generation
         self.extra_unsupported: List[str] = extra_unsupported_types or []
         self.template_extends: str = template_extends or ""
         self._typesystem: Optional[TypesystemConfig] = typesystem
+        self.extra_dirs: List[Path] = extra_dirs or []
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -94,6 +97,18 @@ class Generator:
                     dict_templates[f"{cfg.format_name}.tpl"] = cfg.template
             except Exception:
                 pass
+
+        # Also load templates from extra_dirs so that custom formats can extend
+        # each other via {% extends "customfmt.tpl" %}.
+        for d in self.extra_dirs:
+            for fmt_file in d.glob("*.output.yml"):
+                try:
+                    cfg = load_output_config(fmt_file)
+                    tpl_key = f"{cfg.format_name}.tpl"
+                    if cfg.template and tpl_key not in dict_templates:
+                        dict_templates[tpl_key] = cfg.template
+                except Exception:
+                    pass
 
         # Register current format as "main.tpl" alias.
         if self.cfg.template:

@@ -395,6 +395,95 @@ class TestTemplateExtends:
 
 
 # ---------------------------------------------------------------------------
+# Format-level template inheritance (extends field in OutputConfig)
+# ---------------------------------------------------------------------------
+
+class TestFormatLevelInheritance:
+    def test_format_template_extends_builtin(self, make_ir_module):
+        """A format whose template uses {% extends %} renders via Jinja2 inheritance."""
+        from tsujikiri.configurations import OutputConfig
+        cfg = OutputConfig(
+            format_name="myformat",
+            extends="luabridge3",
+            template=(
+                '{% extends "luabridge3.tpl" %}'
+                '{% block prologue %}// CUSTOM PROLOGUE\n{% endblock %}'
+            ),
+        )
+        buf = io.StringIO()
+        Generator(cfg).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        assert "// CUSTOM PROLOGUE" in out
+        assert "getGlobalNamespace" not in out
+
+    def test_format_template_super_call_includes_parent(self, make_ir_module):
+        """{{ super() }} in a format-level block includes parent block content."""
+        from tsujikiri.configurations import OutputConfig
+        cfg = OutputConfig(
+            format_name="myformat",
+            extends="luabridge3",
+            template=(
+                '{% extends "luabridge3.tpl" %}'
+                '{% block prologue %}// PREPEND\n{{ super() }}{% endblock %}'
+            ),
+        )
+        buf = io.StringIO()
+        Generator(cfg).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        assert "// PREPEND" in out
+        assert "getGlobalNamespace" in out
+
+    def test_format_extra_dirs_loaded_into_dict_loader(self, make_ir_module, tmp_path):
+        """Templates from extra_dirs are available for {% extends %} resolution."""
+        fmt_content = (
+            "format_name: custombase\n"
+            "language: cpp\n"
+            "template: |\n"
+            "  // CUSTOM BASE PROLOGUE\n"
+            "  {% for cls in classes %}cls:{{ cls.name }}\n"
+            "  {% endfor %}\n"
+        )
+        (tmp_path / "custombase.output.yml").write_text(fmt_content, encoding="utf-8")
+
+        from tsujikiri.configurations import OutputConfig
+        cfg = OutputConfig(
+            format_name="myformat",
+            template=(
+                '{% extends "custombase.tpl" %}'
+            ),
+        )
+        buf = io.StringIO()
+        Generator(cfg, extra_dirs=[tmp_path]).generate(make_ir_module(), buf)
+        out = buf.getvalue()
+        assert "// CUSTOM BASE PROLOGUE" in out
+
+    def test_extra_dirs_skips_format_with_no_template(self, make_ir_module, tmp_path, luabridge3_output_config):
+        """A format in extra_dirs with no template is silently skipped (covers empty-template branch)."""
+        (tmp_path / "notpl.output.yml").write_text("format_name: notpl\n", encoding="utf-8")
+        buf = io.StringIO()
+        # Should render normally without crashing despite the no-template format in extra_dirs.
+        Generator(luabridge3_output_config, extra_dirs=[tmp_path]).generate(make_ir_module(), buf)
+        assert "register_testmod" in buf.getvalue()
+
+    def test_extra_dirs_skips_name_collision_with_builtin(self, make_ir_module, tmp_path, luabridge3_output_config):
+        """A format in extra_dirs whose name collides with a built-in is skipped (covers tpl_key-in-dict branch)."""
+        (tmp_path / "luabridge3.output.yml").write_text(
+            "format_name: luabridge3\ntemplate: '// IMPOSTOR'\n", encoding="utf-8"
+        )
+        buf = io.StringIO()
+        Generator(luabridge3_output_config, extra_dirs=[tmp_path]).generate(make_ir_module(), buf)
+        # Built-in luabridge3 template wins; impostor content must not appear.
+        assert "// IMPOSTOR" not in buf.getvalue()
+
+    def test_extra_dirs_skips_malformed_format_file(self, make_ir_module, tmp_path, luabridge3_output_config):
+        """A malformed .output.yml in extra_dirs is silently skipped (covers except branch)."""
+        (tmp_path / "bad.output.yml").write_text("{ invalid yaml: [", encoding="utf-8")
+        buf = io.StringIO()
+        Generator(luabridge3_output_config, extra_dirs=[tmp_path]).generate(make_ir_module(), buf)
+        assert "register_testmod" in buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
 # ItemFirstEnvironment.getattr fallback paths
 # ---------------------------------------------------------------------------
 

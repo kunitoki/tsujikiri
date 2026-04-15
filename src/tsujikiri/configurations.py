@@ -275,6 +275,7 @@ class OutputConfig:
     format_version: str = "1.0"
     description: str = ""
     language: str = ""  # target language, e.g. "cpp" or "lua"
+    extends: str = ""  # name of base format to inherit from (e.g. "luabridge3")
     type_mappings: Dict[str, str] = field(default_factory=dict)
     operator_mappings: Dict[str, str] = field(default_factory=dict)  # C++ operator → binding name
     unsupported_types: List[str] = field(default_factory=list)
@@ -576,6 +577,7 @@ def load_output_config(config_file: Path) -> OutputConfig:
         format_version=str(data.get("format_version", "1.0")),
         description=data.get("description", ""),
         language=data.get("language", ""),
+        extends=data.get("extends", "") or "",
         type_mappings=data.get("type_mappings", {}),
         operator_mappings=data.get("operator_mappings", {}),
         unsupported_types=data.get("unsupported_types", []),

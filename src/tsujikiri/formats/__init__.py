@@ -6,19 +6,23 @@ user-supplied extra directories.
 
 Usage::
 
-    from tsujikiri.formats import list_builtin_formats, resolve_format_path
+    from tsujikiri.formats import list_builtin_formats, resolve_format_path, apply_format_inheritance
     from tsujikiri.configurations import load_output_config
 
     path = resolve_format_path("luabridge3")                      # built-in
     path = resolve_format_path("myfmt", extra_dirs=[Path("/d")])  # extra dir
     path = resolve_format_path("/path/to/my.output.yml")          # file path
     config = load_output_config(path)
+    config = apply_format_inheritance(config, extra_dirs=[Path("/d")])
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional, Set
+
+if TYPE_CHECKING:
+    from tsujikiri.configurations import OutputConfig
 
 _FORMATS_DIR = Path(__file__).parent
 
@@ -68,3 +72,55 @@ def resolve_format_path(name_or_path: str, extra_dirs: Optional[List[Path]] = No
         f"Built-in formats: {available}. "
         f"Or provide an absolute/relative path to a .output.yml file."
     )
+
+
+def apply_format_inheritance(
+    config: "OutputConfig",
+    extra_dirs: Optional[List[Path]] = None,
+    _seen: Optional[Set[str]] = None,
+) -> "OutputConfig":
+    """Merge base format properties into *config* when ``extends`` is set.
+
+    Merging rules (child wins on collision):
+    - ``type_mappings``: base entries fill gaps not present in child.
+    - ``operator_mappings``: same.
+    - ``unsupported_types``: union; child entries come first, duplicates removed.
+    - ``language``: inherited from base when child's value is empty.
+    - ``template``: child's template is kept unchanged (should contain ``{% extends %}``.
+
+    Inheritance is resolved recursively so a chain A → B → C works correctly.
+    Cycles are detected and raise ``ValueError``.
+    """
+    if not config.extends:
+        return config
+
+    from tsujikiri.configurations import load_output_config
+
+    seen: Set[str] = _seen or set()
+    if config.format_name in seen:
+        raise ValueError(
+            f"Circular format inheritance detected: '{config.format_name}' is part of a cycle."
+        )
+    seen = seen | {config.format_name}
+
+    base_path = resolve_format_path(config.extends, extra_dirs=extra_dirs)
+    base = load_output_config(base_path)
+    base = apply_format_inheritance(base, extra_dirs=extra_dirs, _seen=seen)
+
+    merged_type_mappings = {**base.type_mappings, **config.type_mappings}
+    merged_operator_mappings = {**base.operator_mappings, **config.operator_mappings}
+
+    seen_types: Set[str] = set()
+    merged_unsupported: List[str] = []
+    for t in config.unsupported_types + base.unsupported_types:
+        if t not in seen_types:
+            seen_types.add(t)
+            merged_unsupported.append(t)
+
+    config.type_mappings = merged_type_mappings
+    config.operator_mappings = merged_operator_mappings
+    config.unsupported_types = merged_unsupported
+    if not config.language:
+        config.language = base.language
+
+    return config
