@@ -605,7 +605,10 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
                 args += [f"-isystem{cxx_include}"]
 
     index = cindex.Index.create()
-    tu = index.parse(str(source_path.absolute()), args=args)
+    # CXTranslationUnit_KeepGoing (0x200): continue past fatal "too many errors" stops.
+    # libclang 18 hits the error limit from cascading stdlib header failures and aborts
+    # before processing all namespaces in the translation unit.
+    tu = index.parse(str(source_path.absolute()), args=args, options=0x200)
 
     module = IRModule(name=module_name, namespaces=list(namespaces))
 
