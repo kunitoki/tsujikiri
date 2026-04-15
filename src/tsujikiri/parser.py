@@ -509,6 +509,15 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     return ir_class
 
 
+_CLANG_SEVERITY: dict[int, str] = {
+    0: "ignored",
+    1: "note",
+    2: "warning",
+    3: "error",
+    4: "fatal",
+}
+
+
 def _is_inline_namespace(cursor: "cindex.Cursor") -> bool:
     """Return True if this NAMESPACE cursor is declared as 'inline namespace ...'."""
     tokens = list(cursor.get_tokens())
@@ -569,10 +578,18 @@ def _iter_scope_decls(cursors, filter_prefixes: List[str], current_path: str = "
                 yield (cursor, current_path)
 
 
-def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_name: str) -> IRModule:
+def parse_translation_unit(
+    source: SourceConfig,
+    namespaces: List[str],
+    module_name: str,
+    *,
+    verbose: bool = False,
+) -> IRModule:
     """Parse a C++ translation unit and return a fully populated IRModule.
 
     No filtering is applied — all discovered entities are added with emit=True.
+    When *verbose* is True, all clang diagnostics are printed to stderr; errors
+    and fatals are always printed regardless of *verbose*.
     """
     source_path = Path(source.path)
     if not source_path.exists():
@@ -586,29 +603,43 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
     if "-x" not in args:
         args = ["-x", "c++"] + args
     # Ensure sysroot and C++ stdlib headers on darwin.
-    # libclang Python package bundles its own dylib but does not ship the system
-    # SDK or C++ stdlib headers.  We derive both from xcrun so that tsujikiri only
-    # requires Xcode / Command Line Tools — no separate LLVM installation needed.
-    if sys.platform == "darwin" and "-isysroot" not in args:
-        try:
-            sysroot = subprocess.check_output(
-                ["xcrun", "--show-sdk-path"], text=True, stderr=subprocess.DEVNULL
-            ).strip()
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            sysroot = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
-        if sysroot:
+    if sys.platform == "darwin":
+        if "-isysroot" not in args:
+            try:
+                sysroot = subprocess.check_output(
+                    ["xcrun", "--show-sdk-path"], text=True, stderr=subprocess.DEVNULL
+                ).strip()
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                sysroot = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
             args += ["-isysroot", sysroot]
-            # libclang 18 does not reliably pick up Apple's libc++ headers via
-            # -isysroot alone on all SDK versions; add the path explicitly.
-            cxx_include = Path(sysroot) / "usr" / "include" / "c++" / "v1"
-            if cxx_include.is_dir():
-                args += [f"-isystem{cxx_include}"]
+
+        # Point libclang at Xcode's clang resource directory so it uses the correct built-in headers (stdarg.h, stddef.h, …).
+        if "-resource-dir" not in args:
+            try:
+                resource_dir = subprocess.check_output(
+                    ["xcrun", "clang", "-print-resource-dir"], text=True, stderr=subprocess.DEVNULL
+                ).strip()
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                resource_dir = ""
+            if resource_dir and Path(resource_dir).is_dir():
+                args += ["-resource-dir", resource_dir]
+
+    if verbose:
+        print(f"[parse] {source_path}: args={args}", file=sys.stderr)
 
     index = cindex.Index.create()
     # CXTranslationUnit_KeepGoing (0x200): continue past fatal "too many errors" stops.
     # libclang 18 hits the error limit from cascading stdlib header failures and aborts
     # before processing all namespaces in the translation unit.
     tu = index.parse(str(source_path.absolute()), args=args, options=0x200)
+
+    # Print diagnostics: errors/fatals always, all diags when verbose.
+    for diag in tu.diagnostics:
+        if diag.severity >= 3 or verbose:
+            loc = diag.location
+            loc_str = f"{loc.file.name}:{loc.line}:{loc.column}" if loc.file else "<unknown>"
+            sev = _CLANG_SEVERITY.get(diag.severity, str(diag.severity))
+            print(f"[clang:{sev}] {loc_str}: {diag.spelling}", file=sys.stderr)
 
     module = IRModule(name=module_name, namespaces=list(namespaces))
 
@@ -666,5 +697,16 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
         module.class_by_name[ir_class.name] = ir_class
         if scope_path and scope_path not in module.namespaces:
             module.namespaces.append(scope_path)
+
+    if verbose:
+        ns_summary = ", ".join(module.namespaces) or "(global)"
+        print(
+            f"[parse] {source_path}: IR built — "
+            f"{len(module.classes)} class(es), "
+            f"{len(module.functions)} function(s), "
+            f"{len(module.enums)} enum(s) "
+            f"in namespaces [{ns_summary}]",
+            file=sys.stderr,
+        )
 
     return module

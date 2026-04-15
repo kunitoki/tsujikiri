@@ -198,6 +198,7 @@ def _process_sources(
     module_name: str,
     classname_filter: Optional[str],
     trace_stream: Optional[IO],
+    verbose: bool = False,
 ) -> tuple[IRModule, list[str]]:
     """Run parse → filter → attribute → transform for all sources, return merged module and includes."""
     fmt_override = input_config.format_overrides.get(output_config.format_name)
@@ -221,6 +222,7 @@ def _process_sources(
             entry.source,
             effective_filters.namespaces,
             module_name,
+            verbose=verbose,
         )
 
         if classname_filter:
@@ -229,6 +231,18 @@ def _process_sources(
                     ir_class.emit = False
 
         FilterEngine(effective_filters).apply(module)
+
+        if verbose:
+            suppressed_classes = [c.name for c in module.classes if not c.emit]
+            suppressed_fns = [f.name for f in module.functions if not f.emit]
+            suppressed_enums = [e.name for e in module.enums if not e.emit]
+            emitted_classes = [c.name for c in module.classes if c.emit]
+            emitted_fns = [f.name for f in module.functions if f.emit]
+            emitted_enums = [e.name for e in module.enums if e.emit]
+            print(f"[filter] emitted: classes={emitted_classes} functions={emitted_fns} enums={emitted_enums}", file=sys.stderr)
+            if suppressed_classes or suppressed_fns or suppressed_enums:
+                print(f"[filter] suppressed: classes={suppressed_classes} functions={suppressed_fns} enums={suppressed_enums}", file=sys.stderr)
+
         AttributeProcessor(input_config.attributes).apply(module)
 
         pipeline = build_pipeline_from_config(effective_transforms)
@@ -295,6 +309,7 @@ def main() -> None:
 
     merged, all_includes = _process_sources(
         input_config, source_entries, first_output_config, module_name, args.classname, trace_stream,
+        verbose=args.verbose,
     )
 
     # --- Inject declared functions from typesystem ---
@@ -394,6 +409,7 @@ def main() -> None:
             output_config = load_output_config(fmt_path)
             target_merged, target_includes = _process_sources(
                 input_config, source_entries, output_config, module_name, args.classname, trace_stream,
+                verbose=args.verbose,
             )
 
         fmt_override = input_config.format_overrides.get(output_config.format_name)

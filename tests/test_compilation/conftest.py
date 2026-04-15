@@ -22,7 +22,7 @@ def _load_module(config_file: Path, module_name: str):
     for entry in config.get_source_entries():
         effective = entry.filters if entry.filters is not None else config.filters
         effective_transforms = entry.transforms if entry.transforms is not None else config.transforms
-        mod = parse_translation_unit(entry.source, effective.namespaces, module_name)
+        mod = parse_translation_unit(entry.source, effective.namespaces, module_name, verbose=True)
         FilterEngine(effective).apply(mod)
         build_pipeline_from_config(effective_transforms).run(mod)
         modules.append(mod)
@@ -45,6 +45,7 @@ def compiled_module(compilation_input_config):
         entries[0].source,
         compilation_input_config.filters.namespaces,
         "combined",
+        verbose=True,
     )
     FilterEngine(compilation_input_config.filters).apply(module)
     return module

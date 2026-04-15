@@ -15,7 +15,7 @@ set(_include_parent "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(_gen_lb3 "${CMAKE_CURRENT_BINARY_DIR}/engine_luabridge3.cpp")
 add_custom_command(
     OUTPUT  "${_gen_lb3}"
-    COMMAND tsujikiri -i "${_input}" --target luabridge3 "${_gen_lb3}"
+    COMMAND tsujikiri -i "${_input}" --target luabridge3 "${_gen_lb3}" -v
     DEPENDS "${_input}" ${_headers} ${TSUJIKIRI_SOURCES}
     COMMENT "Generating LuaBridge3 bindings for engine..."
     VERBATIM)
@@ -27,7 +27,7 @@ target_link_libraries(test_engine_luabridge3 PRIVATE LuaBridge3::LuaBridge3)
 set(_gen_py "${CMAKE_CURRENT_BINARY_DIR}/engine_pybind11.cpp")
 add_custom_command(
     OUTPUT  "${_gen_py}"
-    COMMAND tsujikiri -i "${_input}" --target pybind11 "${_gen_py}"
+    COMMAND tsujikiri -i "${_input}" --target pybind11 "${_gen_py}" -v
     DEPENDS "${_input}" ${_headers} ${TSUJIKIRI_SOURCES}
     COMMENT "Generating pybind11 bindings for engine..."
     VERBATIM)
