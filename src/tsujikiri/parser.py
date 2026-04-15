@@ -7,6 +7,7 @@ Filtering happens in filters.py after the full IR is built.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -586,7 +587,14 @@ def parse_translation_unit(source: SourceConfig, namespaces: List[str], module_n
         args = ["-x", "c++"] + args
     # Ensure sysroot on darwin
     if sys.platform == "darwin" and "-isysroot" not in args:
-        args += ["-isysroot", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"]
+        try:
+            sysroot = subprocess.check_output(
+                ["xcrun", "--show-sdk-path"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            sysroot = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+        if sysroot:
+            args += ["-isysroot", sysroot]
 
     index = cindex.Index.create()
     tu = index.parse(str(source_path.absolute()), args=args)
