@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tsujikiri.generator_filters import camel_to_snake, code_at, param_pairs
+from tsujikiri.generator_filters import camel_to_snake, code_at, param_pairs, snake_to_camel
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +41,45 @@ class TestCamelToSnake:
 
     def test_class_name_style(self):
         assert camel_to_snake("MyClassName") == "my_class_name"
+
+
+# ---------------------------------------------------------------------------
+# snake_to_camel
+# ---------------------------------------------------------------------------
+
+class TestSnakeToCamel:
+    def test_simple_snake(self) -> None:
+        assert snake_to_camel("get_value") == "GetValue"
+
+    def test_uppercase_first_default(self) -> None:
+        assert snake_to_camel("my_class_name") == "MyClassName"
+
+    def test_lowercase_first(self) -> None:
+        assert snake_to_camel("get_value", uppercase_first=False) == "getValue"
+
+    def test_lowercase_first_multiple_words(self) -> None:
+        assert snake_to_camel("my_class_name", uppercase_first=False) == "myClassName"
+
+    def test_single_word_uppercase_first(self) -> None:
+        assert snake_to_camel("compute") == "Compute"
+
+    def test_single_word_lowercase_first(self) -> None:
+        assert snake_to_camel("compute", uppercase_first=False) == "compute"
+
+    def test_empty_string(self) -> None:
+        assert snake_to_camel("") == ""
+
+    def test_already_no_underscores(self) -> None:
+        assert snake_to_camel("value") == "Value"
+
+    def test_trailing_underscore(self) -> None:
+        assert snake_to_camel("get_value_") == "GetValue"
+
+    def test_leading_underscore(self) -> None:
+        assert snake_to_camel("_get_value") == "GetValue"
+
+    def test_multiple_consecutive_underscores(self) -> None:
+        assert snake_to_camel("get__value") == "GetValue"
 
 
 # ---------------------------------------------------------------------------

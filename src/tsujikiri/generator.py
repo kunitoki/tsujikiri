@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 import jinja2
 
 from tsujikiri.configurations import GenerationConfig, OutputConfig, TypesystemConfig
-from tsujikiri.generator_filters import camel_to_snake, code_at, param_pairs
+from tsujikiri.generator_filters import camel_to_snake, snake_to_camel, code_at, param_pairs
 from tsujikiri.ir import (
     IRClass,
     IREnum,
@@ -174,6 +174,7 @@ class Generator:
             "map_type": self._map_type,
             "param_pairs": param_pairs,
             "camel_to_snake": camel_to_snake,
+            "snake_to_camel": snake_to_camel,
             "code_at": code_at,
         })
 

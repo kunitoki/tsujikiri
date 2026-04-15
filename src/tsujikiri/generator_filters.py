@@ -17,6 +17,15 @@ def camel_to_snake(name: str) -> str:
     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
 
+def snake_to_camel(name: str, uppercase_first: bool = True) -> str:
+    """Convert snake_case to CamelCase for variable naming."""
+    components = name.split('_')
+    if uppercase_first:
+        return ''.join(x.title() for x in components)
+    else:
+        return components[0] + ''.join(x.title() for x in components[1:])
+
+
 def code_at(injections: List[Dict[str, Any]], position: str) -> str:
     """Jinja2 filter: return injected code snippets for a given position, joined by newlines.
 
