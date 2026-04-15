@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import tsujikiri.formats as tsujikiri_formats
 from tsujikiri.configurations import OutputConfig
-from tsujikiri.generator import Generator, ItemFirstEnvironment
+from tsujikiri.generator import Generator, ItemFirstEnvironment, _type_lookup_candidates
 from tsujikiri.ir import IRBase, IRClass, IRConstructor, IREnumValue, IRField, IRFunction, IRMethod, IRModule, IRParameter
 
 
@@ -818,3 +818,86 @@ class TestTypesystemGenerator:
         buf = io.StringIO()
         gen.generate(IRModule(name="test"), buf)
         assert buf.getvalue() == "0"
+
+
+# ---------------------------------------------------------------------------
+# _type_lookup_candidates
+# ---------------------------------------------------------------------------
+
+class TestTypeLookupCandidates:
+    def test_exact_type_returns_single_candidate(self) -> None:
+        assert _type_lookup_candidates("std::string") == ["std::string"]
+
+    def test_const_ref_expands_to_four_candidates(self) -> None:
+        result = _type_lookup_candidates("const std::string &")
+        assert result == ["const std::string &", "const std::string", "std::string &", "std::string"]
+
+    def test_ref_only_expands_to_two_candidates(self) -> None:
+        assert _type_lookup_candidates("std::string &") == ["std::string &", "std::string"]
+
+    def test_const_only_expands_to_two_candidates(self) -> None:
+        assert _type_lookup_candidates("const std::string") == ["const std::string", "std::string"]
+
+    def test_rvalue_ref_expands(self) -> None:
+        assert _type_lookup_candidates("std::string &&") == ["std::string &&", "std::string"]
+
+    def test_const_rvalue_ref_expands(self) -> None:
+        result = _type_lookup_candidates("const std::string &&")
+        assert result == ["const std::string &&", "const std::string", "std::string &&", "std::string"]
+
+    def test_pointer_type_no_fallback(self) -> None:
+        assert _type_lookup_candidates("char *") == ["char *"]
+
+    def test_const_pointer_type_no_fallback(self) -> None:
+        assert _type_lookup_candidates("const char *") == ["const char *"]
+
+    def test_pointer_to_pointer_no_fallback(self) -> None:
+        assert _type_lookup_candidates("char **") == ["char **"]
+
+
+# ---------------------------------------------------------------------------
+# _map_type — specificity-based fallback
+# ---------------------------------------------------------------------------
+
+class TestMapTypeSpecificityFallback:
+    def test_base_type_mapping_covers_const_ref(self) -> None:
+        cfg = OutputConfig(format_name="test", type_mappings={"std::string": "string"}, template="")
+        gen = Generator(cfg)
+        assert gen._map_type("const std::string &") == "string"
+
+    def test_base_type_mapping_covers_ref(self) -> None:
+        cfg = OutputConfig(format_name="test", type_mappings={"std::string": "string"}, template="")
+        gen = Generator(cfg)
+        assert gen._map_type("std::string &") == "string"
+
+    def test_base_type_mapping_covers_const(self) -> None:
+        cfg = OutputConfig(format_name="test", type_mappings={"std::string": "string"}, template="")
+        gen = Generator(cfg)
+        assert gen._map_type("const std::string") == "string"
+
+    def test_more_specific_mapping_wins_over_base(self) -> None:
+        cfg = OutputConfig(
+            format_name="test",
+            type_mappings={"std::string": "string", "const std::string &": "const_string_ref"},
+            template="",
+        )
+        gen = Generator(cfg)
+        assert gen._map_type("const std::string &") == "const_string_ref"
+        assert gen._map_type("std::string &") == "string"
+
+    def test_pointer_types_do_not_fall_back_to_base(self) -> None:
+        cfg = OutputConfig(format_name="test", type_mappings={"char": "char_mapped"}, template="")
+        gen = Generator(cfg)
+        assert gen._map_type("char *") == "char *"
+        assert gen._map_type("const char *") == "const char *"
+
+    def test_pointer_types_use_exact_mapping(self) -> None:
+        cfg = OutputConfig(
+            format_name="test",
+            type_mappings={"char *": "str", "const char *": "str"},
+            template="",
+        )
+        gen = Generator(cfg)
+        assert gen._map_type("char *") == "str"
+        assert gen._map_type("const char *") == "str"
+        assert gen._map_type("char") == "char"  # no mapping → unchanged

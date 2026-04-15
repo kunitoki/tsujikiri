@@ -52,6 +52,51 @@ class ItemFirstEnvironment(jinja2.Environment):
             return self.undefined(obj=obj, name=attribute)
 
 
+def _type_lookup_candidates(type_spelling: str) -> List[str]:
+    """Return type-spelling candidates ordered from most to least specific.
+
+    Reference qualifiers (``&``, ``&&``) and ``const`` are stripped to produce
+    fallback candidates so that a mapping for ``T`` also matches ``const T &``
+    unless a more-specific entry is present.
+
+    Pointer types (``*``) are never stripped: ``char``, ``char *`` and
+    ``const char *`` are semantically distinct and must be mapped individually.
+    """
+    s = type_spelling.strip()
+
+    # Pointers are distinct — no fallback
+    if "*" in s:
+        return [s]
+
+    has_const = s.startswith("const ")
+    if s.endswith(" &&"):
+        ref_len = 3
+    elif s.endswith(" &"):
+        ref_len = 2
+    else:
+        ref_len = 0
+
+    has_ref = ref_len > 0
+    if not has_const and not has_ref:
+        return [s]
+
+    candidates: List[str] = [s]
+    const_length = len("const ")
+
+    # Level 1: strip exactly one qualifier
+    if has_ref:
+        candidates.append(s[:-ref_len].strip())
+
+    if has_const:
+        candidates.append(s[const_length:].strip())
+
+    # Level 2: strip both qualifiers
+    if has_const and has_ref:
+        candidates.append(s[const_length:-ref_len].strip())
+
+    return candidates
+
+
 class Generator:
     def __init__(
         self,
@@ -557,9 +602,18 @@ class Generator:
     # ------------------------------------------------------------------
 
     def _map_type(self, type_spelling: str) -> str:
-        """Apply output-format type mappings, falling back to typesystem declarations."""
-        if type_spelling in self.cfg.type_mappings:
-            return self.cfg.type_mappings[type_spelling]
+        """Apply output-format type mappings, falling back to typesystem declarations.
+
+        Type mappings are resolved from most specific to least specific.  For
+        reference-qualified types (``&``, ``&&``) the lookup also tries
+        progressively stripped variants so that a mapping for ``std::string``
+        automatically covers ``const std::string &`` unless a more specific
+        entry exists.  Pointer types (``*``) are never stripped — ``char``,
+        ``char *`` and ``const char *`` remain distinct.
+        """
+        for candidate in _type_lookup_candidates(type_spelling):
+            if candidate in self.cfg.type_mappings:
+                return self.cfg.type_mappings[candidate]
         if self._typesystem:
             for pt in self._typesystem.primitive_types:
                 if pt.cpp_name == type_spelling:
