@@ -59,7 +59,7 @@ template: |
   {
     luabridge::getGlobalNamespace(L)
       .beginNamespace("{{ module_name }}")
-  {{ code_injections | code_at("beginning") }}
+  {{- code_injections | code_at("beginning") }}
   {%- endblock %}
   {%- block api_version_registration %}
   {%- if api_version %}
@@ -103,7 +103,7 @@ template: |
   {%- else %}
         .beginClass<{{ cls.qualified_name }}>("{{ cls.name }}")
   {%- endif %}
-  {{ cls.code_injections | code_at("beginning") }}
+  {{- cls.code_injections | code_at("beginning") }}
   {%- block class_constructors scoped %}
   {%- if not cls.force_abstract and cls.constructor_group.constructors %}
   {%- if cls.holder_type %}
@@ -223,11 +223,11 @@ template: |
   {%- endblock %}
   {%- endfor %}
   {%- endblock %}
-  {{ cls.code_injections | code_at("end") }}
+  {{- cls.code_injections | code_at("end") }}
         .endClass()
   {%- endblock %}
   {%- endfor %}
-  {{ code_injections | code_at("end") }}
+  {{- code_injections | code_at("end") }}
   {%- block epilogue %}
       .endNamespace();
   }

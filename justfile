@@ -32,6 +32,6 @@ publish version: typecheck stubs
 
 # Remove build artifacts.
 clean:
-    rm -rf dist build .venv src/*.egg-info
+    rm -rf dist build .venv src/*.egg-info src/**/__pycache__ tests/**/__pycache__
     rm -rf src/**/.pytest_cache .pytest_cache .mypy_cache .coverage htmlcov
-    rm -rf tests/test_compilation/_deps/ tests/test_compilation/**/build/
+    rm -rf tests/test_compilation/_deps tests/test_compilation/**/build

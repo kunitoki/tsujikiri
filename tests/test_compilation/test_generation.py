@@ -127,14 +127,19 @@ class TestGeoPybind11Generation:
 class TestEngineLuaBridge3Generation:
     """Fast generation tests for the engine multi-namespace scenario."""
 
-    def test_vec3_registered(self, engine_module, luabridge3_output_config):
-        assert '.beginClass<math::Vec3>("Vec3")' in _generate(engine_module, luabridge3_output_config)
+    def test_vec3_registered(self, engine_module, engine_luabridge3_generation, luabridge3_output_config):
+        out = _generate(engine_module, luabridge3_output_config, generation=engine_luabridge3_generation)
+        assert '.beginClass<math::Vec3>("Vec3")' in out
+        assert '"engine/math_types.hpp"' in out
 
-    def test_entity_registered(self, engine_module, luabridge3_output_config):
-        assert '.beginClass<engine::Entity>("Entity")' in _generate(engine_module, luabridge3_output_config)
+    def test_entity_registered(self, engine_module, engine_luabridge3_generation, luabridge3_output_config):
+        out = _generate(engine_module, luabridge3_output_config, generation=engine_luabridge3_generation)
+        assert '.beginClass<engine::Entity>("Entity")' in out
+        assert '"engine/entity.hpp"' in out
 
     def test_player_derives_entity(self, engine_module, luabridge3_output_config):
-        assert '.deriveClass<engine::Player, engine::Entity>("Player")' in _generate(engine_module, luabridge3_output_config)
+        out = _generate(engine_module, luabridge3_output_config)
+        assert '.deriveClass<engine::Player, engine::Entity>("Player")' in out
 
     def test_entity_type_enum(self, engine_module, luabridge3_output_config):
         out = _generate(engine_module, luabridge3_output_config)
@@ -143,8 +148,8 @@ class TestEngineLuaBridge3Generation:
         assert "engine::EntityType::Dynamic" in out
 
     def test_cross_namespace_method(self, engine_module, luabridge3_output_config):
-        # setPosition takes math::Vec3 — verify it appears in binding code
-        assert "&engine::Entity::setPosition" in _generate(engine_module, luabridge3_output_config)
+        out = _generate(engine_module, luabridge3_output_config)
+        assert "&engine::Entity::setPosition" in out
 
     def test_free_functions_dot_cross(self, engine_module, luabridge3_output_config):
         out = _generate(engine_module, luabridge3_output_config)

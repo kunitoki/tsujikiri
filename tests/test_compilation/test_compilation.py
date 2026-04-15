@@ -103,6 +103,7 @@ def _cmake_configure(scenario: str) -> bool:
         "-B", str(build_dir),
         f"-DFETCHCONTENT_BASE_DIR={_SHARED_DEPS_DIR}",
         "--no-warn-unused-cli",
+        "-Wno-dev",
     ]
     # Visual Studio (multi-config) generator: specify 64-bit architecture and
     # skip CMAKE_BUILD_TYPE (it is ignored by multi-config generators anyway).

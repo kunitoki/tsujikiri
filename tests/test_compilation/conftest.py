@@ -68,6 +68,20 @@ def engine_module():
     return _load_module(HERE / "engine" / "engine.input.yml", "engine")
 
 
+@pytest.fixture(scope="module")
+def engine_luabridge3_generation():
+    config = load_input_config(HERE / "engine" / "engine.input.yml")
+    override = config.format_overrides.get("luabridge3")
+    return override.generation if override else None
+
+
+@pytest.fixture(scope="module")
+def engine_pybind11_generation():
+    config = load_input_config(HERE / "engine" / "engine.input.yml")
+    override = config.format_overrides.get("pybind11")
+    return override.generation if override else None
+
+
 # ---------------------------------------------------------------------------
 # audio: single header, 3-level hierarchy (AudioNode → AudioEffect → Reverb/Delay)
 # ---------------------------------------------------------------------------
