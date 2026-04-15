@@ -1,6 +1,6 @@
 source:
   path: "entity.hpp"
-  parse_args: ["-std=c++17"]
+  parse_args: ["-std=c++20"]
 
 filters:
   namespaces: ["math", "engine"]

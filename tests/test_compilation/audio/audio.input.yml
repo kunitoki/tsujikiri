@@ -1,6 +1,6 @@
 source:
   path: "audio.hpp"
-  parse_args: ["-std=c++17"]
+  parse_args: ["-std=c++23"]
 
 filters:
   namespaces: ["audio"]
