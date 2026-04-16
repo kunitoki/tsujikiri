@@ -2,7 +2,7 @@ import io
 import jinja2
 from _typeshed import Incomplete
 from pathlib import Path
-from tsujikiri.configurations import GenerationConfig as GenerationConfig, OutputConfig as OutputConfig, TypesystemConfig as TypesystemConfig
+from tsujikiri.configurations import GenerationConfig as GenerationConfig, OutputConfig as OutputConfig, TypesystemConfig as TypesystemConfig, load_output_config as load_output_config
 from tsujikiri.generator_filters import camel_to_snake as camel_to_snake, code_at as code_at, param_pairs as param_pairs, snake_to_camel as snake_to_camel
 from tsujikiri.ir import IRClass as IRClass, IREnum as IREnum, IRFunction as IRFunction, IRMethod as IRMethod, IRModule as IRModule
 from typing import Any

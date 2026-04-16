@@ -482,6 +482,79 @@ class TestFormatLevelInheritance:
         Generator(luabridge3_output_config, extra_dirs=[tmp_path]).generate(make_ir_module(), buf)
         assert "register_testmod" in buf.getvalue()
 
+    def test_chain_extends_two_custom_levels(self, make_ir_module, tmp_path):
+        """Chain: builtin luabridge3 → mid (extra_dir) → top (current format)."""
+        mid_tpl_file = tmp_path / "mid.output.tpl"
+        mid_tpl_file.write_text(
+            '{% extends "luabridge3.tpl" %}'
+            '{% block prologue %}// MID\n{% endblock %}',
+            encoding="utf-8",
+        )
+        (tmp_path / "mid.output.yml").write_text(
+            "format_name: mid\nlanguage: lua\ntemplate_file: mid.output.tpl\n",
+            encoding="utf-8",
+        )
+        top_tpl = (
+            '{% extends "mid.tpl" %}'
+            '{% block prologue %}// TOP\n{% endblock %}'
+        )
+        from tsujikiri.configurations import OutputConfig
+        top_cfg = OutputConfig(format_name="top", language="lua", template=top_tpl)
+        buf = io.StringIO()
+        Generator(top_cfg, extra_dirs=[tmp_path]).generate(make_ir_module(), buf)
+        assert "// TOP" in buf.getvalue()
+        assert "// MID" not in buf.getvalue()
+
+    def test_chain_extends_with_template_extends_override(self, make_ir_module, tmp_path):
+        """Full chain: builtin → mid → top → __override__ via template_extends."""
+        mid_tpl_file = tmp_path / "mid.output.tpl"
+        mid_tpl_file.write_text(
+            '{% extends "luabridge3.tpl" %}'
+            '{% block prologue %}// MID\n{% endblock %}',
+            encoding="utf-8",
+        )
+        (tmp_path / "mid.output.yml").write_text(
+            "format_name: mid\nlanguage: lua\ntemplate_file: mid.output.tpl\n",
+            encoding="utf-8",
+        )
+        top_tpl_file = tmp_path / "top.output.tpl"
+        top_tpl_file.write_text(
+            '{% extends "mid.tpl" %}'
+            '{% block prologue %}// TOP\n{% endblock %}',
+            encoding="utf-8",
+        )
+        (tmp_path / "top.output.yml").write_text(
+            "format_name: top\nlanguage: lua\ntemplate_file: top.output.tpl\n",
+            encoding="utf-8",
+        )
+        top_tpl = top_tpl_file.read_text(encoding="utf-8")
+        from tsujikiri.configurations import OutputConfig
+        top_cfg = OutputConfig(format_name="top", language="lua", template=top_tpl)
+        override = (
+            '{% extends "top.tpl" %}'
+            '{% block prologue %}// OVERRIDE\n{% endblock %}'
+        )
+        buf = io.StringIO()
+        Generator(top_cfg, extra_dirs=[tmp_path], template_extends=override).generate(make_ir_module(), buf)
+        assert "// OVERRIDE" in buf.getvalue()
+        assert "// TOP" not in buf.getvalue()
+
+    def test_implicit_template_for_extends_only_format(self, make_ir_module, tmp_path):
+        """A format with extends: but no template auto-generates {% extends 'base.tpl' %}."""
+        (tmp_path / "passthrough.output.yml").write_text(
+            "format_name: passthrough\nextends: luabridge3\n",
+            encoding="utf-8",
+        )
+        override = (
+            '{% extends "passthrough.tpl" %}'
+            '{% block prologue %}// PT\n{% endblock %}'
+        )
+        from tsujikiri.configurations import OutputConfig
+        pt_cfg = OutputConfig(format_name="passthrough", template="")
+        buf = io.StringIO()
+        Generator(pt_cfg, extra_dirs=[tmp_path], template_extends=override).generate(make_ir_module(), buf)
+        assert "// PT" in buf.getvalue()
+
 
 # ---------------------------------------------------------------------------
 # ItemFirstEnvironment.getattr fallback paths
@@ -511,7 +584,7 @@ class TestItemFirstEnvironment:
 class TestBrokenFormatFile:
     def test_load_output_config_exception_silently_ignored(self, make_ir_module, luabridge3_output_config):
         buf = io.StringIO()
-        with patch("tsujikiri.configurations.load_output_config", side_effect=Exception("bad yml")):
+        with patch("tsujikiri.generator.load_output_config", side_effect=Exception("bad yml")):
             Generator(luabridge3_output_config).generate(make_ir_module(), buf)
         assert buf.getvalue()
 
@@ -669,7 +742,7 @@ class TestFormatScanNoTemplate:
         mock_dir.glob.return_value = [no_tpl_file] + real_files
 
         buf = io.StringIO()
-        with patch("tsujikiri.formats._FORMATS_DIR", mock_dir):
+        with patch("tsujikiri.generator._FORMATS_DIR", mock_dir):
             Generator(luabridge3_output_config).generate(make_ir_module(), buf)
         assert buf.getvalue()
 

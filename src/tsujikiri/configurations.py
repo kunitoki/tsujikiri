@@ -220,6 +220,9 @@ class FormatOverrideConfig:
 
     - ``template_extends``: inline Jinja2 child template using ``{% extends %}``
       to customise the format's single-template output via block overrides.
+    - ``template_extends_file``: path to an external Jinja2 child template file;
+      takes precedence over ``template_extends`` when non-empty.  Relative paths
+      are resolved relative to the input YAML file's directory.
     - ``unsupported_types``: additional types to treat as unsupported.
     - ``filters``: if set, *replaces* the effective per-source/top-level filters
       when generating for this format (highest-priority filter override).
@@ -230,6 +233,7 @@ class FormatOverrideConfig:
       non-empty.
     """
     template_extends: str = ""  # inline child template for single-template system
+    template_extends_file: str = ""  # external file path; takes precedence over template_extends
     unsupported_types: List[str] = field(default_factory=list)
     filters: Optional[FilterConfig] = None
     transforms: Optional[List[TransformSpec]] = None
@@ -537,17 +541,25 @@ def load_input_config(config_file: Path) -> InputConfig:
 
     # --- Format overrides ---
     fmt_overrides_raw = data.get("format_overrides", {})
-    format_overrides: Dict[str, FormatOverrideConfig] = {
-        fmt_name: FormatOverrideConfig(
-            template_extends=override_raw.get("template_extends", "") or "",
+    format_overrides: Dict[str, FormatOverrideConfig] = {}
+    for fmt_name, override_raw in fmt_overrides_raw.items():
+        ov_filters, ov_transforms, ov_generation = _parse_optional_overrides(override_raw)
+        tef_path_str = override_raw.get("template_extends_file", "") or ""
+        ov_template_extends = override_raw.get("template_extends", "") or ""
+        if tef_path_str:
+            tef_path = Path(tef_path_str)
+            if not tef_path.is_absolute():
+                tef_path = config_dir / tef_path
+            with open(tef_path, "r", encoding="utf-8") as _tf:
+                ov_template_extends = _tf.read()
+        format_overrides[fmt_name] = FormatOverrideConfig(
+            template_extends=ov_template_extends,
+            template_extends_file=tef_path_str,
             unsupported_types=override_raw.get("unsupported_types", []),
-            filters=filters,
-            transforms=transforms,
-            generation=generation,
+            filters=ov_filters,
+            transforms=ov_transforms,
+            generation=ov_generation,
         )
-        for fmt_name, override_raw in fmt_overrides_raw.items()
-        for filters, transforms, generation in [_parse_optional_overrides(override_raw)]
-    }
 
     # --- Typesystem ---
     ts_raw = data.get("typesystem", {})

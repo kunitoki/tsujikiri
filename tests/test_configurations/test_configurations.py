@@ -317,6 +317,67 @@ class TestSystemIncludePaths:
         assert cfg.system_include_paths == []
 
 
+class TestFormatOverrideTemplateExtendsFile:
+    def test_template_extends_file_loads_content(self, tmp_path: Path) -> None:
+        tpl_file = tmp_path / "override.tpl"
+        tpl_file.write_text('{% extends "luabridge3.tpl" %}', encoding="utf-8")
+        inp = tmp_path / "x.input.yml"
+        inp.write_text(
+            "source:\n  path: x.h\n"
+            "format_overrides:\n"
+            "  luabridge3:\n"
+            "    template_extends_file: override.tpl\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(inp)
+        override = cfg.format_overrides["luabridge3"]
+        assert '{% extends "luabridge3.tpl" %}' in override.template_extends
+
+    def test_template_extends_file_absolute_path(self, tmp_path: Path) -> None:
+        tpl_file = tmp_path / "abs.tpl"
+        tpl_file.write_text("// ABSOLUTE", encoding="utf-8")
+        inp = tmp_path / "y.input.yml"
+        inp.write_text(
+            f"source:\n  path: x.h\n"
+            f"format_overrides:\n"
+            f"  luabridge3:\n"
+            f"    template_extends_file: {tpl_file}\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(inp)
+        assert "// ABSOLUTE" in cfg.format_overrides["luabridge3"].template_extends
+
+    def test_template_extends_file_overrides_inline(self, tmp_path: Path) -> None:
+        tpl_file = tmp_path / "file.tpl"
+        tpl_file.write_text("// FROM FILE", encoding="utf-8")
+        inp = tmp_path / "z.input.yml"
+        inp.write_text(
+            "source:\n  path: x.h\n"
+            "format_overrides:\n"
+            "  luabridge3:\n"
+            "    template_extends: '// INLINE'\n"
+            "    template_extends_file: file.tpl\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(inp)
+        assert "// FROM FILE" in cfg.format_overrides["luabridge3"].template_extends
+        assert "// INLINE" not in cfg.format_overrides["luabridge3"].template_extends
+
+    def test_template_extends_file_field_stored(self, tmp_path: Path) -> None:
+        tpl_file = tmp_path / "stored.tpl"
+        tpl_file.write_text("x", encoding="utf-8")
+        inp = tmp_path / "s.input.yml"
+        inp.write_text(
+            "source:\n  path: x.h\n"
+            "format_overrides:\n"
+            "  luabridge3:\n"
+            "    template_extends_file: stored.tpl\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(inp)
+        assert cfg.format_overrides["luabridge3"].template_extends_file == "stored.tpl"
+
+
 class TestGetSourceEntries:
     def test_single_source_normalised_to_list(self):
         cfg = InputConfig(source=SourceConfig(path="foo.hpp"))

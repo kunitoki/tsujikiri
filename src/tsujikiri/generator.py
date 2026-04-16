@@ -24,7 +24,8 @@ from typing import Any, Dict, List, Optional
 
 import jinja2
 
-from tsujikiri.configurations import GenerationConfig, OutputConfig, TypesystemConfig
+from tsujikiri.configurations import GenerationConfig, OutputConfig, TypesystemConfig, load_output_config
+from tsujikiri.formats import _FORMATS_DIR
 from tsujikiri.generator_filters import camel_to_snake, snake_to_camel, code_at, param_pairs
 from tsujikiri.ir import (
     IRClass,
@@ -127,9 +128,6 @@ class Generator:
 
     def generate_from_template(self, module: IRModule, out: io.TextIOBase, api_version: str = "") -> None:
         """Render the format's single Jinja2 template with full IR context."""
-        from tsujikiri.configurations import load_output_config
-        from tsujikiri.formats import _FORMATS_DIR
-
         ctx = self._build_ir_context(module, api_version)
 
         # Build a DictLoader with all available format templates so that
@@ -145,13 +143,18 @@ class Generator:
 
         # Also load templates from extra_dirs so that custom formats can extend
         # each other via {% extends "customfmt.tpl" %}.
+        # If a format has no template but declares ``extends``, synthesise an
+        # implicit pass-through so it still participates in the DictLoader chain.
         for d in self.extra_dirs:
             for fmt_file in d.glob("*.output.yml"):
                 try:
                     cfg = load_output_config(fmt_file)
                     tpl_key = f"{cfg.format_name}.tpl"
-                    if cfg.template and tpl_key not in dict_templates:
-                        dict_templates[tpl_key] = cfg.template
+                    tpl_body = cfg.template
+                    if not tpl_body and cfg.extends:
+                        tpl_body = f'{{% extends "{cfg.extends}.tpl" %}}'
+                    if tpl_body and tpl_key not in dict_templates:
+                        dict_templates[tpl_key] = tpl_body
                 except Exception:
                     pass
 
