@@ -16,4 +16,5 @@ endif()
 
 file(GLOB_RECURSE TSUJIKIRI_SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/../../../src/**/*.py"
-    "${CMAKE_CURRENT_LIST_DIR}/../../../src/**/*.yml")
+    "${CMAKE_CURRENT_LIST_DIR}/../../../src/**/*.yml"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../src/**/*.tpl")

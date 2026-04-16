@@ -116,6 +116,30 @@ class TestOutputConfigLoading:
         cfg = load_output_config(yml)
         assert cfg.language == ""
 
+    def test_template_file_relative_path(self, tmp_path):
+        tpl = tmp_path / "my.tpl"
+        tpl.write_text("TEMPLATE_CONTENT\n", encoding="utf-8")
+        yml = tmp_path / "test.output.yml"
+        yml.write_text("format_name: test\ntemplate_file: my.tpl\n", encoding="utf-8")
+        cfg = load_output_config(yml)
+        assert cfg.template == "TEMPLATE_CONTENT\n"
+
+    def test_template_file_absolute_path(self, tmp_path):
+        tpl = tmp_path / "abs.tpl"
+        tpl.write_text("ABS_CONTENT\n", encoding="utf-8")
+        yml = tmp_path / "test.output.yml"
+        yml.write_text(f"format_name: test\ntemplate_file: {tpl}\n", encoding="utf-8")
+        cfg = load_output_config(yml)
+        assert cfg.template == "ABS_CONTENT\n"
+
+    def test_template_file_overrides_inline_template(self, tmp_path):
+        tpl = tmp_path / "override.tpl"
+        tpl.write_text("FROM_FILE\n", encoding="utf-8")
+        yml = tmp_path / "test.output.yml"
+        yml.write_text("format_name: test\ntemplate: |\n  INLINE\ntemplate_file: override.tpl\n", encoding="utf-8")
+        cfg = load_output_config(yml)
+        assert cfg.template == "FROM_FILE\n"
+
     def test_source_config_defaults(self):
         sc = SourceConfig(path="foo.hpp")
         assert sc.parse_args == []
@@ -291,6 +315,67 @@ class TestSystemIncludePaths:
     def test_system_include_paths_defaults_empty(self) -> None:
         cfg = SourceConfig(path="foo.hpp")
         assert cfg.system_include_paths == []
+
+
+class TestFormatOverrideTemplateExtendsFile:
+    def test_template_extends_file_loads_content(self, tmp_path: Path) -> None:
+        tpl_file = tmp_path / "override.tpl"
+        tpl_file.write_text('{% extends "luabridge3.tpl" %}', encoding="utf-8")
+        inp = tmp_path / "x.input.yml"
+        inp.write_text(
+            "source:\n  path: x.h\n"
+            "format_overrides:\n"
+            "  luabridge3:\n"
+            "    template_extends_file: override.tpl\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(inp)
+        override = cfg.format_overrides["luabridge3"]
+        assert '{% extends "luabridge3.tpl" %}' in override.template_extends
+
+    def test_template_extends_file_absolute_path(self, tmp_path: Path) -> None:
+        tpl_file = tmp_path / "abs.tpl"
+        tpl_file.write_text("// ABSOLUTE", encoding="utf-8")
+        inp = tmp_path / "y.input.yml"
+        inp.write_text(
+            f"source:\n  path: x.h\n"
+            f"format_overrides:\n"
+            f"  luabridge3:\n"
+            f"    template_extends_file: {tpl_file}\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(inp)
+        assert "// ABSOLUTE" in cfg.format_overrides["luabridge3"].template_extends
+
+    def test_template_extends_file_overrides_inline(self, tmp_path: Path) -> None:
+        tpl_file = tmp_path / "file.tpl"
+        tpl_file.write_text("// FROM FILE", encoding="utf-8")
+        inp = tmp_path / "z.input.yml"
+        inp.write_text(
+            "source:\n  path: x.h\n"
+            "format_overrides:\n"
+            "  luabridge3:\n"
+            "    template_extends: '// INLINE'\n"
+            "    template_extends_file: file.tpl\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(inp)
+        assert "// FROM FILE" in cfg.format_overrides["luabridge3"].template_extends
+        assert "// INLINE" not in cfg.format_overrides["luabridge3"].template_extends
+
+    def test_template_extends_file_field_stored(self, tmp_path: Path) -> None:
+        tpl_file = tmp_path / "stored.tpl"
+        tpl_file.write_text("x", encoding="utf-8")
+        inp = tmp_path / "s.input.yml"
+        inp.write_text(
+            "source:\n  path: x.h\n"
+            "format_overrides:\n"
+            "  luabridge3:\n"
+            "    template_extends_file: stored.tpl\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(inp)
+        assert cfg.format_overrides["luabridge3"].template_extends_file == "stored.tpl"
 
 
 class TestGetSourceEntries:

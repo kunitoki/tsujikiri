@@ -1,10 +1,10 @@
 """Generate binding code from an IRModule using a single Jinja2 template.
 
 Each output format defines a ``template:`` key in its ``.output.yml`` file
-containing a full Jinja2 template with named ``{% block %}`` tags.  Users
-can extend a built-in format template using standard Jinja2 template
-inheritance (``{% extends "luabridge3.tpl" %}``) and override specific
-blocks.
+or a ``template_file:`` key referencing an external file containing a full
+Jinja2 template with named ``{% block %}`` tags.  Users can extend a built-in
+format template using standard Jinja2 template inheritance 
+(``{% extends "luabridge3.tpl" %}``) and override specific blocks.
 
 The complete IR is serialised into a plain-data context dict before
 rendering, so templates iterate over the data themselves rather than
@@ -24,8 +24,9 @@ from typing import Any, Dict, List, Optional
 
 import jinja2
 
-from tsujikiri.configurations import GenerationConfig, OutputConfig, TypesystemConfig
-from tsujikiri.generator_filters import camel_to_snake, code_at, param_pairs
+from tsujikiri.configurations import GenerationConfig, OutputConfig, TypesystemConfig, load_output_config
+from tsujikiri.formats import _FORMATS_DIR
+from tsujikiri.generator_filters import camel_to_snake, snake_to_camel, code_at, param_pairs
 from tsujikiri.ir import (
     IRClass,
     IREnum,
@@ -50,6 +51,51 @@ class ItemFirstEnvironment(jinja2.Environment):
             return getattr(obj, attribute)
         except AttributeError:
             return self.undefined(obj=obj, name=attribute)
+
+
+def _type_lookup_candidates(type_spelling: str) -> List[str]:
+    """Return type-spelling candidates ordered from most to least specific.
+
+    Reference qualifiers (``&``, ``&&``) and ``const`` are stripped to produce
+    fallback candidates so that a mapping for ``T`` also matches ``const T &``
+    unless a more-specific entry is present.
+
+    Pointer types (``*``) are never stripped: ``char``, ``char *`` and
+    ``const char *`` are semantically distinct and must be mapped individually.
+    """
+    s = type_spelling.strip()
+
+    # Pointers are distinct — no fallback
+    if "*" in s:
+        return [s]
+
+    has_const = s.startswith("const ")
+    if s.endswith(" &&"):
+        ref_len = 3
+    elif s.endswith(" &"):
+        ref_len = 2
+    else:
+        ref_len = 0
+
+    has_ref = ref_len > 0
+    if not has_const and not has_ref:
+        return [s]
+
+    candidates: List[str] = [s]
+    const_length = len("const ")
+
+    # Level 1: strip exactly one qualifier
+    if has_ref:
+        candidates.append(s[:-ref_len].strip())
+
+    if has_const:
+        candidates.append(s[const_length:].strip())
+
+    # Level 2: strip both qualifiers
+    if has_const and has_ref:
+        candidates.append(s[const_length:-ref_len].strip())
+
+    return candidates
 
 
 class Generator:
@@ -82,9 +128,6 @@ class Generator:
 
     def generate_from_template(self, module: IRModule, out: io.TextIOBase, api_version: str = "") -> None:
         """Render the format's single Jinja2 template with full IR context."""
-        from tsujikiri.configurations import load_output_config
-        from tsujikiri.formats import _FORMATS_DIR
-
         ctx = self._build_ir_context(module, api_version)
 
         # Build a DictLoader with all available format templates so that
@@ -100,13 +143,18 @@ class Generator:
 
         # Also load templates from extra_dirs so that custom formats can extend
         # each other via {% extends "customfmt.tpl" %}.
+        # If a format has no template but declares ``extends``, synthesise an
+        # implicit pass-through so it still participates in the DictLoader chain.
         for d in self.extra_dirs:
             for fmt_file in d.glob("*.output.yml"):
                 try:
                     cfg = load_output_config(fmt_file)
                     tpl_key = f"{cfg.format_name}.tpl"
-                    if cfg.template and tpl_key not in dict_templates:
-                        dict_templates[tpl_key] = cfg.template
+                    tpl_body = cfg.template
+                    if not tpl_body and cfg.extends:
+                        tpl_body = f'{{% extends "{cfg.extends}.tpl" %}}'
+                    if tpl_body and tpl_key not in dict_templates:
+                        dict_templates[tpl_key] = tpl_body
                 except Exception:
                     pass
 
@@ -129,6 +177,7 @@ class Generator:
             "map_type": self._map_type,
             "param_pairs": param_pairs,
             "camel_to_snake": camel_to_snake,
+            "snake_to_camel": snake_to_camel,
             "code_at": code_at,
         })
 
@@ -557,9 +606,18 @@ class Generator:
     # ------------------------------------------------------------------
 
     def _map_type(self, type_spelling: str) -> str:
-        """Apply output-format type mappings, falling back to typesystem declarations."""
-        if type_spelling in self.cfg.type_mappings:
-            return self.cfg.type_mappings[type_spelling]
+        """Apply output-format type mappings, falling back to typesystem declarations.
+
+        Type mappings are resolved from most specific to least specific.  For
+        reference-qualified types (``&``, ``&&``) the lookup also tries
+        progressively stripped variants so that a mapping for ``std::string``
+        automatically covers ``const std::string &`` unless a more specific
+        entry exists.  Pointer types (``*``) are never stripped — ``char``,
+        ``char *`` and ``const char *`` remain distinct.
+        """
+        for candidate in _type_lookup_candidates(type_spelling):
+            if candidate in self.cfg.type_mappings:
+                return self.cfg.type_mappings[candidate]
         if self._typesystem:
             for pt in self._typesystem.primitive_types:
                 if pt.cpp_name == type_spelling:
