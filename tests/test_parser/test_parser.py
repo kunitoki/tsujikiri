@@ -1227,3 +1227,51 @@ class TestParseTranslationUnitPlatformBranches:
                 cmd = call_args[0][0]
                 assert "-print-resource-dir" not in cmd, "xcrun for resource-dir must not be called"
         assert module is not None
+
+    def test_darwin_resource_dir_appended_when_xcrun_returns_existing_dir(self, tmp_path: Path) -> None:
+        """Branch 624->625: xcrun returns existing dir path — appended to args."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
+        with patch("tsujikiri.parser.sys") as mock_sys, \
+             patch("tsujikiri.parser.subprocess.check_output", return_value=str(tmp_path)):
+            mock_sys.platform = "darwin"
+            module = parse_translation_unit(src, [], "resource_dir_valid")
+        assert module is not None
+
+    def test_darwin_resource_dir_skipped_when_xcrun_returns_nonexistent_path(self, tmp_path: Path) -> None:
+        """Branch 624->end: xcrun returns path that is not a dir — resource-dir not appended."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
+        nonexistent = str(tmp_path / "no_such_dir")
+        with patch("tsujikiri.parser.sys") as mock_sys, \
+             patch("tsujikiri.parser.subprocess.check_output", return_value=nonexistent):
+            mock_sys.platform = "darwin"
+            module = parse_translation_unit(src, [], "resource_dir_nonexistent")
+        assert module is not None
+
+    def test_darwin_resource_dir_skipped_when_xcrun_raises_file_not_found(self, tmp_path: Path) -> None:
+        """Branch 622->624: xcrun raises FileNotFoundError — resource_dir empty, not appended."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
+        with patch("tsujikiri.parser.sys") as mock_sys, \
+             patch("tsujikiri.parser.subprocess.check_output", side_effect=FileNotFoundError):
+            mock_sys.platform = "darwin"
+            module = parse_translation_unit(src, [], "resource_dir_fnf")
+        assert module is not None
+
+    def test_darwin_resource_dir_already_in_args_skips_block(self, tmp_path: Path) -> None:
+        """Branch 617->627 on darwin: '-resource-dir' already in parse_args — entire resource-dir block skipped."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/", "-resource-dir", str(tmp_path)])
+        with patch("tsujikiri.parser.sys") as mock_sys, \
+             patch("tsujikiri.parser.subprocess.check_output") as mock_sub:
+            mock_sys.platform = "darwin"
+            module = parse_translation_unit(src, [], "resource_dir_preset_on_darwin")
+            for call_args in mock_sub.call_args_list:
+                cmd = call_args[0][0]
+                assert "-print-resource-dir" not in cmd, "xcrun for resource-dir must not be called"
+        assert module is not None
