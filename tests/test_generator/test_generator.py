@@ -765,6 +765,95 @@ class TestNoCfgTemplateWithExtends:
 
 
 # ---------------------------------------------------------------------------
+# custom_data template context
+# ---------------------------------------------------------------------------
+
+class TestCustomData:
+    def _cfg(self, template: str) -> OutputConfig:
+        return OutputConfig(
+            format_name="test", format_version="1", description="", template=template,
+        )
+
+    def _mod(self) -> IRModule:
+        return IRModule(name="m")
+
+    def test_custom_data_empty_by_default(self):
+        cfg = self._cfg("{{ custom_data }}")
+        buf = io.StringIO()
+        Generator(cfg).generate(self._mod(), buf)
+        assert buf.getvalue() == "{}"
+
+    def test_custom_data_scalar_int(self):
+        cfg = self._cfg("{{ custom_data.xyz }}")
+        buf = io.StringIO()
+        Generator(cfg, custom_data={"xyz": 1}).generate(self._mod(), buf)
+        assert buf.getvalue() == "1"
+
+    def test_custom_data_scalar_float(self):
+        cfg = self._cfg("{{ custom_data.ratio }}")
+        buf = io.StringIO()
+        Generator(cfg, custom_data={"ratio": 42.1337}).generate(self._mod(), buf)
+        assert "42.1337" in buf.getvalue()
+
+    def test_custom_data_scalar_bool(self):
+        cfg = self._cfg("{{ custom_data.flag }}")
+        buf = io.StringIO()
+        Generator(cfg, custom_data={"flag": True}).generate(self._mod(), buf)
+        assert buf.getvalue() == "True"
+
+    def test_custom_data_scalar_string(self):
+        cfg = self._cfg("{{ custom_data.label }}")
+        buf = io.StringIO()
+        Generator(cfg, custom_data={"label": "hello"}).generate(self._mod(), buf)
+        assert buf.getvalue() == "hello"
+
+    def test_custom_data_list_index(self):
+        cfg = self._cfg("{{ custom_data.abc[1] }}")
+        buf = io.StringIO()
+        Generator(cfg, custom_data={"abc": ["a", "b", "c"]}).generate(self._mod(), buf)
+        assert buf.getvalue() == "b"
+
+    def test_custom_data_list_with_filter(self):
+        cfg = self._cfg("{{ custom_data.abc[0] | camel_to_snake }}")
+        buf = io.StringIO()
+        Generator(cfg, custom_data={"abc": ["camelCaseValue", "b"]}).generate(self._mod(), buf)
+        assert buf.getvalue() == "camel_case_value"
+
+    def test_custom_data_nested_dict(self):
+        cfg = self._cfg("{{ custom_data.nested.x }}")
+        buf = io.StringIO()
+        Generator(cfg, custom_data={"nested": {"x": 99}}).generate(self._mod(), buf)
+        assert buf.getvalue() == "99"
+
+    def test_custom_data_none_treated_as_empty(self):
+        cfg = self._cfg("{{ custom_data }}")
+        buf = io.StringIO()
+        Generator(cfg, custom_data=None).generate(self._mod(), buf)
+        assert buf.getvalue() == "{}"
+
+    def test_custom_data_full_example(self):
+        template = (
+            "{{ custom_data.xyz }},"
+            "{{ custom_data.abc[1] | camel_to_snake }},"
+            "{{ custom_data.something_else }},"
+            "{{ custom_data.something_new }}"
+        )
+        cfg = self._cfg(template)
+        buf = io.StringIO()
+        Generator(cfg, custom_data={
+            "xyz": 1,
+            "abc": ["a", "myValue", "c"],
+            "something_else": True,
+            "something_new": 42.1337,
+        }).generate(self._mod(), buf)
+        out = buf.getvalue()
+        assert out.startswith("1,")
+        assert "my_value" in out
+        assert "True" in out
+        assert "42.1337" in out
+
+
+# ---------------------------------------------------------------------------
 # Branch coverage: suppressed class in _build_ir_context loop (line 137->136)
 # ---------------------------------------------------------------------------
 

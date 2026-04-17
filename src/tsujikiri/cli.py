@@ -16,9 +16,9 @@ from tsujikiri.attribute_processor import AttributeProcessor
 from tsujikiri.configurations import GenerationConfig, load_input_config, load_output_config
 from tsujikiri.filters import FilterEngine
 from tsujikiri.pretty_printers import pretty
-from tsujikiri.formats import apply_format_inheritance, resolve_format_path
+from tsujikiri.formats import apply_format_inheritance, resolve_format_path, list_builtin_formats
 from tsujikiri.generator import Generator
-from tsujikiri.ir import IRModule, merge_modules
+from tsujikiri.ir import IRFunction, IRParameter, IRModule, merge_modules
 from tsujikiri.manifest import compare_manifests, compute_manifest, load_manifest, save_manifest, suggest_version_bump
 from tsujikiri.parser import parse_translation_unit
 from tsujikiri.transforms import _REGISTRY, build_pipeline_from_config
@@ -270,7 +270,6 @@ def main() -> None:
 
     # --list-formats needs no other arguments
     if args.list_formats:
-        from tsujikiri.formats import list_builtin_formats
         for fmt in sorted(list_builtin_formats(extra_dirs=extra_dirs)):
             print(fmt)
         return
@@ -303,7 +302,7 @@ def main() -> None:
     trace_stream: Optional[IO] = sys.stderr if args.trace_transforms else None
 
     # Load the first target's output config for manifest computation and dry-run.
-    first_fmt, first_outfile = args.target[0]
+    first_fmt, _ = args.target[0]
     first_fmt_path = resolve_format_path(first_fmt, extra_dirs=extra_dirs)
     first_output_config = apply_format_inheritance(load_output_config(first_fmt_path), extra_dirs=extra_dirs)
 
@@ -313,7 +312,6 @@ def main() -> None:
     )
 
     # --- Inject declared functions from typesystem ---
-    from tsujikiri.ir import IRFunction, IRParameter
     for fn_decl in input_config.typesystem.declared_functions:
         params = [
             IRParameter(name=p["name"], type_spelling=p.get("type", ""))
@@ -332,7 +330,6 @@ def main() -> None:
 
     # --- Manifest: compute, compare, and optionally embed version ---
     manifest = compute_manifest(merged)
-    api_version = ""
     has_breaking = False
 
     if args.manifest_file:
@@ -359,17 +356,6 @@ def main() -> None:
                         print(f"INFO: Suggested version bump: {old_version} -> {new_version}", file=sys.stderr)
 
     base_gen = input_config.generation
-    fmt_override_first = input_config.format_overrides.get(first_output_config.format_name)
-    fmt_generation_first = fmt_override_first.generation if fmt_override_first else None
-    if fmt_generation_first:
-        effective_includes = all_includes + list(fmt_generation_first.includes)
-        embed_version = fmt_generation_first.embed_version or base_gen.embed_version
-    else:
-        effective_includes = all_includes
-        embed_version = base_gen.embed_version
-
-    if args.embed_version or embed_version:
-        api_version = manifest["version"]
 
     # --- dry-run ---
     if args.dry_run:
@@ -439,6 +425,7 @@ def main() -> None:
             template_extends=template_extends,
             typesystem=input_config.typesystem,
             extra_dirs=extra_dirs,
+            custom_data=input_config.custom_data,
         )
 
         buf = StringIO()
@@ -457,7 +444,9 @@ def main() -> None:
 
     # Write manifest only when there are no breaking changes (or compat check is off).
     if args.manifest_file and not has_breaking:
-        save_manifest(manifest, Path(args.manifest_file))
+        manifest_path = Path(args.manifest_file)
+        save_manifest(manifest, manifest_path)
+        print(f"Written to {manifest_path}", file=sys.stderr)
 
     if has_breaking:
         sys.exit(1)

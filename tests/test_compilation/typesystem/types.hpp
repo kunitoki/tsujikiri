@@ -35,6 +35,8 @@ public:
     int getValue() const { return value_; }
     void setValue(int v) { value_ = v; }
 
+    void missingParamName(const int& = 10) {}
+
 private:
     int64_t id_ = 0;
     OSType tag_ = {};

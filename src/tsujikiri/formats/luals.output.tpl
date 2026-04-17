@@ -85,12 +85,12 @@ function {{ cls.name }}.{{ group.name }}({% if method.params %}{{ method.params 
 {%- for ov in group.methods[1:] %}
 ---@overload fun(self: {{ cls.name }}{% if ov.params %}, {{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
 {%- endfor %}
-function {{ cls.name }}:{{ group.name }}({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
+function {{ cls.name }}:{{ group.name }}({% if first.params %}{{ first.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {% else %}
 {%- set method = group.methods[0] %}
 {% for p in method.params %}---@param {{ p.name }} {{ p.type }}
 {% endfor -%}---@return {{ method.return_type }}
-function {{ cls.name }}:{{ group.name }}({% if method.params %}{{ method.params | map(attribute='name') | join(', ') }}{% endif %}) end
+function {{ cls.name }}:{{ group.name }}({% if method.params %}{{ method.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {% endif %}
 {%- endblock %}
 {%- endif %}
@@ -136,21 +136,21 @@ local {{ enum.name }} = {
 {%- if first.is_deprecated %}
 ---@deprecated {% if first.deprecation_message %}{{ first.deprecation_message }}{% endif %}
 {%- endif %}
-{% for p in first.params %}---@param {{ p.name }} {{ p.type }}
+{% for p in first.params %}---@param {{ p | param_name('name', loop.index0) }} {{ p.type }}
 {% endfor -%}---@return {{ first.return_type }}
 {%- for ov in group.functions[1:] %}
 ---@overload fun({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
 {%- endfor %}
-function {{ group.name }}({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
+function {{ group.name }}({% if first.params %}{{ first.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {% else %}
 {%- set fn = group.functions[0] %}
 
 {%- if fn.is_deprecated %}
 ---@deprecated {% if fn.deprecation_message %}{{ fn.deprecation_message }}{% endif %}
 {%- endif %}
-{% for p in fn.params %}---@param {{ p.name }} {{ p.type }}
+{% for p in fn.params %}---@param {{ p | param_name('name', loop.index0) }} {{ p.type }}
 {% endfor -%}---@return {{ fn.return_type }}
-function {{ group.name }}({% if fn.params %}{{ fn.params | map(attribute='name') | join(', ') }}{% endif %}) end
+function {{ group.name }}({% if fn.params %}{{ fn.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {% endif %}
 {%- endblock %}
 {%- endfor %}

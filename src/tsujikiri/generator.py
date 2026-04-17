@@ -26,7 +26,7 @@ import jinja2
 
 from tsujikiri.configurations import GenerationConfig, OutputConfig, TypesystemConfig, load_output_config
 from tsujikiri.formats import _FORMATS_DIR
-from tsujikiri.generator_filters import camel_to_snake, snake_to_camel, code_at, param_pairs
+from tsujikiri.generator_filters import camel_to_snake, snake_to_camel, code_at, param_name, param_pairs
 from tsujikiri.ir import (
     IRClass,
     IREnum,
@@ -107,6 +107,7 @@ class Generator:
         template_extends: Optional[str] = None,
         typesystem: Optional[TypesystemConfig] = None,
         extra_dirs: Optional[List[Path]] = None,
+        custom_data: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.cfg = output_config
         self.generation = generation
@@ -114,6 +115,7 @@ class Generator:
         self.template_extends: str = template_extends or ""
         self._typesystem: Optional[TypesystemConfig] = typesystem
         self.extra_dirs: List[Path] = extra_dirs or []
+        self.custom_data: Dict[str, Any] = custom_data or {}
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -175,6 +177,7 @@ class Generator:
 
         env.filters.update({
             "map_type": self._map_type,
+            "param_name": param_name,
             "param_pairs": param_pairs,
             "camel_to_snake": camel_to_snake,
             "snake_to_camel": snake_to_camel,
@@ -221,6 +224,7 @@ class Generator:
             "classes": flat_classes,
             "api_version": api_version,
             "operator_mappings": dict(self.cfg.operator_mappings),
+            "custom_data": self.custom_data,
             "code_injections": [{"position": c.position, "code": c.code} for c in module.code_injections],
             "exception_registrations": [
                 {
