@@ -395,3 +395,92 @@ class TestGetSourceEntries:
     def test_empty_config_returns_empty(self):
         cfg = InputConfig()
         assert cfg.get_source_entries() == []
+
+
+class TestCustomDataLoading:
+    def test_absent_key_yields_empty_dict(self, tmp_path):
+        yml = tmp_path / "no_custom.input.yml"
+        yml.write_text("source:\n  path: 'dummy.hpp'\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.custom_data == {}
+
+    def test_null_value_yields_empty_dict(self, tmp_path):
+        yml = tmp_path / "null_custom.input.yml"
+        yml.write_text("source:\n  path: 'dummy.hpp'\ncustom_data:\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.custom_data == {}
+
+    def test_scalar_int(self, tmp_path):
+        yml = tmp_path / "custom.input.yml"
+        yml.write_text(
+            "source:\n  path: 'dummy.hpp'\ncustom_data:\n  xyz: 1\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.custom_data["xyz"] == 1
+
+    def test_scalar_float(self, tmp_path):
+        yml = tmp_path / "custom.input.yml"
+        yml.write_text(
+            "source:\n  path: 'dummy.hpp'\ncustom_data:\n  ratio: 42.1337\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert abs(cfg.custom_data["ratio"] - 42.1337) < 1e-9
+
+    def test_scalar_bool(self, tmp_path):
+        yml = tmp_path / "custom.input.yml"
+        yml.write_text(
+            "source:\n  path: 'dummy.hpp'\ncustom_data:\n  flag: true\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.custom_data["flag"] is True
+
+    def test_scalar_string(self, tmp_path):
+        yml = tmp_path / "custom.input.yml"
+        yml.write_text(
+            "source:\n  path: 'dummy.hpp'\ncustom_data:\n  label: hello\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.custom_data["label"] == "hello"
+
+    def test_list_value(self, tmp_path):
+        yml = tmp_path / "custom.input.yml"
+        yml.write_text(
+            "source:\n  path: 'dummy.hpp'\ncustom_data:\n  abc:\n    - a\n    - b\n    - c\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.custom_data["abc"] == ["a", "b", "c"]
+
+    def test_nested_dict(self, tmp_path):
+        yml = tmp_path / "custom.input.yml"
+        yml.write_text(
+            "source:\n  path: 'dummy.hpp'\ncustom_data:\n  nested:\n    x: 10\n    y: 20\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.custom_data["nested"] == {"x": 10, "y": 20}
+
+    def test_mixed_types(self, tmp_path):
+        yml = tmp_path / "custom.input.yml"
+        content = (
+            "source:\n  path: 'dummy.hpp'\n"
+            "custom_data:\n"
+            "  xyz: 1\n"
+            "  abc:\n    - a\n    - b\n    - c\n"
+            "  something_else: true\n"
+            "  something_new: 42.1337\n"
+        )
+        yml.write_text(content, encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.custom_data["xyz"] == 1
+        assert cfg.custom_data["abc"] == ["a", "b", "c"]
+        assert cfg.custom_data["something_else"] is True
+        assert abs(cfg.custom_data["something_new"] - 42.1337) < 1e-9
+
+    def test_default_field_is_empty_dict(self):
+        cfg = InputConfig()
+        assert cfg.custom_data == {}

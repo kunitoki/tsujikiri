@@ -554,6 +554,7 @@ The generator builds a plain-data context dict passed to the Jinja2 template. Te
 | `classes` | `list[class]` | All emittable classes in topological order (base before derived), including inner classes |
 | `api_version` | `string` | SHA-256 uid if `--embed-version`, else `""` |
 | `code_injections` | `list[injection]` | Module-level code injections |
+| `custom_data` | `dict` | Arbitrary user-defined data from `custom_data:` in the input YAML |
 
 ### Class Dict
 
@@ -730,7 +731,8 @@ injection = { position: "beginning"|"end", code: string }
 | `map_type` | `type_str \| map_type` | Apply format's `type_mappings` to a type string |
 | `camel_to_snake` | `name \| camel_to_snake` | Convert `camelCase` or `CamelCase` to `snake_case` |
 | `snake_to_camel` | `name \| snake_to_camel(uppercase_first=True)` | Convert `snake_case` to `CamelCase` or `camelCase` |
-| `param_pairs` | `params \| param_pairs(name_key, sep, type_key, joiner)` | Format parameter list as `name: type, name: type` |
+| `param_name` | `name \| param_name(name_key, index)` | Output the parameter name or an indexed placeholder as `name` or `p3` |
+| `param_pairs` | `params \| param_pairs(name_key, sep, type_key, joiner)` | Format parameter list as `name0: type0, name1: type1, ...` |
 | `code_at` | `injections \| code_at("beginning"\|"end")` | Extract and concatenate code injections at a position |
 
 **`param_pairs` example:**

@@ -21,6 +21,7 @@ An **input file** (conventionally named `*.input.yml`) is the primary configurat
 | `pretty` | bool | no | `false` | Run the language-appropriate pretty printer on generated output |
 | `pretty_options` | list of strings | no | `[]` | Extra arguments forwarded to the pretty printer CLI |
 | `typesystem` | mapping | no | (empty) | Type system declarations: primitive types, typedefs, custom types, containers, smart pointers, conversion rules, and declared functions |
+| `custom_data` | mapping | no | `{}` | Arbitrary key-value data passed verbatim into the template context as `custom_data` |
 
 The module name used in the generated output (e.g. `register_myproject`) is derived from the input file name: `myproject.input.yml` → `myproject`.
 
@@ -530,6 +531,41 @@ Provides native-to-target and target-to-native conversion expressions for a C++ 
 | `cpp_type` | string | C++ type spelling (required) |
 | `native_to_target` | string | Expression converting C++ value to target; `%%in` is the input value |
 | `target_to_native` | string | Expression converting target value to C++; `%%in` is the input value |
+
+---
+
+## `custom_data` — User-Defined Template Variables
+
+`custom_data` is an arbitrary YAML mapping whose contents are passed verbatim into the Jinja2 template context under the key `custom_data`. Values may be any YAML scalar (string, int, float, bool) or nested mappings and lists.
+
+```yaml
+custom_data:
+  xyz: 1
+  abc:
+    - "a"
+    - "b"
+    - "c"
+  something_else: true
+  something_new: 42.1337
+```
+
+Inside any template, reference these values with normal Jinja2 syntax:
+
+```jinja2
+// scalar
+{{ custom_data.xyz }}
+
+// list index
+{{ custom_data.abc[1] }}
+
+// list element piped through a filter
+{{ custom_data.abc[1] | camel_to_snake }}
+
+// nested mapping
+{{ custom_data.nested.key }}
+```
+
+`custom_data` is available alongside all other top-level template variables (`module_name`, `classes`, `enums`, etc.). When the key is absent or set to `null`, `custom_data` is an empty dict `{}`.
 
 ---
 

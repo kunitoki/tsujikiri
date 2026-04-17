@@ -167,6 +167,7 @@ class InputConfig:
     pretty: bool = ...
     pretty_options: list[str] = field(default_factory=list)
     typesystem: TypesystemConfig = field(default_factory=TypesystemConfig)
+    custom_data: dict[str, Any] = field(default_factory=dict)
     def get_source_entries(self) -> list[SourceEntry]: ...
 
 @dataclass

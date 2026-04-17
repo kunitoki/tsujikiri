@@ -259,6 +259,8 @@ class InputConfig:
     pretty_options: List[str] = field(default_factory=list)
     # First-class typesystem declarations (primitive, typedef, custom, container, smart-pointer types).
     typesystem: TypesystemConfig = field(default_factory=TypesystemConfig)
+    # Arbitrary user-defined data passed verbatim into the template context as ``custom_data``.
+    custom_data: Dict[str, Any] = field(default_factory=dict)
 
     def get_source_entries(self) -> List[SourceEntry]:
         """Return all source entries, normalising a bare ``source:`` key into the list."""
@@ -565,6 +567,9 @@ def load_input_config(config_file: Path) -> InputConfig:
     ts_raw = data.get("typesystem", {})
     typesystem = _parse_typesystem_config(ts_raw, config_dir) if ts_raw else TypesystemConfig()
 
+    # --- Custom data ---
+    custom_data: Dict[str, Any] = data.get("custom_data") or {}
+
     return InputConfig(
         source=source,
         sources=sources,
@@ -577,6 +582,7 @@ def load_input_config(config_file: Path) -> InputConfig:
         pretty=data.get("pretty", False),
         pretty_options=data.get("pretty_options", []),
         typesystem=typesystem,
+        custom_data=custom_data,
     )
 
 
