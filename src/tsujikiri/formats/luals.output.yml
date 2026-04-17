@@ -27,7 +27,6 @@ type_mappings:
   "double": "number"
   "bool": "boolean"
   "std::string": "string"
-  "const char *": "string"
   "char *": "string"
   "std::string_view": "string"
   "void": "nil"

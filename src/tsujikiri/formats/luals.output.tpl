@@ -85,12 +85,12 @@ function {{ cls.name }}.{{ group.name }}({% if method.params %}{{ method.params 
 {%- for ov in group.methods[1:] %}
 ---@overload fun(self: {{ cls.name }}{% if ov.params %}, {{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
 {%- endfor %}
-function {{ cls.name }}:{{ group.name }}({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
+function {{ cls.name }}:{{ group.name }}({% if first.params %}{{ first.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {% else %}
 {%- set method = group.methods[0] %}
 {% for p in method.params %}---@param {{ p.name }} {{ p.type }}
 {% endfor -%}---@return {{ method.return_type }}
-function {{ cls.name }}:{{ group.name }}({% if method.params %}{{ method.params | map(attribute='name') | join(', ') }}{% endif %}) end
+function {{ cls.name }}:{{ group.name }}({% if method.params %}{{ method.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {% endif %}
 {%- endblock %}
 {%- endif %}
