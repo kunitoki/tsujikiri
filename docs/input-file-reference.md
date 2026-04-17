@@ -551,7 +551,7 @@ custom_data:
 
 Inside any template, reference these values with normal Jinja2 syntax:
 
-```jinja2
+```jinja
 // scalar
 {{ custom_data.xyz }}
 
