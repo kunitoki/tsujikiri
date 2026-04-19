@@ -3,7 +3,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-namespace py = pybind11;
 {% for inc in includes %}
 #include {{ inc }}
 {%- endfor %}
@@ -13,6 +12,8 @@ namespace py = pybind11;
 static constexpr const char* k_{{ module_name }}_api_version = "{{ api_version }}";
 {%- endif %}
 {%- endblock %}
+
+namespace py = pybind11;
 
 PYBIND11_MODULE({{ module_name }}, m)
 {

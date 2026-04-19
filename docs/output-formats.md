@@ -441,8 +441,9 @@ tsujikiri -i project.input.yml --target pybind11 src/py_bindings.cpp
 ```cpp
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-namespace py = pybind11;
 #include "myproject.hpp"
+
+namespace py = pybind11;
 
 PYBIND11_MODULE(myproject, m)
 {

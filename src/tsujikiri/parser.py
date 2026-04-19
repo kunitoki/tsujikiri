@@ -622,6 +622,24 @@ def parse_translation_unit(
             if resource_dir and Path(resource_dir).is_dir():
                 args += ["-resource-dir", resource_dir]
 
+    elif sys.platform.startswith("linux"):
+        # On Linux, libclang pip package ships without builtin headers; point it at the
+        # system clang resource dir so stddef.h/stdarg.h etc. are found.
+        if "-resource-dir" not in args:
+            resource_dir = ""
+            for clang_bin in ["clang-18", "clang-17", "clang-16", "clang"]:
+                try:
+                    candidate = subprocess.check_output(
+                        [clang_bin, "-print-resource-dir"], text=True, stderr=subprocess.DEVNULL
+                    ).strip()
+                    if candidate and Path(candidate).is_dir():
+                        resource_dir = candidate
+                        break
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    continue
+            if resource_dir:
+                args += ["-resource-dir", resource_dir]
+
     if verbose:
         print(f"[parse] {source_path}: args={args}", file=sys.stderr)
 
