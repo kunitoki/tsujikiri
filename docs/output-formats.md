@@ -188,15 +188,13 @@ C++ operator overloads are automatically mapped to Lua metamethods using the bui
 | `operator==` | `__eq` | Equality |
 | `operator<` | `__lt` | Less than |
 | `operator<=` | `__le` | Less or equal |
-| `operator<<` | `__tostring` | Stream output (lambda using `std::ostringstream`) |
 | `operator()` | `__call` | Call |
 | `operator&` | `__band` | Bitwise AND |
 | `operator\|` | `__bor` | Bitwise OR |
 | `operator^` | `__bxor` | Bitwise XOR |
 | `operator~` | `__bnot` | Bitwise NOT |
+| `operator<<` | `__shl` | Bitwise left shift |
 | `operator>>` | `__shr` | Bitwise right shift |
-
-The `__tostring` metamethod is special: instead of binding the method pointer directly, a lambda is generated that calls `operator<<` via `std::ostringstream` and returns a `std::string`.
 
 Note: `__index` and `__newindex` are used internally by LuaBridge3 and are never emitted.
 
@@ -208,7 +206,6 @@ struct Vec3 {
     Vec3 operator+(const Vec3& rhs) const;
     Vec3 operator-() const;
     bool operator==(const Vec3& rhs) const;
-    std::ostream& operator<<(std::ostream& os) const;
 };
 
 // Generated binding:
@@ -216,9 +213,6 @@ struct Vec3 {
     .addFunction("__add", &ns::Vec3::operator+)
     .addFunction("__unm", &ns::Vec3::operator-)
     .addFunction("__eq",  &ns::Vec3::operator==)
-    .addFunction("__tostring", [](const ns::Vec3& self) -> std::string {
-        std::ostringstream _ss; _ss << self; return _ss.str();
-    })
 .endClass()
 ```
 
