@@ -1275,3 +1275,71 @@ class TestParseTranslationUnitPlatformBranches:
                 cmd = call_args[0][0]
                 assert "-print-resource-dir" not in cmd, "xcrun for resource-dir must not be called"
         assert module is not None
+
+    def test_non_linux_non_darwin_platform_skips_both_blocks(self, tmp_path: Path) -> None:
+        """Branch 625->643: platform is neither darwin nor linux — linux elif False, skip to verbose."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("tsujikiri.parser.sys") as mock_sys, \
+             patch("tsujikiri.parser.subprocess.check_output") as mock_sub:
+            mock_sys.platform = "win32"
+            module = parse_translation_unit(src, [], "win32_platform")
+            for call_args in mock_sub.call_args_list:
+                cmd = call_args[0][0]
+                assert "-print-resource-dir" not in cmd, "resource-dir probe must not run on win32"
+        assert module is not None
+
+    def test_linux_resource_dir_already_in_args_skips_block(self, tmp_path: Path) -> None:
+        """Branch 628->643: linux platform but '-resource-dir' already in parse_args — inner block skipped."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-resource-dir", str(tmp_path)])
+        with patch("tsujikiri.parser.sys") as mock_sys, \
+             patch("tsujikiri.parser.subprocess.check_output") as mock_sub:
+            mock_sys.platform = "linux"
+            module = parse_translation_unit(src, [], "linux_resource_dir_preset")
+            for call_args in mock_sub.call_args_list:
+                cmd = call_args[0][0]
+                assert "-print-resource-dir" not in cmd, "clang probe must not run when resource-dir preset"
+        assert module is not None
+
+    def test_linux_resource_dir_all_clang_bins_fail(self, tmp_path: Path) -> None:
+        """Branches 630->640, 640->643: all clang bins raise FileNotFoundError — resource_dir stays empty."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("tsujikiri.parser.sys") as mock_sys, \
+             patch("tsujikiri.parser.subprocess.check_output", side_effect=FileNotFoundError):
+            mock_sys.platform = "linux"
+            module = parse_translation_unit(src, [], "linux_all_bins_fail")
+        assert module is not None
+
+    def test_linux_resource_dir_nonexistent_path_then_fail(self, tmp_path: Path) -> None:
+        """Branch 635->630: first clang bin returns non-existent path — loop continues, rest fail."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        nonexistent = str(tmp_path / "no_such_dir")
+
+        def _side_effect(cmd: list, **kwargs: object) -> str:
+            if cmd[0] == "clang-18":
+                return nonexistent
+            raise FileNotFoundError
+
+        with patch("tsujikiri.parser.sys") as mock_sys, \
+             patch("tsujikiri.parser.subprocess.check_output", side_effect=_side_effect):
+            mock_sys.platform = "linux"
+            module = parse_translation_unit(src, [], "linux_nonexistent_first")
+        assert module is not None
+
+    def test_linux_resource_dir_appended_when_clang_returns_valid_dir(self, tmp_path: Path) -> None:
+        """Happy path: linux, clang-18 returns existing dir — resource-dir appended to args."""
+        hpp = tmp_path / "empty.hpp"
+        hpp.write_text("// empty\n")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("tsujikiri.parser.sys") as mock_sys, \
+             patch("tsujikiri.parser.subprocess.check_output", return_value=str(tmp_path)):
+            mock_sys.platform = "linux"
+            module = parse_translation_unit(src, [], "linux_valid_resource_dir")
+        assert module is not None
