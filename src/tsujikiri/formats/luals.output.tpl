@@ -80,17 +80,38 @@ function {{ cls.name }}.{{ group.name }}({% if method.params %}{{ method.params 
 {%- block class_method_group scoped %}
 {%- if group.is_overloaded %}
 {%- set first = group.methods[0] %}
+{%- if first.is_operator and first.operator_name == "__tostring" %}
+---@return string
+function {{ cls.name }}:__tostring() end
+{%- elif first.is_operator and first.operator_name %}
+{% for p in first.params %}---@param {{ p.name }} {{ p.type }}
+{% endfor -%}---@return {{ first.return_type }}
+{%- for ov in group.methods[1:] %}
+---@overload fun(self: {{ cls.name }}{% if ov.params %}, {{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
+{%- endfor %}
+function {{ cls.name }}:{{ first.operator_name }}({% if first.params %}{{ first.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
+{%- elif not first.is_operator %}
 {% for p in first.params %}---@param {{ p.name }} {{ p.type }}
 {% endfor -%}---@return {{ first.return_type }}
 {%- for ov in group.methods[1:] %}
 ---@overload fun(self: {{ cls.name }}{% if ov.params %}, {{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
 {%- endfor %}
 function {{ cls.name }}:{{ group.name }}({% if first.params %}{{ first.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
+{%- endif %}
 {% else %}
 {%- set method = group.methods[0] %}
+{%- if method.is_operator and method.operator_name == "__tostring" %}
+---@return string
+function {{ cls.name }}:__tostring() end
+{%- elif method.is_operator and method.operator_name %}
+{% for p in method.params %}---@param {{ p.name }} {{ p.type }}
+{% endfor -%}---@return {{ method.return_type }}
+function {{ cls.name }}:{{ method.operator_name }}({% if method.params %}{{ method.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
+{%- elif not method.is_operator %}
 {% for p in method.params %}---@param {{ p.name }} {{ p.type }}
 {% endfor -%}---@return {{ method.return_type }}
 function {{ cls.name }}:{{ group.name }}({% if method.params %}{{ method.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
+{%- endif %}
 {% endif %}
 {%- endblock %}
 {%- endif %}

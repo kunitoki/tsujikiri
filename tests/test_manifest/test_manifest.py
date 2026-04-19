@@ -7,16 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from tsujikiri.ir import (
-    IRClass,
-    IRConstructor,
-    IREnum,
-    IREnumValue,
-    IRField,
-    IRFunction,
-    IRMethod,
-    IRModule,
-    IRParameter,
+from tsujikiri.tir import (
+    TIRClass,
+    TIRConstructor,
+    TIREnum,
+    TIREnumValue,
+    TIRField,
+    TIRFunction,
+    TIRMethod,
+    TIRModule,
+    TIRParameter,
 )
 from tsujikiri.manifest import (
     CompatibilityReport,
@@ -39,8 +39,8 @@ def _make_module(
     functions=None,
     enums=None,
     name="testmod",
-) -> IRModule:
-    m = IRModule(name=name)
+) -> TIRModule:
+    m = TIRModule(name=name)
     for c in (classes or []):
         m.classes.append(c)
         m.class_by_name[c.qualified_name] = c
@@ -56,8 +56,8 @@ def _cls(
     fields=None,
     enums=None,
     emit=True,
-) -> IRClass:
-    return IRClass(
+) -> TIRClass:
+    return TIRClass(
         name=name,
         qualified_name=f"testmod::{name}",
         namespace="testmod",
@@ -69,45 +69,45 @@ def _cls(
     )
 
 
-def _method(name, params=None, return_type="void", is_static=False, emit=True) -> IRMethod:
-    return IRMethod(
+def _method(name, params=None, return_type="void", is_static=False, emit=True) -> TIRMethod:
+    return TIRMethod(
         name=name,
         spelling=name,
         qualified_name=f"testmod::{name}",
         return_type=return_type,
-        parameters=[IRParameter(name=f"p{i}", type_spelling=t) for i, t in enumerate(params or [])],
+        parameters=[TIRParameter(name=f"p{i}", type_spelling=t) for i, t in enumerate(params or [])],
         is_static=is_static,
         emit=emit,
     )
 
 
-def _ctor(params=None, emit=True) -> IRConstructor:
-    return IRConstructor(
-        parameters=[IRParameter(name=f"p{i}", type_spelling=t) for i, t in enumerate(params or [])],
+def _ctor(params=None, emit=True) -> TIRConstructor:
+    return TIRConstructor(
+        parameters=[TIRParameter(name=f"p{i}", type_spelling=t) for i, t in enumerate(params or [])],
         emit=emit,
     )
 
 
-def _field(name, type_spelling="int", is_const=False, emit=True) -> IRField:
-    return IRField(name=name, type_spelling=type_spelling, is_const=is_const, emit=emit)
+def _field(name, type_spelling="int", is_const=False, emit=True) -> TIRField:
+    return TIRField(name=name, type_spelling=type_spelling, is_const=is_const, emit=emit)
 
 
-def _fn(name, params=None, return_type="void", emit=True) -> IRFunction:
-    return IRFunction(
+def _fn(name, params=None, return_type="void", emit=True) -> TIRFunction:
+    return TIRFunction(
         name=name,
         qualified_name=f"testmod::{name}",
         namespace="testmod",
         return_type=return_type,
-        parameters=[IRParameter(name=f"p{i}", type_spelling=t) for i, t in enumerate(params or [])],
+        parameters=[TIRParameter(name=f"p{i}", type_spelling=t) for i, t in enumerate(params or [])],
         emit=emit,
     )
 
 
-def _enum(name, values=None, emit=True) -> IREnum:
-    return IREnum(
+def _enum(name, values=None, emit=True) -> TIREnum:
+    return TIREnum(
         name=name,
         qualified_name=f"testmod::{name}",
-        values=[IREnumValue(name=v, value=i) for i, v in enumerate(values or [])],
+        values=[TIREnumValue(name=v, value=i) for i, v in enumerate(values or [])],
         emit=emit,
     )
 
@@ -175,7 +175,7 @@ class TestComputeManifest:
         assert m["api"]["functions"][0]["name"] == "active"
 
     def test_rename_used_as_binding_name(self):
-        m = IRMethod(
+        m = TIRMethod(
             name="getX", spelling="getX", qualified_name="C::getX",
             return_type="int", rename="x", emit=True,
         )
@@ -400,13 +400,13 @@ class TestCompareManifoldBreaking:
         assert any("Green" in c for c in r.breaking_changes)
 
     def test_enum_value_integer_changed_is_breaking(self):
-        old_enum = IREnum(
+        old_enum = TIREnum(
             name="Color", qualified_name="testmod::Color",
-            values=[IREnumValue(name="Red", value=0), IREnumValue(name="Green", value=1)],
+            values=[TIREnumValue(name="Red", value=0), TIREnumValue(name="Green", value=1)],
         )
-        new_enum = IREnum(
+        new_enum = TIREnum(
             name="Color", qualified_name="testmod::Color",
-            values=[IREnumValue(name="Red", value=0), IREnumValue(name="Green", value=99)],
+            values=[TIREnumValue(name="Red", value=0), TIREnumValue(name="Green", value=99)],
         )
         old = _make_module(enums=[old_enum])
         new = _make_module(enums=[new_enum])

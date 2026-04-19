@@ -30,6 +30,7 @@ from tsujikiri.ir import (
     IRParameter,
     IRUsingDeclaration,
 )
+from tsujikiri.tir import TIRModule, upgrade_module
 
 
 def _to_camel_case(string: str) -> str:
@@ -366,7 +367,6 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 ir_class.methods.append(method)
             elif m.access_specifier == AccessSpecifier.PROTECTED:
                 method.access = "protected"
-                method.emit = False
                 ir_class.methods.append(method)
 
     # --- Conversion operators ---
@@ -412,12 +412,10 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                     or t.strip() == f"const {class_name_for_ctor} &"):
                 if _is_deleted(ctor) or ctor.access_specifier != AccessSpecifier.PUBLIC:
                     ir_class.has_deleted_copy_constructor = True
-                    ir_class.copyable = False
             # Move constructor: takes ClassName&&
             elif f"{class_name_for_ctor} &&" in t or f"{class_name_for_ctor}&&" in t:
                 if _is_deleted(ctor) or ctor.access_specifier != AccessSpecifier.PUBLIC:
                     ir_class.has_deleted_move_constructor = True
-                    ir_class.movable = False
 
     public_ctors = [c for c in all_ctors if c.access_specifier == AccessSpecifier.PUBLIC and not _is_deleted(c)]
     is_ctor_overload = len(public_ctors) > 1
@@ -584,7 +582,7 @@ def parse_translation_unit(
     module_name: str,
     *,
     verbose: bool = False,
-) -> IRModule:
+) -> TIRModule:
     """Parse a C++ translation unit and return a fully populated IRModule.
 
     No filtering is applied — all discovered entities are added with emit=True.
@@ -709,4 +707,4 @@ def parse_translation_unit(
             file=sys.stderr,
         )
 
-    return module
+    return upgrade_module(module)

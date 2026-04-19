@@ -79,8 +79,8 @@ Class-level stages use `class_is_regex: true` for the class pattern and `is_rege
 | `expand_spaceship` | Expand `operator<=>` into six comparison operators | `class` |
 | `expose_protected` | Expose protected methods via trampoline (pybind11) | `class` |
 | `resolve_using_declarations` | Copy base class methods for `using Base::method` declarations | — |
-| `OverloadPriority` | Set resolution priority for a specific method overload | `class`, `method`, `signature`, `priority` |
-| `ExceptionPolicy` | Set exception propagation policy on methods or functions | `policy` |
+| `overload_priority` | Set resolution priority for a specific method overload | `class`, `method`, `signature`, `priority` |
+| `exception_policy` | Set exception propagation policy on methods or functions | `policy` |
 
 ### Exception and Overload Stages
 
@@ -273,7 +273,7 @@ transforms:
 
 ## `inject_method`
 
-Appends a synthetic `IRMethod` to a class. The method appears in the output exactly as specified. The caller is responsible for ensuring the corresponding C++ symbol exists (or providing a `wrapper_code` via a subsequent `modify_method` stage).
+Appends a synthetic `TIRMethod` to a class. The method appears in the output exactly as specified. The caller is responsible for ensuring the corresponding C++ symbol exists (or providing a `wrapper_code` via a subsequent `modify_method` stage).
 
 ```yaml
 - stage: inject_method
@@ -652,12 +652,12 @@ Inserts arbitrary raw code at a specific position in the generated output. The c
 
 **Target values:**
 
-| Target | Injection point in IR | Template variable |
-|--------|----------------------|-------------------|
-| `module` | `IRModule.code_injections` | `{{ code_injections \| code_at("...") }}` |
-| `class` | `IRClass.code_injections` | `{{ cls.code_injections \| code_at("...") }}` |
-| `method` | `IRMethod.code_injections` | `{{ method.code_injections \| code_at("...") }}` |
-| `constructor` | `IRConstructor.code_injections` | `{{ ctor.code_injections \| code_at("...") }}` |
+| Target | Injection point in TIR | Template variable |
+|--------|------------------------|-------------------|
+| `module` | `TIRModule.code_injections` | `{{ code_injections \| code_at("...") }}` |
+| `class` | `TIRClass.code_injections` | `{{ cls.code_injections \| code_at("...") }}` |
+| `method` | `TIRMethod.code_injections` | `{{ method.code_injections \| code_at("...") }}` |
+| `constructor` | `TIRConstructor.code_injections` | `{{ ctor.code_injections \| code_at("...") }}` |
 
 **Template requirement:** The Jinja2 template must use `{{ code_injections | code_at("beginning") }}` and `{{ code_injections | code_at("end") }}` at appropriate positions. Both built-in formats (luabridge3 and luals) support module-level and class-level injections.
 
@@ -745,7 +745,7 @@ transforms:
 
 ## `inject_constructor`
 
-Appends a synthetic `IRConstructor` to a class. Useful when you want to expose a construction path that doesn't correspond directly to an existing C++ constructor (combined with `modify_method` or a wrapper).
+Appends a synthetic `TIRConstructor` to a class. Useful when you want to expose a construction path that doesn't correspond directly to an existing C++ constructor (combined with `modify_method` or a wrapper).
 
 ```yaml
 - stage: inject_constructor
@@ -1069,7 +1069,7 @@ transforms:
 
 ## `inject_function`
 
-Appends a synthetic `IRFunction` to the module. The caller is responsible for ensuring the corresponding C++ symbol exists.
+Appends a synthetic `TIRFunction` to the module. The caller is responsible for ensuring the corresponding C++ symbol exists.
 
 ```yaml
 - stage: inject_function
@@ -1205,13 +1205,13 @@ transforms:
     class: Vec3
 ```
 
-This produces six `IRMethod` entries on `Vec3`, each with a `wrapper_code` lambda, and suppresses the original `operator<=>`.
+This produces six `TIRMethod` entries on `Vec3`, each with a `wrapper_code` lambda, and suppresses the original `operator<=>`.
 
 ---
 
 ## `expose_protected`
 
-Exposes protected methods so they can be overridden in derived binding classes (trampolines). Sets `access` to `"public_via_trampoline"` and `emit=True` on matching protected methods. The pybind11 template uses this to emit `using Base::method;` inside the generated trampoline class body.
+Exposes protected methods so they can be overridden in derived binding classes (trampolines). Sets `access` to `"public_via_trampoline"` and `emit=True` on matching protected methods. The pybind11 template uses this to emit `using Base::method;` inside the generated trampoline class body. Methods marked `public_via_trampoline` are **not** emitted as bound methods — they are only accessible via the trampoline mechanism and are not exposed as callable methods in the target scripting language.
 
 ```yaml
 - stage: expose_protected
@@ -1309,14 +1309,12 @@ transforms:
 
 ---
 
-## `OverloadPriority`
-
-> **Note:** This stage name is case-sensitive and uses PascalCase (`OverloadPriority`), unlike most other stages which use `snake_case`.
+## `overload_priority`
 
 Assigns an explicit integer priority to a specific method overload. Lower values sort first. Binding frameworks use this order to decide which overload to try first during argument matching.
 
 ```yaml
-- stage: OverloadPriority
+- stage: overload_priority
   class: MyClass
   method: process
   signature: "int process()"   # "return_type method_name(param_types...)"
@@ -1337,13 +1335,13 @@ The signature format is `"return_type method_name(type1, type2, ...)"` using the
 **Example — prefer the `int` overload of `add` over the `double` one:**
 ```yaml
 transforms:
-  - stage: OverloadPriority
+  - stage: overload_priority
     class: Calculator
     method: add
     signature: "int add(int, int)"
     priority: 0
 
-  - stage: OverloadPriority
+  - stage: overload_priority
     class: Calculator
     method: add
     signature: "double add(double, double)"
@@ -1352,14 +1350,12 @@ transforms:
 
 ---
 
-## `ExceptionPolicy`
+## `exception_policy`
 
-> **Note:** This stage name is case-sensitive and uses PascalCase (`ExceptionPolicy`), unlike most other stages which use `snake_case`.
-
-Sets the exception propagation policy on matching methods and/or free functions. Templates use the `exception_policy` field on `IRMethod` and `IRFunction` to decide how to wrap exceptions in the binding.
+Sets the exception propagation policy on matching methods and/or free functions. Templates use the `exception_policy` field on `TIRMethod` and `TIRFunction` to decide how to wrap exceptions in the binding.
 
 ```yaml
-- stage: ExceptionPolicy
+- stage: exception_policy
   class: "*"          # optional; default all classes
   method: "*"         # optional; default all methods
   function: "*"       # optional; targets free functions
@@ -1386,7 +1382,7 @@ Sets the exception propagation policy on matching methods and/or free functions.
 **Example — enable pass-through on all methods of a network class:**
 ```yaml
 transforms:
-  - stage: ExceptionPolicy
+  - stage: exception_policy
     class: NetworkClient
     policy: pass_through
 ```
@@ -1394,7 +1390,7 @@ transforms:
 **Example — abort on any exception from free functions (safety-critical code):**
 ```yaml
 transforms:
-  - stage: ExceptionPolicy
+  - stage: exception_policy
     function: "*"
     policy: abort
 ```

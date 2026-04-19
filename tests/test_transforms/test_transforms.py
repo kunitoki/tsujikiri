@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tsujikiri.configurations import TransformSpec
-from tsujikiri.ir import IRClass, IRField, IRFunction, IRMethod, IRModule, IRParameter
+from tsujikiri.tir import TIRClass, TIRField, TIRFunction, TIRMethod, TIRModule, TIRParameter
 from tsujikiri.transforms import (
     AddTypeMappingStage,
     InjectMethodStage,
@@ -25,24 +25,24 @@ from tsujikiri.transforms import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _simple_module() -> IRModule:
+def _simple_module() -> TIRModule:
     """One class with a few methods."""
     methods = [
-        IRMethod(name="getValue", spelling="getValue",
-                 qualified_name="Cls::getValue", return_type="int"),
-        IRMethod(name="setValue", spelling="setValue",
-                 qualified_name="Cls::setValue", return_type="void",
-                 parameters=[IRParameter("v", "int")]),
-        IRMethod(name="operator+", spelling="operator+",
-                 qualified_name="Cls::operator+", return_type="Cls"),
+        TIRMethod(name="getValue", spelling="getValue",
+                  qualified_name="Cls::getValue", return_type="int"),
+        TIRMethod(name="setValue", spelling="setValue",
+                  qualified_name="Cls::setValue", return_type="void",
+                  parameters=[TIRParameter("v", "int")]),
+        TIRMethod(name="operator+", spelling="operator+",
+                  qualified_name="Cls::operator+", return_type="Cls"),
     ]
-    cls = IRClass(name="Cls", qualified_name="ns::Cls", namespace="ns",
-                  methods=list(methods))
-    return IRModule(name="m", classes=[cls], class_by_name={"Cls": cls})
+    cls = TIRClass(name="Cls", qualified_name="ns::Cls", namespace="ns",
+                   methods=list(methods))  # type: ignore[arg-type]
+    return TIRModule(name="m", classes=[cls], class_by_name={"Cls": cls})  # type: ignore[arg-type, list-item]
 
 
-def _get_cls(mod: IRModule, name: str = "Cls") -> IRClass:
-    return next(c for c in mod.classes if c.name == name)
+def _get_cls(mod: TIRModule, name: str = "Cls") -> TIRClass:
+    return next(c for c in mod.classes if c.name == name)  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -93,10 +93,10 @@ class TestRenameClassStage:
         assert _get_cls(mod).rename == "Widget"
 
     def test_regex_rename(self):
-        methods = [IRMethod(name="f", spelling="f", qualified_name="Foo::f", return_type="void")]
-        foo = IRClass(name="FooWidget", qualified_name="ns::FooWidget", namespace="ns",
-                      methods=methods)
-        mod = IRModule(name="m", classes=[foo], class_by_name={"FooWidget": foo})
+        methods = [TIRMethod(name="f", spelling="f", qualified_name="Foo::f", return_type="void")]
+        foo = TIRClass(name="FooWidget", qualified_name="ns::FooWidget", namespace="ns",
+                       methods=methods)  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[foo], class_by_name={"FooWidget": foo})  # type: ignore[arg-type, list-item]
         stage = RenameClassStage(**{"from": "Foo.*", "to": "W", "is_regex": True})
         stage.apply(mod)
         assert foo.rename == "W"
@@ -188,49 +188,48 @@ class TestInjectMethodStage:
 class TestAddTypeMappingStage:
     def test_remaps_return_type(self):
         mod = _simple_module()
-        # setValue returns void; let's add a method with a target type
-        m = IRMethod(name="getString", spelling="getString",
-                     qualified_name="Cls::getString", return_type="juce::String")
-        _get_cls(mod).methods.append(m)
+        m = TIRMethod(name="getString", spelling="getString",
+                      qualified_name="Cls::getString", return_type="juce::String")
+        _get_cls(mod).methods.append(m)  # type: ignore[arg-type]
         stage = AddTypeMappingStage(**{"from": "juce::String", "to": "std::string"})
         stage.apply(mod)
         assert m.return_type == "std::string"
 
     def test_remaps_parameter_type(self):
         mod = _simple_module()
-        m = IRMethod(name="setString", spelling="setString",
-                     qualified_name="Cls::setString", return_type="void",
-                     parameters=[IRParameter("s", "juce::String")])
-        _get_cls(mod).methods.append(m)
+        m = TIRMethod(name="setString", spelling="setString",
+                      qualified_name="Cls::setString", return_type="void",
+                      parameters=[TIRParameter("s", "juce::String")])
+        _get_cls(mod).methods.append(m)  # type: ignore[arg-type]
         stage = AddTypeMappingStage(**{"from": "juce::String", "to": "std::string"})
         stage.apply(mod)
         assert m.parameters[0].type_spelling == "std::string"
 
     def test_remaps_field_type(self):
         mod = _simple_module()
-        f = IRField(name="data_", type_spelling="juce::String")
-        _get_cls(mod).fields.append(f)
+        f = TIRField(name="data_", type_spelling="juce::String")
+        _get_cls(mod).fields.append(f)  # type: ignore[arg-type]
         stage = AddTypeMappingStage(**{"from": "juce::String", "to": "std::string"})
         stage.apply(mod)
         assert f.type_spelling == "std::string"
 
     def test_remaps_inner_class_types(self):
         mod = _simple_module()
-        inner_method = IRMethod(name="get", spelling="get",
-                                qualified_name="Cls::Inner::get",
-                                return_type="juce::String")
-        inner = IRClass(name="Inner", qualified_name="ns::Cls::Inner", namespace="ns",
-                        methods=[inner_method])
-        _get_cls(mod).inner_classes.append(inner)
+        inner_method = TIRMethod(name="get", spelling="get",
+                                 qualified_name="Cls::Inner::get",
+                                 return_type="juce::String")
+        inner = TIRClass(name="Inner", qualified_name="ns::Cls::Inner", namespace="ns",
+                         methods=[inner_method])  # type: ignore[arg-type]
+        _get_cls(mod).inner_classes.append(inner)  # type: ignore[arg-type]
         stage = AddTypeMappingStage(**{"from": "juce::String", "to": "std::string"})
         stage.apply(mod)
         assert inner_method.return_type == "std::string"
 
     def test_remaps_function_return_and_params(self):
-        fn = IRFunction(name="process", qualified_name="ns::process",
-                        namespace="ns", return_type="juce::String",
-                        parameters=[IRParameter("s", "juce::String")])
-        mod = IRModule(name="m", functions=[fn])
+        fn = TIRFunction(name="process", qualified_name="ns::process",
+                         namespace="ns", return_type="juce::String",
+                         parameters=[TIRParameter("s", "juce::String")])
+        mod = TIRModule(name="m", functions=[fn])  # type: ignore[arg-type, list-item]
         stage = AddTypeMappingStage(**{"from": "juce::String", "to": "std::string"})
         stage.apply(mod)
         assert fn.return_type == "std::string"
@@ -304,10 +303,10 @@ class TestTransformStageBase:
 
 class TestFindClassesWithInner:
     def test_finds_nested_inner_class(self):
-        inner = IRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
-        outer = IRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
-                        inner_classes=[inner])
-        mod = IRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
+        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
+        outer = TIRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
+                         inner_classes=[inner])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})  # type: ignore[arg-type, list-item]
         result = _find_classes(mod, "Inner")
         assert len(result) == 1
         assert result[0].name == "Inner"

@@ -42,11 +42,12 @@ def luals_output_config():
 
 @pytest.fixture
 def make_ir_module():
-    """Factory: build a self-contained IRModule for generator / filter tests."""
+    """Factory: build a self-contained TIRModule for generator / filter tests."""
     from tsujikiri.ir import (
         IRClass, IRConstructor, IREnum, IREnumValue, IRField,
         IRFunction, IRMethod, IRModule, IRParameter,
     )
+    from tsujikiri.tir import upgrade_module
 
     def _build(name: str = "testmod"):
         method = IRMethod(
@@ -100,11 +101,12 @@ def make_ir_module():
             namespace="mylib", return_type="double",
             parameters=[IRParameter("x", "double")],
         )
-        return IRModule(
+        ir_mod = IRModule(
             name=name,
             classes=[cls], enums=[color], functions=[fn],
             class_by_name={"MyClass": cls},
         )
+        return upgrade_module(ir_mod)
 
     return _build
 

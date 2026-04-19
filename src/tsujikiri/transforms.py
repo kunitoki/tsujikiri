@@ -21,21 +21,22 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 from tsujikiri.configurations import TransformSpec
 from tsujikiri.ir import (
-    IRClass,
     IRCodeInjection,
-    IRConstructor,
-    IREnum,
     IRExceptionRegistration,
-    IRField,
-    IRFunction,
-    IRMethod,
-    IRModule,
-    IRParameter,
     IRProperty,
+)
+from tsujikiri.tir import (
+    TIRClass,
+    TIRConstructor,
+    TIREnum,
+    TIRFunction,
+    TIRMethod,
+    TIRModule,
+    TIRParameter,
 )
 
 
@@ -48,7 +49,7 @@ class TransformStage:
     name: str = ""
     _matched: bool = False
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         raise NotImplementedError
 
     def __repr__(self) -> str:
@@ -71,7 +72,7 @@ class TransformPipeline:
     def __init__(self, stages: List[TransformStage]) -> None:
         self.stages = stages
 
-    def run(self, module: IRModule) -> None:
+    def run(self, module: TIRModule) -> None:
         for stage in self.stages:
             stage.apply(module)
 
@@ -95,24 +96,42 @@ def build_pipeline_from_config(specs: List[TransformSpec]) -> TransformPipeline:
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _make_using_wrapper(cls_qualified_name: str, method: "TIRMethod") -> str:  # type: ignore[name-defined]
+    """Build a C++ wrapper lambda for a method resolved via using-declaration.
+
+    Using member-function pointers like &DerivedClass::baseMethod produces a
+    pointer of type Base::* which LuaBridge3/pybind11 cannot reliably call on
+    a Derived object with multiple inheritance (wrong this-pointer adjustment).
+    A plain lambda avoids the issue entirely.
+    """
+    const_prefix = "const " if method.is_const else ""
+    self_param = f"{const_prefix}{cls_qualified_name}& self"
+    params_parts = [f"{p.type_spelling} {p.name}" for p in method.parameters]
+    all_params = ", ".join([self_param] + params_parts)
+    args = ", ".join(p.name for p in method.parameters)
+    call = f"self.{method.spelling}({args})"
+    body = call if method.return_type == "void" else f"return {call}"
+    return f"+[]({all_params}) {{ {body}; }}"
+
+
 def _matches(name: str, pattern: str, is_regex: bool = False) -> bool:
     if is_regex:
         return bool(re.fullmatch(pattern, name))
     return pattern in ("*", name)
 
 
-def _find_classes(module: IRModule, class_pattern: str, is_regex: bool = False) -> List[IRClass]:
+def _find_classes(module: TIRModule, class_pattern: str, is_regex: bool = False) -> List[TIRClass]:
     """Yield all classes (top-level and nested) matching the pattern."""
-    result = []
+    result: List[TIRClass] = []
 
-    def _walk(cls: IRClass) -> None:
+    def _walk(cls: TIRClass) -> None:
         if _matches(cls.name, class_pattern, is_regex):
             result.append(cls)
         for inner in cls.inner_classes:
-            _walk(inner)
+            _walk(inner)  # type: ignore[arg-type]
 
     for cls in module.classes:
-        _walk(cls)
+        _walk(cls)  # type: ignore[arg-type]
     return result
 
 
@@ -139,7 +158,7 @@ class RenameMethodStage(TransformStage):
         self.to_name: str = kwargs["to"]
         self.is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             for method in cls.methods:
                 if _matches(method.name, self.from_name, self.is_regex):
@@ -162,7 +181,7 @@ class RenameClassStage(TransformStage):
         self.to_name: str = kwargs["to"]
         self.is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.from_name, self.is_regex):
             cls.rename = self.to_name
 
@@ -184,7 +203,7 @@ class SuppressMethodStage(TransformStage):
         self.pattern: str = kwargs["pattern"]
         self.is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             for method in cls.methods:
                 if _matches(method.name, self.pattern, self.is_regex):
@@ -206,7 +225,7 @@ class SuppressClassStage(TransformStage):
         self.pattern: str = kwargs["pattern"]
         self.is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.pattern, self.is_regex):
             cls.emit = False
             self._matched = True
@@ -234,21 +253,21 @@ class InjectMethodStage(TransformStage):
         self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
         self.is_static: bool = kwargs.get("is_static", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern):
             params = [
-                IRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
+                TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
                 for p in self.parameters
             ]
-            method = IRMethod(
+            method = TIRMethod(
                 name=self.method_name,
                 spelling=self.method_name,
                 qualified_name=f"{cls.qualified_name}::{self.method_name}",
                 return_type=self.return_type,
-                parameters=params,
+                parameters=params,  # type: ignore[arg-type]
                 is_static=self.is_static,
             )
-            cls.methods.append(method)
+            cls.methods.append(method)  # type: ignore[arg-type]
 
 
 class AddTypeMappingStage(TransformStage):
@@ -265,11 +284,11 @@ class AddTypeMappingStage(TransformStage):
         self.from_type: str = kwargs["from"]
         self.to_type: str = kwargs["to"]
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         def _remap(spelling: str) -> str:
             return self.to_type if spelling == self.from_type else spelling
 
-        def _remap_class(cls: IRClass) -> None:
+        def _remap_class(cls: TIRClass) -> None:
             for method in cls.methods:
                 method.return_type = _remap(method.return_type)
                 for param in method.parameters:
@@ -318,7 +337,7 @@ class ModifyMethodStage(TransformStage):
         self.allow_thread: Optional[bool] = kwargs.get("allow_thread")
         self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             for method in cls.methods:
                 if _matches(method.name, self.method_pattern, self.method_is_regex):
@@ -368,7 +387,7 @@ class ModifyArgumentStage(TransformStage):
         self.default_override: Optional[str] = kwargs.get("default")
         self.ownership: Optional[str] = kwargs.get("ownership")
 
-    def _find_param(self, method: IRMethod) -> Optional[IRParameter]:
+    def _find_param(self, method: TIRMethod) -> Optional[TIRParameter]:
         if self.arg_index is not None:
             params = method.parameters
             if 0 <= self.arg_index < len(params):
@@ -379,7 +398,7 @@ class ModifyArgumentStage(TransformStage):
                 return p
         return None
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             for method in cls.methods:
                 if _matches(method.name, self.method_pattern, self.method_is_regex):
@@ -420,7 +439,7 @@ class ModifyFieldStage(TransformStage):
         self.remove: bool = kwargs.get("remove", False)
         self.read_only: Optional[bool] = kwargs.get("read_only")
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             for f in cls.fields:
                 if _matches(f.name, self.field_pattern, self.field_is_regex):
@@ -432,7 +451,7 @@ class ModifyFieldStage(TransformStage):
                         f.read_only = self.read_only
 
 
-def _ctor_signature(ctor: IRConstructor) -> str:
+def _ctor_signature(ctor: TIRConstructor) -> str:
     """Return a comma+space joined string of parameter type spellings."""
     return ", ".join(p.type_spelling for p in ctor.parameters)
 
@@ -454,7 +473,7 @@ class ModifyConstructorStage(TransformStage):
         self.signature: str = kwargs.get("signature", "")
         self.remove: bool = kwargs.get("remove", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             for ctor in cls.constructors:
                 if _ctor_signature(ctor) == self.signature:
@@ -479,7 +498,7 @@ class RemoveOverloadStage(TransformStage):
         self.method_name: str = kwargs["method"]
         self.signature: str = kwargs["signature"]
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             for method in cls.methods:
                 if method.name == self.method_name:
@@ -495,13 +514,13 @@ class OverloadPriorityStage(TransformStage):
     pybind11/LuaBridge resolves first during argument matching.
 
     YAML::
-      stage: OverloadPriority
+      stage: overload_priority
       class: MyClass
       method: process
       signature: "int process()"   # "return_type method_name(param_types...)"
       priority: 0
     """
-    name = "OverloadPriority"
+    name = "overload_priority"
 
     def __init__(self, **kwargs: Any) -> None:
         self.class_name: str = kwargs.get("class", "*")
@@ -509,7 +528,7 @@ class OverloadPriorityStage(TransformStage):
         self.signature: str = kwargs["signature"]
         self.priority: int = int(kwargs["priority"])
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in module.classes:
             if self.class_name not in ("*", cls.name, cls.qualified_name):
                 continue
@@ -526,13 +545,13 @@ class ExceptionPolicyStage(TransformStage):
     """Set the exception propagation policy for methods and/or free functions.
 
     YAML::
-      stage: ExceptionPolicy
+      stage: exception_policy
       class: MyClass        # optional, default "*" (all classes)
       method: doWork        # optional, default "*" (all methods)
       function: myFunc      # optional, targets free functions
       policy: pass_through  # "none" | "pass_through" | "abort"
     """
-    name = "ExceptionPolicy"
+    name = "exception_policy"
     _VALID_POLICIES = frozenset({"none", "pass_through", "abort"})
 
     def __init__(self, **kwargs: Any) -> None:
@@ -544,7 +563,7 @@ class ExceptionPolicyStage(TransformStage):
         self._method: str = kwargs.get("method", "*")
         self._function: str = kwargs.get("function", "*")
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in module.classes:
             if self._class_name not in ("*", cls.name, cls.qualified_name):
                 continue
@@ -581,7 +600,7 @@ class InjectCodeStage(TransformStage):
         self.position: str = kwargs.get("position", "end")
         self.code: str = kwargs["code"]
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         injection = IRCodeInjection(position=self.position, code=self.code)
         if self.target == "module":
             module.code_injections.append(injection)
@@ -627,7 +646,7 @@ class SetTypeHintStage(TransformStage):
         self.smart_pointer_kind: Optional[str] = kwargs.get("smart_pointer_kind")
         self.smart_pointer_managed_type: Optional[str] = kwargs.get("smart_pointer_managed_type")
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             if self.copyable is not None:
                 cls.copyable = self.copyable
@@ -649,22 +668,22 @@ class SetTypeHintStage(TransformStage):
 # Enum helper
 # ---------------------------------------------------------------------------
 
-def _find_enums(module: IRModule, enum_pattern: str, is_regex: bool = False) -> List[IREnum]:
+def _find_enums(module: TIRModule, enum_pattern: str, is_regex: bool = False) -> List[TIREnum]:
     """Yield all enums (top-level and nested inside classes) matching the pattern."""
-    result: List[IREnum] = []
+    result: List[TIREnum] = []
 
-    def _walk_class(cls: IRClass) -> None:
+    def _walk_class(cls: TIRClass) -> None:
         for enum in cls.enums:
             if _matches(enum.name, enum_pattern, is_regex):
-                result.append(enum)
+                result.append(enum)  # type: ignore[arg-type]
         for inner in cls.inner_classes:
-            _walk_class(inner)
+            _walk_class(inner)  # type: ignore[arg-type]
 
     for enum in module.enums:
         if _matches(enum.name, enum_pattern, is_regex):
-            result.append(enum)
+            result.append(enum)  # type: ignore[arg-type]
     for cls in module.classes:
-        _walk_class(cls)
+        _walk_class(cls)  # type: ignore[arg-type]
     return result
 
 
@@ -688,7 +707,7 @@ class RenameEnumStage(TransformStage):
         self.to_name: str = kwargs["to"]
         self.is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for enum in _find_enums(module, self.from_name, self.is_regex):
             enum.rename = self.to_name
 
@@ -712,7 +731,7 @@ class RenameEnumValueStage(TransformStage):
         self.to_name: str = kwargs["to"]
         self.is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for enum in _find_enums(module, self.enum_pattern, self.enum_is_regex):
             for val in enum.values:
                 if _matches(val.name, self.from_name, self.is_regex):
@@ -733,7 +752,7 @@ class SuppressEnumStage(TransformStage):
         self.pattern: str = kwargs["pattern"]
         self.is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for enum in _find_enums(module, self.pattern, self.is_regex):
             enum.emit = False
 
@@ -755,7 +774,7 @@ class SuppressEnumValueStage(TransformStage):
         self.pattern: str = kwargs["pattern"]
         self.is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for enum in _find_enums(module, self.enum_pattern, self.enum_is_regex):
             for val in enum.values:
                 if _matches(val.name, self.pattern, self.is_regex):
@@ -781,7 +800,7 @@ class ModifyEnumStage(TransformStage):
         self.remove: bool = kwargs.get("remove", False)
         self.arithmetic: Optional[bool] = kwargs.get("arithmetic")
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for enum in _find_enums(module, self.enum_pattern, self.enum_is_regex):
             if self.rename is not None:
                 enum.rename = self.rename
@@ -811,7 +830,7 @@ class RenameFunctionStage(TransformStage):
         self.to_name: str = kwargs["to"]
         self.is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for fn in module.functions:
             if _matches(fn.name, self.from_name, self.is_regex):
                 fn.rename = self.to_name
@@ -831,7 +850,7 @@ class SuppressFunctionStage(TransformStage):
         self.pattern: str = kwargs["pattern"]
         self.is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for fn in module.functions:
             if _matches(fn.name, self.pattern, self.is_regex):
                 fn.emit = False
@@ -864,7 +883,7 @@ class ModifyFunctionStage(TransformStage):
         self.allow_thread: Optional[bool] = kwargs.get("allow_thread")
         self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for fn in module.functions:
             if _matches(fn.name, self.function_pattern, self.function_is_regex):
                 if self.rename is not None:
@@ -888,7 +907,7 @@ class ModifyFunctionStage(TransformStage):
 # ---------------------------------------------------------------------------
 
 class InjectConstructorStage(TransformStage):
-    """Append a synthetic IRConstructor to a class.
+    """Append a synthetic TIRConstructor to a class.
 
     YAML::
       stage: inject_constructor
@@ -904,19 +923,18 @@ class InjectConstructorStage(TransformStage):
         self.class_is_regex: bool = kwargs.get("class_is_regex", False)
         self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             params = [
-                IRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
+                TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
                 for p in self.parameters
             ]
             is_overload = len(cls.constructors) > 0
-            # Mark existing constructors as overloads too
             if is_overload:
                 for existing in cls.constructors:
                     existing.is_overload = True
-            ctor = IRConstructor(parameters=params, is_overload=is_overload)
-            cls.constructors.append(ctor)
+            ctor = TIRConstructor(parameters=params, is_overload=is_overload)  # type: ignore[arg-type]
+            cls.constructors.append(ctor)  # type: ignore[arg-type]
 
 
 class InjectFunctionStage(TransformStage):
@@ -939,20 +957,20 @@ class InjectFunctionStage(TransformStage):
         self.return_type: str = kwargs.get("return_type", "void")
         self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         params = [
-            IRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
+            TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
             for p in self.parameters
         ]
         qualified = f"{self.namespace}::{self.fn_name}" if self.namespace else self.fn_name
-        fn = IRFunction(
+        fn = TIRFunction(
             name=self.fn_name,
             qualified_name=qualified,
             namespace=self.namespace,
             return_type=self.return_type,
-            parameters=params,
+            parameters=params,  # type: ignore[arg-type]
         )
-        module.functions.append(fn)
+        module.functions.append(fn)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -976,7 +994,7 @@ class SuppressBaseStage(TransformStage):
         self.base_pattern: str = kwargs["base"]
         self.base_is_regex: bool = kwargs.get("is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             for base in cls.bases:
                 if _matches(base.qualified_name, self.base_pattern, self.base_is_regex):
@@ -1004,7 +1022,7 @@ class InjectPropertyStage(TransformStage):
         self.setter: Optional[str] = kwargs.get("setter")
         self.type_spelling: str = kwargs.get("type", "")
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             cls.properties.append(IRProperty(
                 name=self.prop_name,
@@ -1044,7 +1062,7 @@ class MarkDeprecatedStage(TransformStage):
         self.enum_is_regex: bool = kwargs.get("enum_is_regex", False)
         self.message: Optional[str] = kwargs.get("message")
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         if self.target == "class":
             for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
                 cls.is_deprecated = True
@@ -1092,7 +1110,7 @@ class ExpandSpaceshipStage(TransformStage):
         self.class_pattern: str = kwargs.get("class", "*")
         self.class_is_regex: bool = kwargs.get("class_is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         _OPS: List[tuple] = [
             ("operator<",  "__lt__",  "std::is_lt"),
             ("operator<=", "__le__",  "std::is_lteq"),
@@ -1102,20 +1120,17 @@ class ExpandSpaceshipStage(TransformStage):
             ("operator!=", "__ne__",  "std::is_neq"),
         ]
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
-            new_methods: List[IRMethod] = []
+            new_methods: List[TIRMethod] = []
             for method in cls.methods:
                 if method.operator_type == "operator<=>":
                     method.emit = False
                     qname = cls.qualified_name
-                    param_types = ", ".join(
-                        (p.type_override or p.type_spelling) for p in method.parameters if p.emit
-                    )
                     for op_spelling, _dunder, std_fn in _OPS:
                         wrapper = (
-                            f"[](const {qname}& a, {param_types or f'const {qname}&'} b)"
+                            f"[](const {qname}& a, const {qname}& b)"
                             f" {{ return {std_fn}(a <=> b); }}"
                         )
-                        new_methods.append(IRMethod(
+                        new_methods.append(TIRMethod(
                             name=op_spelling,
                             spelling=op_spelling,
                             qualified_name=f"{qname}::{op_spelling}",
@@ -1127,7 +1142,7 @@ class ExpandSpaceshipStage(TransformStage):
                             operator_type=op_spelling,
                             wrapper_code=wrapper,
                         ))
-            cls.methods.extend(new_methods)
+            cls.methods.extend(new_methods)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -1156,7 +1171,7 @@ class ExposeProtectedStage(TransformStage):
         self.method_pattern: str = kwargs.get("method", "*")
         self.method_is_regex: bool = kwargs.get("method_is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             for method in cls.methods:
                 if method.access == "protected" and _matches(method.name, self.method_pattern, self.method_is_regex):
@@ -1185,16 +1200,14 @@ class ResolveUsingDeclarationsStage(TransformStage):
         self.class_pattern: str = kwargs.get("class", "*")
         self.class_is_regex: bool = kwargs.get("class_is_regex", False)
 
-    def apply(self, module: IRModule) -> None:
-        # Build lookup from qualified_name → IRClass
-        by_qname: Dict[str, IRClass] = {c.qualified_name: c for c in module.classes}
+    def apply(self, module: TIRModule) -> None:
+        by_qname: Dict[str, TIRClass] = {c.qualified_name: c for c in module.classes}  # type: ignore[misc]
 
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             for ud in cls.using_declarations:
                 if not ud.emit:
                     continue
-                # Find base class: first try exact qualified name, then search all bases
-                base_cls: Optional[IRClass] = None
+                base_cls: Optional[TIRClass] = None
                 if ud.base_qualified_name:
                     base_cls = by_qname.get(ud.base_qualified_name)
                 if base_cls is None:
@@ -1207,13 +1220,13 @@ class ResolveUsingDeclarationsStage(TransformStage):
                                 break
                 if base_cls is None:
                     continue
-                # Copy matching methods from base class
                 existing_names = {m.name for m in cls.methods}
                 for method in base_cls.methods:
                     if method.name == ud.member_name and method.name not in existing_names:
                         new_method = copy.copy(method)
                         new_method.access = "public"
                         new_method.emit = True
+                        new_method.wrapper_code = _make_using_wrapper(cls.qualified_name, method)
                         cls.methods.append(new_method)
 
 
@@ -1241,7 +1254,7 @@ class RegisterExceptionStage(TransformStage):
         self.python_exception_name: str = kwargs.get("python_name", kwargs["cpp_type"].split("::")[-1])
         self.base_python_exception: str = kwargs.get("base", "Exception")
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         module.exception_registrations.append(IRExceptionRegistration(
             cpp_exception_type=self.cpp_exception_type,
             python_exception_name=self.python_exception_name,

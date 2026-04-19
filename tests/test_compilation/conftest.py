@@ -8,7 +8,7 @@ import pytest
 
 from tsujikiri.configurations import load_input_config
 from tsujikiri.filters import FilterEngine
-from tsujikiri.ir import merge_modules
+from tsujikiri.tir import merge_tir_modules
 from tsujikiri.parser import parse_translation_unit
 from tsujikiri.transforms import build_pipeline_from_config
 
@@ -26,7 +26,7 @@ def _load_module(config_file: Path, module_name: str):
         FilterEngine(effective).apply(mod)
         build_pipeline_from_config(effective_transforms).run(mod)
         modules.append(mod)
-    return merge_modules(modules)
+    return merge_tir_modules(modules)
 
 
 # ---------------------------------------------------------------------------
@@ -108,3 +108,12 @@ def samplebinding_module():
 @pytest.fixture(scope="module")
 def typesystem_module():
     return _load_module(HERE / "typesystem" / "typesystem.input.yml", "typesystem")
+
+
+# ---------------------------------------------------------------------------
+# transforms: full exercise of every transform stage
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def transforms_module():
+    return _load_module(HERE / "transforms" / "transforms.input.yml", "transforms")

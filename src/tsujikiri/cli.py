@@ -10,7 +10,7 @@ import re
 import sys
 from io import StringIO
 from pathlib import Path
-from typing import IO, List, Optional
+from typing import IO, Any, List, Optional
 
 from tsujikiri.attribute_processor import AttributeProcessor
 from tsujikiri.configurations import GenerationConfig, load_input_config, load_output_config
@@ -18,7 +18,7 @@ from tsujikiri.filters import FilterEngine
 from tsujikiri.pretty_printers import pretty
 from tsujikiri.formats import apply_format_inheritance, resolve_format_path, list_builtin_formats
 from tsujikiri.generator import Generator
-from tsujikiri.ir import IRFunction, IRParameter, IRModule, merge_modules
+from tsujikiri.tir import TIRFunction, TIRModule, TIRParameter, merge_tir_modules, upgrade_module
 from tsujikiri.manifest import compare_manifests, compute_manifest, load_manifest, save_manifest, suggest_version_bump
 from tsujikiri.parser import parse_translation_unit
 from tsujikiri.transforms import _REGISTRY, build_pipeline_from_config
@@ -117,11 +117,15 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _ir_to_dict(module: IRModule) -> dict:
-    """Serialize IRModule to a JSON-compatible dict."""
-    def _convert(obj):
+def _ir_to_dict(module: TIRModule) -> dict:
+    """Serialize TIRModule to a JSON-compatible dict."""
+    def _convert(obj: Any) -> Any:
         if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-            return {k: _convert(v) for k, v in dataclasses.asdict(obj).items()}
+            return {
+                f.name: _convert(getattr(obj, f.name))
+                for f in dataclasses.fields(obj)  # type: ignore[arg-type]
+                if f.name != "origin"
+            }
         if isinstance(obj, (list, tuple)):
             return [_convert(x) for x in obj]
         if isinstance(obj, dict):
@@ -129,7 +133,6 @@ def _ir_to_dict(module: IRModule) -> dict:
         return obj
 
     d = _convert(module)
-    # Remove class_by_name to avoid duplicate data
     d.pop("class_by_name", None)
     return d
 
@@ -199,14 +202,14 @@ def _process_sources(
     classname_filter: Optional[str],
     trace_stream: Optional[IO],
     verbose: bool = False,
-) -> tuple[IRModule, list[str]]:
-    """Run parse → filter → attribute → transform for all sources, return merged module and includes."""
+) -> tuple[TIRModule, list[str]]:
+    """Run parse → upgrade → filter → attribute → transform for all sources, return merged module and includes."""
     fmt_override = input_config.format_overrides.get(output_config.format_name)
     fmt_filters = fmt_override.filters if fmt_override else None
     fmt_transforms = fmt_override.transforms if fmt_override else None
     fmt_transforms_list: List = list(fmt_transforms) if fmt_transforms else []
 
-    all_modules = []
+    all_modules: List[TIRModule] = []
     all_includes: List[str] = list(input_config.generation.includes)
 
     for entry in source_entries:
@@ -218,17 +221,18 @@ def _process_sources(
         if fmt_transforms_list:
             effective_transforms = list(effective_transforms) + fmt_transforms_list
 
-        module = parse_translation_unit(
+        ir_module = parse_translation_unit(
             entry.source,
             effective_filters.namespaces,
             module_name,
             verbose=verbose,
         )
+        module = upgrade_module(ir_module)
 
         if classname_filter:
-            for ir_class in module.classes:
-                if ir_class.name != classname_filter:
-                    ir_class.emit = False
+            for tir_class in module.classes:
+                if tir_class.name != classname_filter:
+                    tir_class.emit = False  # type: ignore[union-attr]
 
         FilterEngine(effective_filters).apply(module)
 
@@ -259,7 +263,7 @@ def _process_sources(
         if entry.generation:
             all_includes.extend(entry.generation.includes)
 
-    return merge_modules(all_modules), all_includes
+    return merge_tir_modules(all_modules), all_includes
 
 
 def main() -> None:
@@ -314,11 +318,11 @@ def main() -> None:
     # --- Inject declared functions from typesystem ---
     for fn_decl in input_config.typesystem.declared_functions:
         params = [
-            IRParameter(name=p["name"], type_spelling=p.get("type", ""))
+            TIRParameter(name=p["name"], type_spelling=p.get("type", ""))
             for p in fn_decl.parameters
         ]
         qualified = f"{fn_decl.namespace}::{fn_decl.name}" if fn_decl.namespace else fn_decl.name
-        merged.functions.append(IRFunction(
+        merged.functions.append(TIRFunction(  # type: ignore[arg-type]
             name=fn_decl.name,
             qualified_name=qualified,
             namespace=fn_decl.namespace,

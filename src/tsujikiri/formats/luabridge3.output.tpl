@@ -25,9 +25,9 @@ const char* get_{{ module_name }}_api_version() { return k_{{ module_name }}_api
 
 void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State* L{% block prologue_params %}{% endblock %})
 {
+  {{ code_injections | code_at("beginning") }}
   {% block prologue_entry_method %}luabridge::getGlobalNamespace{% endblock %}(L)
     .beginNamespace("{{ module_name }}")
-{{- code_injections | code_at("beginning") }}
 {%- endblock %}
 {%- block api_version_registration %}
 {%- if api_version %}
@@ -39,7 +39,7 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
       .beginNamespace("{{ enum.name }}")
 {%- for value in enum.values %}
 {%- block enum_value scoped %}
-        .addProperty("{{ value.name }}", +[] { return static_cast<std::underlying_type_t<{{ enum.qualified_name }}>>({{ enum.qualified_name }}::{{ value.name }}); })
+        .addProperty("{{ value.name }}", +[] { return static_cast<std::underlying_type_t<{{ enum.qualified_name }}>>({{ enum.qualified_name }}::{{ value.original_name }}); })
 {%- endblock %}
 {%- endfor %}
       .endNamespace()
@@ -111,19 +111,22 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- endblock %}
 {%- else %}
 {%- block class_method_group scoped %}
+{%- if group.methods | selectattr("access", "equalto", "public_via_trampoline") | list | length == group.methods | length %}
+{%- else %}
 {%- if group.is_overloaded %}
 {%- set method0 = group.methods[0] %}
 {%- if method0.is_operator and method0.operator_name %}
 {%- if method0.operator_name == "__tostring" %}
-        .addMetaMethod("__tostring", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
+        .addFunction("__tostring", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
 {%- else %}
-        .addMetaMethod("{{ method0.operator_name }}",
+        .addFunction("{{ method0.operator_name }}",
 {%- for method in group.methods %}
 {% block class_overloaded_metamethod scoped %}          {% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
 {%- endblock %}
 {%- endfor %}
         )
 {%- endif %}
+{%- elif method0.is_operator %}
 {%- else %}
         .addFunction("{{ group.name | camel_to_snake }}",
 {%- for method in group.methods %}
@@ -134,14 +137,17 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- endif %}
 {%- else %}
 {%- set method = group.methods[0] %}
-{%- if method.wrapper_code %}
-        .addFunction("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }})
+{%- if method.access == "public_via_trampoline" %}
 {%- elif method.is_operator and method.operator_name == "__tostring" %}
-        .addMetaMethod("__tostring", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
+        .addFunction("__tostring", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
 {%- elif method.is_operator and method.operator_name %}
-        .addMetaMethod("{{ method.operator_name }}", &{{ cls.qualified_name }}::{{ method.spelling }})
+        .addFunction("{{ method.operator_name }}", {% if method.wrapper_code %}{{ method.wrapper_code }}{% else %}&{{ cls.qualified_name }}::{{ method.spelling }}{% endif %})
+{%- elif method.is_operator %}
+{%- elif method.wrapper_code %}
+        .addFunction("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }})
 {%- else %}
         .addFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }})
+{%- endif %}
 {%- endif %}
 {%- endif %}
 {%- endblock %}
@@ -153,15 +159,15 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- block class_field scoped %}
 {%- if field.is_static %}
 {%- if field.read_only %}
-        .addStaticProperty("{{ field.name | camel_to_snake }}", +[] () { return {{ cls.qualified_name }}::{{ field.name }}; }, nullptr)
+        .addStaticProperty("{{ field.name | camel_to_snake }}", +[] () { return {{ cls.qualified_name }}::{{ field.original_name }}; }, nullptr)
 {%- else %}
-        .addStaticProperty("{{ field.name | camel_to_snake }}", +[] () { return {{ cls.qualified_name }}::{{ field.name }}; }, +[] (const decltype({{ cls.qualified_name }}::{{ field.name }})& v) { {{ cls.qualified_name }}::{{ field.name }} = v; })
+        .addStaticProperty("{{ field.name | camel_to_snake }}", +[] () { return {{ cls.qualified_name }}::{{ field.original_name }}; }, +[] (const decltype({{ cls.qualified_name }}::{{ field.original_name }})& v) { {{ cls.qualified_name }}::{{ field.original_name }} = v; })
 {%- endif %}
 {%- else %}
 {%- if field.read_only %}
-        .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}, nullptr)
+        .addProperty("{{ field.name | camel_to_snake }}", [](const {{ cls.qualified_name }}& o) { return o.{{ field.original_name }}; }, nullptr)
 {%- else %}
-        .addProperty("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }})
+        .addProperty("{{ field.name | camel_to_snake }}", [](const {{ cls.qualified_name }}& o) { return o.{{ field.original_name }}; }, []({{ cls.qualified_name }}& o, const {{ field.raw_type }}& v) { o.{{ field.original_name }} = v; })
 {%- endif %}
 {%- endif %}
 {%- endblock %}
@@ -184,7 +190,7 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
         .beginNamespace("{{ enum.name }}")
 {%- for value in enum.values %}
 {%- block class_enum_value scoped %}
-          .addProperty("{{ value.name }}", +[] { return static_cast<std::underlying_type_t<{{ enum.qualified_name }}>>({{ enum.qualified_name }}::{{ value.name }}); })
+          .addProperty("{{ value.name }}", +[] { return static_cast<std::underlying_type_t<{{ enum.qualified_name }}>>({{ enum.qualified_name }}::{{ value.original_name }}); })
 {%- endblock %}
 {%- endfor %}
         .endNamespace()
@@ -195,8 +201,9 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
       .endClass()
 {%- endblock %}
 {%- endfor %}
-{{- code_injections | code_at("end") }}
 {%- block epilogue %}
     .endNamespace();
+
+  {{ code_injections | code_at("end") }}
 }
 {%- endblock %}

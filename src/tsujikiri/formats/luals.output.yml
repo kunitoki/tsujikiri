@@ -31,4 +31,22 @@ type_mappings:
   "std::string_view": "string"
   "void": "nil"
 
+operator_mappings:
+  "operator+": "__add"
+  "operator-": "__sub"
+  "operator-unary": "__unm"
+  "operator*": "__mul"
+  "operator/": "__div"
+  "operator%": "__mod"
+  "operator==": "__eq"
+  "operator<": "__lt"
+  "operator<=": "__le"
+  "operator<<": "__tostring"
+  "operator()": "__call"
+  "operator&": "__band"
+  "operator|": "__bor"
+  "operator^": "__bxor"
+  "operator~": "__bnot"
+  "operator>>": "__shr"
+
 template_file: "luals.output.tpl"

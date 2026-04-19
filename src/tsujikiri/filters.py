@@ -12,7 +12,7 @@ import re
 from typing import List
 
 from tsujikiri.configurations import FilterConfig, FilterPattern
-from tsujikiri.ir import IRClass, IRModule
+from tsujikiri.tir import TIRClass, TIRModule
 
 
 def _matches(name: str, patterns: List[FilterPattern]) -> bool:
@@ -39,7 +39,7 @@ class FilterEngine:
     def __init__(self, filter_config: FilterConfig) -> None:
         self.cfg = filter_config
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         """Mutate module in place, setting emit=False on filtered nodes."""
         self._filter_classes(module)
         self._filter_functions(module)
@@ -49,13 +49,13 @@ class FilterEngine:
     # Classes
     # ------------------------------------------------------------------
 
-    def _filter_classes(self, module: IRModule) -> None:
+    def _filter_classes(self, module: TIRModule) -> None:
         for ir_class in module.classes:
             if not ir_class.emit:
                 continue
             self._filter_class(ir_class)
 
-    def _filter_class(self, ir_class: IRClass) -> None:
+    def _filter_class(self, ir_class: TIRClass) -> None:
         name = ir_class.name
         cfg = self.cfg
 
@@ -79,6 +79,9 @@ class FilterEngine:
             ir_class.emit = False
             return
 
+        # Bases outside the filtered namespaces cannot be registered, so suppress them
+        self._filter_bases(ir_class)
+
         # Methods
         self._filter_methods(ir_class)
 
@@ -95,7 +98,18 @@ class FilterEngine:
         for inner in ir_class.inner_classes:
             self._filter_class(inner)
 
-    def _filter_methods(self, ir_class: IRClass) -> None:
+    def _filter_bases(self, ir_class: TIRClass) -> None:
+        """Mark bases emit=False when they are outside the configured namespace filter."""
+        if not self.cfg.namespaces:
+            return
+        for base in ir_class.bases:
+            if not base.emit:
+                continue
+            qname = base.qualified_name
+            if not any(qname == ns or qname.startswith(ns + "::") for ns in self.cfg.namespaces):
+                base.emit = False
+
+    def _filter_methods(self, ir_class: TIRClass) -> None:
         per_class = self.cfg.methods.per_class.get(ir_class.name, [])
         for method in ir_class.methods:
             if not method.emit:
@@ -113,7 +127,7 @@ class FilterEngine:
             if _matches(method.name, per_class):
                 method.emit = False
 
-    def _filter_constructors(self, ir_class: IRClass) -> None:
+    def _filter_constructors(self, ir_class: TIRClass) -> None:
         cfg = self.cfg.constructors
         if not cfg.include:
             for ctor in ir_class.constructors:
@@ -127,7 +141,7 @@ class FilterEngine:
                 if not _matches(sig, cfg.signatures):
                     ctor.emit = False
 
-    def _filter_fields(self, ir_class: IRClass) -> None:
+    def _filter_fields(self, ir_class: TIRClass) -> None:
         per_class = self.cfg.fields.per_class.get(ir_class.name, [])
         for f in ir_class.fields:
             if not f.emit:
@@ -142,7 +156,7 @@ class FilterEngine:
     # Functions
     # ------------------------------------------------------------------
 
-    def _filter_functions(self, module: IRModule) -> None:
+    def _filter_functions(self, module: TIRModule) -> None:
         cfg = self.cfg.functions
         whitelist = cfg.whitelist
         blacklist = cfg.blacklist

@@ -7,7 +7,7 @@ import io
 import pytest
 
 from tsujikiri.generator import Generator
-from tsujikiri.ir import IRFunction, IRModule, IRParameter
+from tsujikiri.tir import TIRFunction, TIRModule, TIRParameter
 
 
 @pytest.fixture(scope="module")
@@ -17,21 +17,21 @@ def pybind11_output_config():
     return load_output_config(resolve_format_path("pybind11"))
 
 
-def _gen(module: IRModule, cfg) -> str:
+def _gen(module: TIRModule, cfg) -> str:
     buf = io.StringIO()
     Generator(cfg).generate(module, buf)
     return buf.getvalue()
 
 
-def _module_with_fn(fn: IRFunction) -> IRModule:
-    mod = IRModule(name="test")
+def _module_with_fn(fn: TIRFunction) -> TIRModule:
+    mod = TIRModule(name="test")
     mod.functions = [fn]
     return mod
 
 
 class TestFreeFunctionReturnOwnership:
     def test_return_ownership_cpp_emits_reference_internal(self, pybind11_output_config) -> None:
-        fn = IRFunction(
+        fn = TIRFunction(
             name="getRef",
             qualified_name="getRef",
             namespace="",
@@ -42,7 +42,7 @@ class TestFreeFunctionReturnOwnership:
         assert "return_value_policy::reference_internal" in output
 
     def test_return_ownership_script_emits_take_ownership(self, pybind11_output_config) -> None:
-        fn = IRFunction(
+        fn = TIRFunction(
             name="makeObj",
             qualified_name="makeObj",
             namespace="",
@@ -53,7 +53,7 @@ class TestFreeFunctionReturnOwnership:
         assert "return_value_policy::take_ownership" in output
 
     def test_no_return_ownership_emits_no_policy(self, pybind11_output_config) -> None:
-        fn = IRFunction(
+        fn = TIRFunction(
             name="doSomething",
             qualified_name="doSomething",
             namespace="",
@@ -65,7 +65,7 @@ class TestFreeFunctionReturnOwnership:
 
 class TestFreeFunctionAllowThread:
     def test_allow_thread_emits_gil_release(self, pybind11_output_config) -> None:
-        fn = IRFunction(
+        fn = TIRFunction(
             name="longOp",
             qualified_name="longOp",
             namespace="",
@@ -76,7 +76,7 @@ class TestFreeFunctionAllowThread:
         assert "py::call_guard<py::gil_scoped_release>()" in output
 
     def test_no_allow_thread_no_gil_release(self, pybind11_output_config) -> None:
-        fn = IRFunction(
+        fn = TIRFunction(
             name="quickOp",
             qualified_name="quickOp",
             namespace="",
@@ -89,7 +89,7 @@ class TestFreeFunctionAllowThread:
 
 class TestFreeFunctionReturnKeepAlive:
     def test_return_keep_alive_emits_keep_alive(self, pybind11_output_config) -> None:
-        fn = IRFunction(
+        fn = TIRFunction(
             name="makeChild",
             qualified_name="makeChild",
             namespace="",
@@ -100,7 +100,7 @@ class TestFreeFunctionReturnKeepAlive:
         assert "keep_alive" in output
 
     def test_no_return_keep_alive_no_keep_alive(self, pybind11_output_config) -> None:
-        fn = IRFunction(
+        fn = TIRFunction(
             name="getVal",
             qualified_name="getVal",
             namespace="",
@@ -113,7 +113,7 @@ class TestFreeFunctionReturnKeepAlive:
 
 class TestFreeFunctionDeprecated:
     def test_deprecated_emits_deprecated_annotation(self, pybind11_output_config) -> None:
-        fn = IRFunction(
+        fn = TIRFunction(
             name="oldOp",
             qualified_name="oldOp",
             namespace="",
@@ -126,7 +126,7 @@ class TestFreeFunctionDeprecated:
         assert "use newOp instead" in output
 
     def test_not_deprecated_no_annotation(self, pybind11_output_config) -> None:
-        fn = IRFunction(
+        fn = TIRFunction(
             name="currentOp",
             qualified_name="currentOp",
             namespace="",
@@ -139,45 +139,45 @@ class TestFreeFunctionDeprecated:
 
 class TestFreeFunctionOverloadedReturnOwnership:
     def test_overloaded_fn_return_ownership_cpp(self, pybind11_output_config) -> None:
-        fn1 = IRFunction(
+        fn1 = TIRFunction(
             name="getRef",
             qualified_name="getRef",
             namespace="",
             return_type="MyClass &",
             return_ownership="cpp",
-            parameters=[IRParameter(name="idx", type_spelling="int")],
+            parameters=[TIRParameter(name="idx", type_spelling="int")],
         )
-        fn2 = IRFunction(
+        fn2 = TIRFunction(
             name="getRef",
             qualified_name="getRef",
             namespace="",
             return_type="MyClass &",
             return_ownership="cpp",
-            parameters=[IRParameter(name="key", type_spelling="const char *")],
+            parameters=[TIRParameter(name="key", type_spelling="const char *")],
         )
-        mod = IRModule(name="test")
+        mod = TIRModule(name="test")
         mod.functions = [fn1, fn2]
         output = _gen(mod, pybind11_output_config)
         assert "return_value_policy::reference_internal" in output
 
     def test_overloaded_fn_allow_thread(self, pybind11_output_config) -> None:
-        fn1 = IRFunction(
+        fn1 = TIRFunction(
             name="longOp",
             qualified_name="longOp",
             namespace="",
             return_type="void",
             allow_thread=True,
-            parameters=[IRParameter(name="x", type_spelling="int")],
+            parameters=[TIRParameter(name="x", type_spelling="int")],
         )
-        fn2 = IRFunction(
+        fn2 = TIRFunction(
             name="longOp",
             qualified_name="longOp",
             namespace="",
             return_type="void",
             allow_thread=True,
-            parameters=[IRParameter(name="x", type_spelling="float")],
+            parameters=[TIRParameter(name="x", type_spelling="float")],
         )
-        mod = IRModule(name="test")
+        mod = TIRModule(name="test")
         mod.functions = [fn1, fn2]
         output = _gen(mod, pybind11_output_config)
         assert "gil_scoped_release" in output

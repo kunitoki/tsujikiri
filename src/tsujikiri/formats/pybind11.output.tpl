@@ -78,8 +78,8 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- block class scoped %}
 {%- if cls.has_virtual_methods %}
 
-class {{ cls.trampoline_name }} : public {{ cls.qualified_name }} {
-public:
+  class {{ cls.trampoline_name }} : public {{ cls.qualified_name }} {
+  public:
     using {{ cls.qualified_name }}::{{ cls.cpp_name }};
 {%- for vm in cls.virtual_methods %}
 {%- block trampoline_method scoped %}
@@ -96,11 +96,11 @@ public:
 {%- endfor %}
 {%- endif %}
 {{ cls.declaration_injections | code_at("declaration") }}
-};
+  };
 {%- endif %}
+  {{ cls.code_injections | code_at("beginning") }}
 
   py::class_<{{ cls.qualified_name }}{% if cls.has_virtual_methods %}, {{ cls.trampoline_name }}{% endif %}{% if cls.holder_type %}, {{ cls.holder_type }}<{{ cls.qualified_name }}>{% endif %}{% for b in cls.public_bases %}, {{ b.qualified_name }}{% endfor %}>(m, "{{ cls.name }}"{% if cls.doc %}, "{{ cls.doc }}"{% endif %})
-{{ cls.code_injections | code_at("beginning") }}
 {%- block class_constructors scoped %}
 {%- if not cls.force_abstract %}
 {%- for ctor in cls.constructor_group.constructors %}
@@ -145,12 +145,12 @@ public:
 {%- endfor %}
 {%- else %}
 {%- set method = group.methods[0] %}
-{%- if method.wrapper_code %}
-    .def("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }}{% if method.doc %}, "{{ method.doc }}"{% endif %})
-{%- elif method.is_operator and method.operator_name == "__repr__" %}
+{%- if method.is_operator and method.operator_name == "__repr__" %}
     .def("__repr__", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
 {%- elif method.is_operator and method.operator_name %}
-    .def("{{ method.operator_name }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p | param_name('name', loop.index0) }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+    .def("{{ method.operator_name }}", {% if method.wrapper_code %}{{ method.wrapper_code }}{% else %}&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p | param_name('name', loop.index0) }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% endif %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+{%- elif method.wrapper_code %}
+    .def("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }}{% if method.doc %}, "{{ method.doc }}"{% endif %})
 {%- else %}
     .def("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p | param_name('name', loop.index0) }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if method.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
 {%- endif %}
@@ -164,15 +164,15 @@ public:
 {%- block class_field scoped %}
 {%- if field.is_static %}
 {%- if field.read_only %}
-    .def_readonly_static("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
+    .def_readonly_static("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.original_name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
 {%- else %}
-    .def_readwrite_static("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
+    .def_readwrite_static("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.original_name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
 {%- endif %}
 {%- else %}
 {%- if field.read_only %}
-    .def_readonly("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
+    .def_readonly("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.original_name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
 {%- else %}
-    .def_readwrite("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
+    .def_readwrite("{{ field.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ field.original_name }}{% if field.doc %}, "{{ field.doc }}"{% endif %})
 {%- endif %}
 {%- endif %}
 {%- endblock %}
@@ -196,10 +196,10 @@ public:
     .def("__repr__", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
 {%- endif %}
 {{ cls.code_injections | code_at("end") }}
-    ;
+  ;
 {%- endblock %}
 {%- endfor %}
-{{ code_injections | code_at("end") }}
 {%- block epilogue %}
+  {{ code_injections | code_at("end") }}
 }
 {%- endblock %}

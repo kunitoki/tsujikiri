@@ -12,10 +12,8 @@ unsupported_types:
 type_mappings: {}
 
 # C++ operator overload → Lua metamethod name mapping
-# operator<< maps to __tostring to generate a lambda using std::ostringstream
 operator_mappings:
   "operator+": "__add"
-  "operator+unary": "__unm"
   "operator-": "__sub"
   "operator-unary": "__unm"
   "operator*": "__mul"
@@ -24,8 +22,12 @@ operator_mappings:
   "operator==": "__eq"
   "operator<": "__lt"
   "operator<=": "__le"
-  "operator<<": "__tostring"
-  "operator[]": "__index"
   "operator()": "__call"
+  "operator&": "__band"
+  "operator|": "__bor"
+  "operator^": "__bxor"
+  "operator~": "__bnot"
+  "operator<<": "__shl"
+  "operator>>": "__shr"
 
 template_file: "luabridge3.output.tpl"

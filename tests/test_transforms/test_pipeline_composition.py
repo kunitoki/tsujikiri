@@ -9,15 +9,15 @@ from __future__ import annotations
 import pytest
 
 from tsujikiri.configurations import TransformSpec
-from tsujikiri.ir import (
-    IRClass,
-    IREnum,
-    IREnumValue,
-    IRField,
-    IRFunction,
-    IRMethod,
-    IRModule,
-    IRParameter,
+from tsujikiri.tir import (
+    TIRClass,
+    TIREnum,
+    TIREnumValue,
+    TIRField,
+    TIRFunction,
+    TIRMethod,
+    TIRModule,
+    TIRParameter,
 )
 from tsujikiri.transforms import (
     ModifyFunctionStage,
@@ -38,8 +38,8 @@ from tsujikiri.transforms import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _simple_class(name: str = "Foo") -> IRClass:
-    return IRClass(
+def _simple_class(name: str = "Foo") -> TIRClass:
+    return TIRClass(
         name=name,
         qualified_name=f"ns::{name}",
         namespace="ns",
@@ -47,8 +47,8 @@ def _simple_class(name: str = "Foo") -> IRClass:
     )
 
 
-def _simple_function(name: str = "compute") -> IRFunction:
-    return IRFunction(
+def _simple_function(name: str = "compute") -> TIRFunction:
+    return TIRFunction(
         name=name,
         qualified_name=f"ns::{name}",
         namespace="ns",
@@ -56,11 +56,11 @@ def _simple_function(name: str = "compute") -> IRFunction:
     )
 
 
-def _simple_enum(name: str = "Color") -> IREnum:
-    return IREnum(
+def _simple_enum(name: str = "Color") -> TIREnum:
+    return TIREnum(
         name=name,
         qualified_name=f"ns::{name}",
-        values=[IREnumValue("A", 0), IREnumValue("B", 1)],
+        values=[TIREnumValue("A", 0), TIREnumValue("B", 1)],
     )
 
 
@@ -71,19 +71,19 @@ def _simple_enum(name: str = "Color") -> IREnum:
 class TestPipelineBasics:
     def test_empty_pipeline_is_noop(self):
         pipeline = TransformPipeline([])
-        mod = IRModule(name="m", functions=[_simple_function()])
+        mod = TIRModule(name="m", functions=[_simple_function()])
         pipeline.run(mod)
         assert mod.functions[0].emit is True
 
     def test_single_stage_applied(self):
-        mod = IRModule(name="m", functions=[_simple_function("doThing")])
+        mod = TIRModule(name="m", functions=[_simple_function("doThing")])
         pipeline = TransformPipeline([RenameFunctionStageHelper("doThing", "do_thing")])
         pipeline.run(mod)
         assert mod.functions[0].rename == "do_thing"
 
     def test_build_pipeline_from_config_single(self):
         specs = [TransformSpec(stage="suppress_class", kwargs={"pattern": "Foo"})]
-        mod = IRModule(name="m", classes=[_simple_class("Foo")])
+        mod = TIRModule(name="m", classes=[_simple_class("Foo")])
         pipeline = build_pipeline_from_config(specs)
         pipeline.run(mod)
         assert mod.classes[0].emit is False
@@ -103,7 +103,7 @@ class TestRenameSupressChain:
         Suppress matches on the original C++ name, not the rename.
         Result: class is renamed AND suppressed.
         """
-        mod = IRModule(name="m", classes=[_simple_class("Foo")])
+        mod = TIRModule(name="m", classes=[_simple_class("Foo")])
         pipeline = TransformPipeline([
             RenameClassStage(**{"from": "Foo", "to": "Bar"}),
             SuppressClassStage(pattern="Foo"),
@@ -115,13 +115,13 @@ class TestRenameSupressChain:
 
     def test_rename_method_then_suppress(self):
         """Rename getValue → get_value, then suppress by original name getValue."""
-        method = IRMethod(
+        method = TIRMethod(
             name="getValue", spelling="getValue",
             qualified_name="ns::Foo::getValue", return_type="int",
         )
         cls = _simple_class("Foo")
         cls.methods = [method]
-        mod = IRModule(name="m", classes=[cls])
+        mod = TIRModule(name="m", classes=[cls])
         pipeline = TransformPipeline([
             RenameMethodStage(**{"class": "Foo", "from": "getValue", "to": "get_value"}),
             SuppressMethodStage(**{"class": "Foo", "pattern": "getValue"}),
@@ -132,7 +132,7 @@ class TestRenameSupressChain:
 
     def test_rename_function_then_suppress(self):
         """Rename computeArea → compute_area, then suppress the renamed function."""
-        mod = IRModule(name="m", functions=[_simple_function("computeArea")])
+        mod = TIRModule(name="m", functions=[_simple_function("computeArea")])
         pipeline = TransformPipeline([
             RenameFunctionStageHelper("computeArea", "compute_area"),
             SuppressFunctionStage(pattern="computeArea"),  # stage matches original name
@@ -152,7 +152,7 @@ class TestDoubleRenameChain:
         """Both rename stages match original name 'Foo'. Last stage wins (sets rename to Baz).
         Stages match on original cls.name, not the previously set rename.
         """
-        mod = IRModule(name="m", classes=[_simple_class("Foo")])
+        mod = TIRModule(name="m", classes=[_simple_class("Foo")])
         pipeline = TransformPipeline([
             RenameClassStage(**{"from": "Foo", "to": "Bar"}),
             RenameClassStage(**{"from": "Foo", "to": "Baz"}),
@@ -165,7 +165,7 @@ class TestDoubleRenameChain:
         """Two rename stages for the same enum value (by original name).
         The second stage overwrites the first since both match the original name 'A'.
         """
-        mod = IRModule(name="m", enums=[_simple_enum("Color")])
+        mod = TIRModule(name="m", enums=[_simple_enum("Color")])
         pipeline = TransformPipeline([
             RenameEnumValueStage(**{"enum": "Color", "from": "A", "to": "Alpha"}),
             RenameEnumValueStage(**{"enum": "Color", "from": "A", "to": "AlphaFinal"}),
@@ -186,7 +186,7 @@ class TestSuppressChain:
         so rename will apply — but the class won't be emitted anyway.
         This tests that the pipeline doesn't crash.
         """
-        mod = IRModule(name="m", classes=[_simple_class("Foo")])
+        mod = TIRModule(name="m", classes=[_simple_class("Foo")])
         pipeline = TransformPipeline([
             SuppressClassStage(pattern="Foo"),
             RenameClassStage(**{"from": "Foo", "to": "Bar"}),
@@ -204,7 +204,7 @@ class TestSuppressChain:
 class TestEnumChain:
     def test_rename_enum_then_suppress_by_original(self):
         """Rename Color → Colour, then suppress by original name Color."""
-        mod = IRModule(name="m", enums=[_simple_enum("Color")])
+        mod = TIRModule(name="m", enums=[_simple_enum("Color")])
         pipeline = TransformPipeline([
             RenameEnumStage(**{"from": "Color", "to": "Colour"}),
             SuppressEnumStage(pattern="Color"),
@@ -216,7 +216,7 @@ class TestEnumChain:
     def test_multiple_enum_operations(self):
         """Rename Color, rename value A, suppress value B. All stages use original names."""
         from tsujikiri.transforms import SuppressEnumValueStage
-        mod = IRModule(name="m", enums=[_simple_enum("Color")])
+        mod = TIRModule(name="m", enums=[_simple_enum("Color")])
         pipeline = TransformPipeline([
             RenameEnumStage(**{"from": "Color", "to": "Colour"}),
             RenameEnumValueStage(**{"enum": "Color", "from": "A", "to": "red"}),
@@ -236,7 +236,7 @@ class TestEnumChain:
 class TestFunctionChain:
     def test_modify_then_suppress(self):
         """Modify function return type, then suppress it."""
-        mod = IRModule(name="m", functions=[_simple_function("doWork")])
+        mod = TIRModule(name="m", functions=[_simple_function("doWork")])
         pipeline = TransformPipeline([
             ModifyFunctionStage(
                 **{"function": "doWork", "return_type": "void"}
@@ -252,7 +252,7 @@ class TestFunctionChain:
         """Suppressing 'work' should not affect 'compute'."""
         fn1 = _simple_function("work")
         fn2 = _simple_function("compute")
-        mod = IRModule(name="m", functions=[fn1, fn2])
+        mod = TIRModule(name="m", functions=[fn1, fn2])
         pipeline = TransformPipeline([SuppressFunctionStage(pattern="work")])
         pipeline.run(mod)
         assert mod.functions[0].emit is False
@@ -269,5 +269,5 @@ class RenameFunctionStageHelper:
         from tsujikiri.transforms import RenameFunctionStage
         self._stage = RenameFunctionStage(**{"from": from_name, "to": to_name})
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         self._stage.apply(module)
