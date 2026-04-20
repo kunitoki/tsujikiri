@@ -285,6 +285,14 @@ class TestTIRParameter:
         assert p.default_value == "1"
         assert p.default_override == "0"
 
+    def test_index_defaults_to_zero(self):
+        p = TIRParameter(name="x", type_spelling="int")
+        assert p.index == 0
+
+    def test_index_can_be_set(self):
+        p = TIRParameter(name="x", type_spelling="int", index=3)
+        assert p.index == 3
+
 
 class TestTIRMethod:
     def test_defaults(self):
@@ -579,6 +587,37 @@ class TestUpgradeParameter:
         tir = upgrade_parameter(ir)
         assert tir.origin is ir
 
+    def test_index_defaults_to_zero(self):
+        ir = IRParameter(name="x", type_spelling="int")
+        tir = upgrade_parameter(ir)
+        assert tir.index == 0
+
+    def test_index_set_from_argument(self):
+        ir = IRParameter(name="x", type_spelling="int")
+        tir = upgrade_parameter(ir, 3)
+        assert tir.index == 3
+
+    def test_unnamed_param_name_forced_to_p0(self):
+        ir = IRParameter(name="", type_spelling="int")
+        tir = upgrade_parameter(ir, 0)
+        assert tir.name == "p0"
+
+    def test_unnamed_param_name_forced_to_p2(self):
+        ir = IRParameter(name="", type_spelling="int")
+        tir = upgrade_parameter(ir, 2)
+        assert tir.name == "p2"
+
+    def test_origin_name_empty_for_unnamed(self):
+        ir = IRParameter(name="", type_spelling="int")
+        tir = upgrade_parameter(ir, 1)
+        assert tir.origin is not None
+        assert tir.origin.name == ""
+
+    def test_named_param_name_unchanged(self):
+        ir = IRParameter(name="value", type_spelling="int")
+        tir = upgrade_parameter(ir, 5)
+        assert tir.name == "value"
+
 
 class TestUpgradeBase:
     def test_upgrades_ir_base(self):
@@ -621,6 +660,23 @@ class TestUpgradeMethod:
         assert len(tir.parameters) == 2
         assert all(isinstance(p, TIRParameter) for p in tir.parameters)
 
+    def test_parameter_indices_set(self):
+        ir = IRMethod(
+            name="add", spelling="add", qualified_name="C::add", return_type="int",
+            parameters=[IRParameter("a", "int"), IRParameter("b", "int"), IRParameter("c", "int")],
+        )
+        tir = upgrade_method(ir)
+        assert [p.index for p in tir.parameters] == [0, 1, 2]
+
+    def test_unnamed_parameters_forced_in_method(self):
+        ir = IRMethod(
+            name="foo", spelling="foo", qualified_name="C::foo", return_type="void",
+            parameters=[IRParameter("", "int"), IRParameter("", "float")],
+        )
+        tir = upgrade_method(ir)
+        assert tir.parameters[0].name == "p0"
+        assert tir.parameters[1].name == "p1"
+
 
 class TestUpgradeConstructor:
     def test_upgrades_ir_constructor(self):
@@ -631,6 +687,17 @@ class TestUpgradeConstructor:
         assert tir.origin is ir
         assert len(tir.parameters) == 1
         assert isinstance(tir.parameters[0], TIRParameter)
+
+    def test_parameter_indices_set(self):
+        ir = IRConstructor(parameters=[IRParameter("a", "int"), IRParameter("b", "float")])
+        tir = upgrade_constructor(ir)
+        assert [p.index for p in tir.parameters] == [0, 1]
+
+    def test_unnamed_parameters_forced_in_constructor(self):
+        ir = IRConstructor(parameters=[IRParameter("", "int"), IRParameter("", "float")])
+        tir = upgrade_constructor(ir)
+        assert tir.parameters[0].name == "p0"
+        assert tir.parameters[1].name == "p1"
 
 
 class TestUpgradeField:
@@ -758,6 +825,23 @@ class TestUpgradeFunction:
         assert tir.origin is ir
         assert len(tir.parameters) == 1
         assert isinstance(tir.parameters[0], TIRParameter)
+
+    def test_parameter_indices_set(self):
+        ir = IRFunction(
+            name="f", qualified_name="ns::f", namespace="ns", return_type="void",
+            parameters=[IRParameter("a", "int"), IRParameter("b", "int"), IRParameter("c", "int")],
+        )
+        tir = upgrade_function(ir)
+        assert [p.index for p in tir.parameters] == [0, 1, 2]
+
+    def test_unnamed_parameters_forced_in_function(self):
+        ir = IRFunction(
+            name="f", qualified_name="ns::f", namespace="ns", return_type="void",
+            parameters=[IRParameter("", "int"), IRParameter("", "float")],
+        )
+        tir = upgrade_function(ir)
+        assert tir.parameters[0].name == "p0"
+        assert tir.parameters[1].name == "p1"
 
 
 class TestUpgradeModule:

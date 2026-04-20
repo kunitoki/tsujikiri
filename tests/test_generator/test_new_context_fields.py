@@ -1099,3 +1099,45 @@ class TestTypesystemTypeMappingBranches:
         gen = Generator(cfg, typesystem=ts)
         # "PyObject" is second; "QObject" doesn't match first, loop continues to PyObject → not unsupported
         assert not gen._is_unsupported("PyObject")
+
+
+# ---------------------------------------------------------------------------
+# Generator context: parameter index field
+# ---------------------------------------------------------------------------
+
+class TestParameterIndexInContext:
+    def test_method_param_has_index(self, luabridge3_output_config):
+        method = TIRMethod(
+            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
+            return_type="void",
+            parameters=[TIRParameter("a", "int", index=0), TIRParameter("b", "float", index=1)],
+        )
+        cls = _simple_class(methods=[method])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        params = ctx["method_groups"][0]["methods"][0]["params"]
+        assert params[0]["index"] == 0
+        assert params[1]["index"] == 1
+
+    def test_constructor_param_has_index(self, luabridge3_output_config):
+        ctor = TIRConstructor(
+            parameters=[TIRParameter("x", "int", index=0), TIRParameter("y", "int", index=1)],
+        )
+        cls = _simple_class(ctors=[ctor])
+        gen = Generator(luabridge3_output_config)
+        ctx = gen._build_class_ctx(cls)
+        params = ctx["constructor_group"]["constructors"][0]["params"]
+        assert params[0]["index"] == 0
+        assert params[1]["index"] == 1
+
+    def test_function_param_has_index(self, luabridge3_output_config):
+        fn = TIRFunction(
+            name="compute", qualified_name="ns::compute",
+            namespace="ns", return_type="void",
+            parameters=[TIRParameter("a", "int", index=0), TIRParameter("b", "float", index=1)],
+        )
+        gen = Generator(luabridge3_output_config)
+        ctxs = gen._build_function_group_ctxs([fn])
+        params = ctxs[0]["functions"][0]["params"]
+        assert params[0]["index"] == 0
+        assert params[1]["index"] == 1

@@ -349,6 +349,7 @@ class Generator:
                             "type": self._map_type(p.type_override or p.type_spelling),
                             "raw_type": p.type_override or p.type_spelling,
                             "ownership": p.ownership,
+                            "index": p.index,
                             "default": p.default_override or p.default_value,
                         }
                         for p in fn.parameters
@@ -425,6 +426,7 @@ class Generator:
                             "type": self._map_type(p.type_override or p.type_spelling),
                             "raw_type": p.type_override or p.type_spelling,
                             "ownership": p.ownership,
+                            "index": p.index,
                             "default": p.default_override or p.default_value,
                         }
                         for p in ctor.parameters
@@ -481,6 +483,7 @@ class Generator:
                             "type": self._map_type(p.type_override or p.type_spelling),
                             "raw_type": p.type_override or p.type_spelling,
                             "ownership": p.ownership,
+                            "index": p.index,
                             "default": p.default_override or p.default_value,
                         }
                         for p in m.parameters

@@ -50,6 +50,7 @@ class TIRParameter(IRParameter):
     type_override: Optional[str] = None
     default_override: Optional[str] = None
     ownership: str = "none"
+    index: int = 0
 
     @property
     def binding_name(self) -> str:
@@ -221,9 +222,12 @@ def _ir_fields_dict(ir: object) -> dict:
             if f.init}
 
 
-def upgrade_parameter(ir: IRParameter) -> TIRParameter:
+def upgrade_parameter(ir: IRParameter, index: int = 0) -> TIRParameter:
     tir = TIRParameter(**_ir_fields_dict(ir))
     tir.origin = ir
+    tir.index = index
+    if not ir.name:
+        tir.name = f"p{index}"
     return tir
 
 
@@ -236,7 +240,7 @@ def upgrade_base(ir: IRBase) -> TIRBase:
 def upgrade_method(ir: IRMethod) -> TIRMethod:
     tir = TIRMethod(**_ir_fields_dict(ir))
     tir.origin = ir
-    tir.parameters = [upgrade_parameter(p) for p in ir.parameters]  # type: ignore[assignment]
+    tir.parameters = [upgrade_parameter(p, i) for i, p in enumerate(ir.parameters)]  # type: ignore[assignment]
     if ir.access == "protected":
         tir.emit = False
     return tir
@@ -245,7 +249,7 @@ def upgrade_method(ir: IRMethod) -> TIRMethod:
 def upgrade_constructor(ir: IRConstructor) -> TIRConstructor:
     tir = TIRConstructor(**_ir_fields_dict(ir))
     tir.origin = ir
-    tir.parameters = [upgrade_parameter(p) for p in ir.parameters]  # type: ignore[assignment]
+    tir.parameters = [upgrade_parameter(p, i) for i, p in enumerate(ir.parameters)]  # type: ignore[assignment]
     return tir
 
 
@@ -294,7 +298,7 @@ def upgrade_class(ir: IRClass) -> TIRClass:
 def upgrade_function(ir: IRFunction) -> TIRFunction:
     tir = TIRFunction(**_ir_fields_dict(ir))
     tir.origin = ir
-    tir.parameters = [upgrade_parameter(p) for p in ir.parameters]  # type: ignore[assignment]
+    tir.parameters = [upgrade_parameter(p, i) for i, p in enumerate(ir.parameters)]  # type: ignore[assignment]
     return tir
 
 

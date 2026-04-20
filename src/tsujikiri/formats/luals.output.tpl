@@ -157,7 +157,7 @@ local {{ enum.name }} = {
 {%- if first.is_deprecated %}
 ---@deprecated {% if first.deprecation_message %}{{ first.deprecation_message }}{% endif %}
 {%- endif %}
-{% for p in first.params %}---@param {{ p | param_name('name', loop.index0) }} {{ p.type }}
+{% for p in first.params %}---@param {{ p.name }} {{ p.type }}
 {% endfor -%}---@return {{ first.return_type }}
 {%- for ov in group.functions[1:] %}
 ---@overload fun({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
@@ -169,7 +169,7 @@ function {{ group.name }}({% if first.params %}{{ first.params | param_pairs('na
 {%- if fn.is_deprecated %}
 ---@deprecated {% if fn.deprecation_message %}{{ fn.deprecation_message }}{% endif %}
 {%- endif %}
-{% for p in fn.params %}---@param {{ p | param_name('name', loop.index0) }} {{ p.type }}
+{% for p in fn.params %}---@param {{ p.name }} {{ p.type }}
 {% endfor -%}---@return {{ fn.return_type }}
 function {{ group.name }}({% if fn.params %}{{ fn.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {% endif %}
