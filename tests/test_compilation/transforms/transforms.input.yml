@@ -1,0 +1,208 @@
+source:
+  path: "transforms_test.hpp"
+  parse_args: ["-std=c++20"]
+
+filters:
+  namespaces: ["trf"]
+  constructors:
+    include: true
+
+format_overrides:
+  luabridge3:
+    generation:
+      includes: ['"transforms/transforms_test.hpp"']
+  pybind11:
+    generation:
+      includes: ['"transforms/transforms_test.hpp"']
+
+transforms:
+  # add_type_mapping runs first so remapped type spellings are seen by later stages
+  - stage: add_type_mapping
+    from: WidgetTag
+    to: "unsigned char"
+
+  # --- class-level transforms ---
+  - stage: rename_class
+    from: WidgetManager
+    to: Manager
+
+  - stage: suppress_class
+    pattern: WidgetInternal
+
+  - stage: suppress_base
+    class: DerivedWidget
+    base: trf::BaseHelper
+
+  - stage: set_type_hint
+    class: SharedNode
+    holder_type: std::shared_ptr
+
+  - stage: inject_property
+    class: Widget
+    name: raw_value
+    getter: getRawValue
+    setter: setRawValue
+    type: int
+
+  - stage: expose_protected
+    class: Widget
+    method: onRender
+
+  - stage: expose_protected
+    class: SharedNode
+    method: computeValue
+
+  - stage: resolve_using_declarations
+    class: ExtendedWidget
+
+  # --- suppress-before-inject: inject_method ---
+  - stage: suppress_method
+    class: Widget
+    pattern: describe
+
+  - stage: inject_method
+    class: Widget
+    name: describe
+    return_type: std::string
+
+  # --- suppress-before-inject: inject_function ---
+  - stage: suppress_function
+    pattern: makeWidget
+
+  - stage: inject_function
+    name: makeWidget
+    namespace: trf
+    return_type: "trf::Widget *"
+    parameters:
+      - name: id
+        type: int
+
+  # --- modify_constructor + inject_constructor ---
+  - stage: modify_constructor
+    class: Widget
+    signature: "int, int"
+    remove: true
+
+  - stage: inject_constructor
+    class: Widget
+    parameters:
+      - name: id
+        type: int
+      - name: extra
+        type: int
+
+  # --- method transforms ---
+  - stage: rename_method
+    class: Widget
+    from: getIdInternal
+    to: get_id
+
+  - stage: suppress_method
+    class: Widget
+    pattern: legacyReset
+
+  - stage: modify_method
+    class: Widget
+    method: processData
+    rename: process_data
+
+  - stage: modify_argument
+    class: Widget
+    method: configure
+    argument: rawOption
+    rename: option
+
+  - stage: modify_argument
+    class: Widget
+    method: configure
+    argument: rawName
+    rename: name
+
+  - stage: remove_overload
+    class: Widget
+    method: update
+    signature: "float"
+
+  - stage: overload_priority
+    class: Widget
+    method: compute
+    signature: "double compute(double)"
+    priority: 0
+
+  # --- field transforms ---
+  - stage: modify_field
+    class: Widget
+    field: id_
+    rename: id
+
+  - stage: modify_field
+    class: Widget
+    field: cache_name_
+    remove: true
+
+  # --- code injection ---
+  - stage: inject_code
+    target: module
+    position: beginning
+    code: "static_assert(sizeof(int) >= 4, \"int size check\");\n"
+
+  # --- enum transforms ---
+  - stage: rename_enum
+    from: OldColor
+    to: Color
+
+  - stage: rename_enum_value
+    enum: OldColor
+    from: Red
+    to: Crimson
+
+  - stage: suppress_enum
+    pattern: WidgetState
+
+  - stage: suppress_enum_value
+    enum: OldColor
+    pattern: Alpha
+
+  - stage: modify_enum
+    enum: OldColor
+    arithmetic: true
+
+  # --- free-function transforms ---
+  - stage: rename_function
+    from: computeWidgetScore
+    to: compute_score
+
+  - stage: suppress_function
+    pattern: internalUtility
+
+  - stage: modify_function
+    function: processWidget
+    rename: process_widget
+
+  # --- metadata / policy transforms ---
+  - stage: exception_policy
+    class: Widget
+    method: configure
+    policy: pass_through
+
+  - stage: exception_policy
+    function: throwTransformError
+    policy: pass_through
+
+  - stage: mark_deprecated
+    target: method
+    class: WidgetManager
+    method: increment
+    message: "will be removed in a future version"
+
+  - stage: suppress_class
+    pattern: TransformError
+
+  - stage: register_exception
+    cpp_type: trf::TransformError
+    python_name: TransformError
+    base: Exception
+
+  # --- spaceship expansion (C++20) ---
+  - stage: expand_spaceship
+    class: Score

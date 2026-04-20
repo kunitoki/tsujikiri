@@ -36,7 +36,7 @@ class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribut
 {%- if not cls.force_abstract %}
 {%- for ctor in cls.constructor_group.constructors %}
 {%- block class_constructor scoped %}
-    def __init__(self{% for p in ctor.params %}, {{ p | param_name('name', loop.index0) }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> None: ...
+    def __init__(self{% for p in ctor.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> None: ...
 {%- if ctor.doc %}
         """{{ ctor.doc }}"""
 {%- endif %}
@@ -53,10 +53,10 @@ class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribut
 {%- if group.is_static %}
     @overload
     @staticmethod
-    def {{ group.name | camel_to_snake }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p | param_name('name', loop.index0) }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
+    def {{ group.name | camel_to_snake }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
 {%- else %}
     @overload
-    def {{ group.name | camel_to_snake }}(self{% for p in method.params %}, {{ p | param_name('name', loop.index0) }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
+    def {{ group.name | camel_to_snake }}(self{% for p in method.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
 {%- endif %}
 {%- endblock %}
 {%- endfor %}
@@ -69,9 +69,9 @@ class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribut
 {%- endif %}
 {%- if group.is_static %}
     @staticmethod
-    def {{ group.name | camel_to_snake }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p | param_name('name', loop.index0) }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
+    def {{ group.name | camel_to_snake }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
 {%- else %}
-    def {{ group.name | camel_to_snake }}(self{% for p in method.params %}, {{ p | param_name('name', loop.index0) }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
+    def {{ group.name | camel_to_snake }}(self{% for p in method.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
 {%- endif %}
 {%- if method.doc %}
         """{{ method.doc }}"""
@@ -139,7 +139,7 @@ class {{ enum.name }}(int):
 {%- endif %}
 
 @overload
-def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p | param_name('name', loop.index0) }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}: ...
+def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}: ...
 {%- endblock %}
 {%- endfor %}
 {%- endblock %}
@@ -151,7 +151,7 @@ def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.fir
 # deprecated{% if fn.deprecation_message %}: {{ fn.deprecation_message }}{% endif %}
 {%- endif %}
 
-def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p | param_name('name', loop.index0) }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}: ...
+def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}: ...
 {%- if fn.doc %}
     """{{ fn.doc }}"""
 {%- endif %}

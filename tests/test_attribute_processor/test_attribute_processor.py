@@ -10,16 +10,16 @@ from tsujikiri.attribute_processor import (
     _parse_attribute,
 )
 from tsujikiri.configurations import AttributeHandlerConfig
-from tsujikiri.ir import (
-    IRClass,
-    IRConstructor,
-    IREnum,
-    IREnumValue,
-    IRField,
-    IRFunction,
-    IRMethod,
-    IRModule,
-    IRParameter,
+from tsujikiri.tir import (
+    TIRClass,
+    TIRConstructor,
+    TIREnum,
+    TIREnumValue,
+    TIRField,
+    TIRFunction,
+    TIRMethod,
+    TIRModule,
+    TIRParameter,
 )
 
 
@@ -65,7 +65,7 @@ class TestParseAttribute:
 # ---------------------------------------------------------------------------
 
 def _make_module(*classes, functions=None, enums=None):
-    m = IRModule(name="test")
+    m = TIRModule(name="test")
     m.classes.extend(classes)
     m.functions.extend(functions or [])
     m.enums.extend(enums or [])
@@ -73,11 +73,11 @@ def _make_module(*classes, functions=None, enums=None):
 
 
 def _make_class(name="MyClass", **kwargs):
-    return IRClass(name=name, qualified_name=name, namespace="ns", **kwargs)
+    return TIRClass(name=name, qualified_name=name, namespace="ns", **kwargs)
 
 
 def _make_method(method_name="doSomething", attrs=None):
-    return IRMethod(
+    return TIRMethod(
         name=method_name,
         spelling=method_name,
         qualified_name=f"ns::MyClass::{method_name}",
@@ -109,21 +109,21 @@ class TestBuiltinSkip:
         assert cls.emit is False
 
     def test_field_suppressed(self):
-        field = IRField(name="x", type_spelling="int", attributes=["tsujikiri::skip"])
+        field = TIRField(name="x", type_spelling="int", attributes=["tsujikiri::skip"])
         cls = _make_class(fields=[field])
         module = _make_module(cls)
         _processor().apply(module)
         assert field.emit is False
 
     def test_constructor_suppressed(self):
-        ctor = IRConstructor(attributes=["tsujikiri::skip"])
+        ctor = TIRConstructor(attributes=["tsujikiri::skip"])
         cls = _make_class(constructors=[ctor])
         module = _make_module(cls)
         _processor().apply(module)
         assert ctor.emit is False
 
     def test_function_suppressed(self):
-        fn = IRFunction(
+        fn = TIRFunction(
             name="helper", qualified_name="ns::helper", namespace="ns",
             return_type="void", attributes=["tsujikiri::skip"],
         )
@@ -132,14 +132,14 @@ class TestBuiltinSkip:
         assert fn.emit is False
 
     def test_enum_suppressed(self):
-        enum = IREnum(name="Color", qualified_name="ns::Color", attributes=["tsujikiri::skip"])
+        enum = TIREnum(name="Color", qualified_name="ns::Color", attributes=["tsujikiri::skip"])
         module = _make_module(enums=[enum])
         _processor().apply(module)
         assert enum.emit is False
 
     def test_enum_value_suppressed(self):
-        val = IREnumValue(name="Red", value=0, attributes=["tsujikiri::skip"])
-        enum = IREnum(name="Color", qualified_name="ns::Color", values=[val])
+        val = TIREnumValue(name="Red", value=0, attributes=["tsujikiri::skip"])
+        enum = TIREnum(name="Color", qualified_name="ns::Color", values=[val])
         module = _make_module(enums=[enum])
         _processor().apply(module)
         assert val.emit is False
@@ -200,7 +200,7 @@ class TestBuiltinRename:
         assert cls.rename == "Alias"
 
     def test_field_renamed(self):
-        field = IRField(name="x_", type_spelling="int", attributes=['tsujikiri::rename("x")'])
+        field = TIRField(name="x_", type_spelling="int", attributes=['tsujikiri::rename("x")'])
         cls = _make_class(fields=[field])
         module = _make_module(cls)
         _processor().apply(module)
@@ -267,24 +267,24 @@ class TestClassNestedEnum:
     """Cover _process_class lines that walk cls.enums and their values."""
 
     def test_nested_enum_suppressed(self):
-        enum = IREnum(name="Color", qualified_name="ns::Foo::Color", attributes=["tsujikiri::skip"])
+        enum = TIREnum(name="Color", qualified_name="ns::Foo::Color", attributes=["tsujikiri::skip"])
         cls = _make_class(enums=[enum])
         module = _make_module(cls)
         _processor().apply(module)
         assert enum.emit is False
 
     def test_nested_enum_value_suppressed(self):
-        val = IREnumValue(name="Red", value=0, attributes=["tsujikiri::skip"])
-        enum = IREnum(name="Color", qualified_name="ns::Foo::Color", values=[val])
+        val = TIREnumValue(name="Red", value=0, attributes=["tsujikiri::skip"])
+        enum = TIREnum(name="Color", qualified_name="ns::Foo::Color", values=[val])
         cls = _make_class(enums=[enum])
         module = _make_module(cls)
         _processor().apply(module)
         assert val.emit is False
 
     def test_nested_enum_value_keep(self):
-        val = IREnumValue(name="Red", value=0, attributes=["tsujikiri::keep"])
+        val = TIREnumValue(name="Red", value=0, attributes=["tsujikiri::keep"])
         val.emit = False
-        enum = IREnum(name="Color", qualified_name="ns::Foo::Color", values=[val])
+        enum = TIREnum(name="Color", qualified_name="ns::Foo::Color", values=[val])
         cls = _make_class(enums=[enum])
         module = _make_module(cls)
         _processor().apply(module)
@@ -294,9 +294,9 @@ class TestClassNestedEnum:
 class TestInnerClasses:
     def test_inner_class_method_suppressed(self):
         inner_method = _make_method(attrs=["tsujikiri::skip"])
-        inner = IRClass(
+        inner = TIRClass(
             name="Inner", qualified_name="ns::MyClass::Inner", namespace="ns",
-            methods=[inner_method],
+            methods=[inner_method],  # type: ignore[arg-type]
         )
         outer = _make_class(inner_classes=[inner])
         module = _make_module(outer)
@@ -310,7 +310,7 @@ class TestInnerClasses:
 
 class TestBuiltinReadonly:
     def test_sets_read_only_on_field(self):
-        field = IRField(name="x", type_spelling="int", attributes=["tsujikiri::readonly"])
+        field = TIRField(name="x", type_spelling="int", attributes=["tsujikiri::readonly"])
         cls = _make_class(fields=[field])
         _processor().apply(_make_module(cls))
         assert field.read_only is True
@@ -341,7 +341,7 @@ class TestBuiltinThreadSafe:
         assert method.allow_thread is True
 
     def test_sets_allow_thread_on_function(self):
-        fn = IRFunction(
+        fn = TIRFunction(
             name="heavy", qualified_name="ns::heavy", namespace="ns",
             return_type="void", attributes=["tsujikiri::thread_safe"],
         )
@@ -349,7 +349,7 @@ class TestBuiltinThreadSafe:
         assert fn.allow_thread is True
 
     def test_no_effect_on_field(self):
-        field = IRField(name="x", type_spelling="int", attributes=["tsujikiri::thread_safe"])
+        field = TIRField(name="x", type_spelling="int", attributes=["tsujikiri::thread_safe"])
         cls = _make_class(fields=[field])
         _processor().apply(_make_module(cls))
         # Field has no allow_thread; handler is silently a no-op
@@ -373,7 +373,7 @@ class TestBuiltinDoc:
         assert cls.doc == "My class"
 
     def test_sets_doc_on_field(self):
-        field = IRField(name="x", type_spelling="int", attributes=['tsujikiri::doc("x coord")'])
+        field = TIRField(name="x", type_spelling="int", attributes=['tsujikiri::doc("x coord")'])
         cls = _make_class(fields=[field])
         _processor().apply(_make_module(cls))
         assert field.doc == "x coord"
@@ -400,33 +400,33 @@ class TestBuiltinDoc:
 
 class TestBuiltinRenameArgument:
     def test_renames_parameter(self):
-        param = IRParameter(name="x", type_spelling="int")
-        method = IRMethod(
+        param = TIRParameter(name="x", type_spelling="int")
+        method = TIRMethod(
             name="set", spelling="set", qualified_name="ns::Cls::set", return_type="void",
             parameters=[param], attributes=['tsujikiri::rename_argument("x", "value")'],
         )
-        cls = _make_class(methods=[method])
+        cls = _make_class(methods=[method])  # type: ignore[arg-type]
         _processor().apply(_make_module(cls))
         assert param.rename == "value"
 
     def test_wrong_name_leaves_unchanged(self):
-        param = IRParameter(name="y", type_spelling="int")
-        method = IRMethod(
+        param = TIRParameter(name="y", type_spelling="int")
+        method = TIRMethod(
             name="set", spelling="set", qualified_name="ns::Cls::set", return_type="void",
             parameters=[param], attributes=['tsujikiri::rename_argument("x", "value")'],
         )
-        cls = _make_class(methods=[method])
+        cls = _make_class(methods=[method])  # type: ignore[arg-type]
         _processor().apply(_make_module(cls))
         assert param.rename is None
 
     def test_single_arg_is_noop(self):
         method = _make_method(attrs=['tsujikiri::rename_argument("x")'])
-        cls = _make_class(methods=[method])
+        cls = _make_class(methods=[method])  # type: ignore[arg-type]
         _processor().apply(_make_module(cls))  # no crash
 
     def test_on_function(self):
-        param = IRParameter(name="radius", type_spelling="double")
-        fn = IRFunction(
+        param = TIRParameter(name="radius", type_spelling="double")
+        fn = TIRFunction(
             name="f", qualified_name="ns::f", namespace="ns", return_type="void",
             parameters=[param], attributes=['tsujikiri::rename_argument("radius", "r")'],
         )
@@ -440,43 +440,43 @@ class TestBuiltinRenameArgument:
 
 class TestBuiltinTypeMap:
     def test_overrides_param_type(self):
-        param = IRParameter(name="x", type_spelling="juce::String")
-        method = IRMethod(
+        param = TIRParameter(name="x", type_spelling="juce::String")
+        method = TIRMethod(
             name="set", spelling="set", qualified_name="ns::Cls::set", return_type="void",
             parameters=[param],
             attributes=['tsujikiri::type_map("juce::String", "std::string")'],
         )
-        cls = _make_class(methods=[method])
+        cls = _make_class(methods=[method])  # type: ignore[arg-type]
         _processor().apply(_make_module(cls))
         assert param.type_override == "std::string"
 
     def test_overrides_return_type(self):
-        method = IRMethod(
+        method = TIRMethod(
             name="get", spelling="get", qualified_name="ns::Cls::get",
             return_type="juce::String", parameters=[],
             attributes=['tsujikiri::type_map("juce::String", "std::string")'],
         )
-        cls = _make_class(methods=[method])
+        cls = _make_class(methods=[method])  # type: ignore[arg-type]
         _processor().apply(_make_module(cls))
         assert method.return_type_override == "std::string"
 
     def test_overrides_field_type(self):
-        field = IRField(
+        field = TIRField(
             name="label", type_spelling="juce::String",
             attributes=['tsujikiri::type_map("juce::String", "std::string")'],
         )
-        cls = _make_class(fields=[field])
+        cls = _make_class(fields=[field])  # type: ignore[arg-type]
         _processor().apply(_make_module(cls))
         assert field.type_override == "std::string"
 
     def test_non_matching_type_unchanged(self):
-        param = IRParameter(name="x", type_spelling="int")
-        method = IRMethod(
+        param = TIRParameter(name="x", type_spelling="int")
+        method = TIRMethod(
             name="set", spelling="set", qualified_name="ns::Cls::set", return_type="void",
             parameters=[param],
             attributes=['tsujikiri::type_map("juce::String", "std::string")'],
         )
-        cls = _make_class(methods=[method])
+        cls = _make_class(methods=[method])  # type: ignore[arg-type]
         _processor().apply(_make_module(cls))
         assert param.type_override is None
 
@@ -492,9 +492,9 @@ class TestBuiltinTypeMap:
 
 class TestArithmeticAttribute:
     def test_arithmetic_sets_flag_on_enum(self):
-        enum = IREnum(name="Flags", qualified_name="ns::Flags",
-                      attributes=["tsujikiri::arithmetic"])
-        mod = IRModule(name="m", enums=[enum])
+        enum = TIREnum(name="Flags", qualified_name="ns::Flags",
+                       attributes=["tsujikiri::arithmetic"])
+        mod = TIRModule(name="m", enums=[enum])  # type: ignore[arg-type, list-item]
         _processor().apply(mod)
         assert enum.is_arithmetic is True
 
@@ -503,14 +503,14 @@ class TestArithmeticAttribute:
         method = _make_method(attrs=["tsujikiri::arithmetic"])
         cls = _make_class(methods=[method])
         _processor().apply(_make_module(cls))  # no crash, no attribute set
-        # IRMethod has no is_arithmetic attribute — no side effects expected
+        # TIRMethod has no is_arithmetic attribute — no side effects expected
         assert method.is_deprecated is False  # unrelated field unchanged
 
     def test_arithmetic_via_apply_complex_builtin_false_branch(self):
         """Direct call: node without is_arithmetic should not raise."""
         method = _make_method()
         _apply_complex_builtin("tsujikiri::arithmetic", [], method)
-        # No is_arithmetic on IRMethod — should be a no-op
+        # No is_arithmetic on TIRMethod — should be a no-op
 
 
 class TestHashableAttribute:
@@ -524,11 +524,11 @@ class TestHashableAttribute:
         method = _make_method(attrs=["tsujikiri::hashable"])
         cls = _make_class(methods=[method])
         _processor().apply(_make_module(cls))  # no crash
-        # IRMethod has no generate_hash attribute — no side effects
+        # TIRMethod has no generate_hash attribute — no side effects
         assert method.is_deprecated is False  # unrelated field unchanged
 
     def test_hashable_via_apply_complex_builtin_false_branch(self):
         """Direct call: node without generate_hash should not raise."""
         method = _make_method()
         _apply_complex_builtin("tsujikiri::hashable", [], method)
-        # No generate_hash on IRMethod — should be a no-op
+        # No generate_hash on TIRMethod — should be a no-op

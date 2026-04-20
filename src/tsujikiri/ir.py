@@ -1,14 +1,14 @@
 """Intermediate Representation (IR) for the C++ binding generator.
 
-All IR nodes are pure Python dataclasses with no libclang references.
-Every node carries an `emit` flag (default True) that filters and transforms
-use to suppress generation; the generator skips nodes where emit=False.
+All IR nodes are pure Python dataclasses containing only what libclang provides.
+No filtering, transformation, or augmentation data is stored here — that lives
+in the TIR* (Transformed IR) layer defined in tir.py.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -22,19 +22,14 @@ class IRCodeInjection:
 class IRParameter:
     name: str
     type_spelling: str
-    emit: bool = True                        # False = removed from binding signature
-    rename: Optional[str] = None             # binding-visible name override
-    type_override: Optional[str] = None      # replaces type_spelling in output only
-    default_override: Optional[str] = None   # replaces default expression in output
-    default_value: Optional[str] = None      # raw C++ default extracted by parser; used as fallback
-    ownership: str = "none"                  # "none" | "cpp" | "script"
+    default_value: Optional[str] = None      # raw C++ default extracted by parser
+    attributes: List[str] = field(default_factory=list)  # raw [[...]] attribute contents
 
 
 @dataclass
 class IRBase:
     qualified_name: str
     access: str = "public"   # "public", "protected", or "private"
-    emit: bool = True        # False = suppressed by suppress_base transform
 
 
 @dataclass
@@ -49,46 +44,30 @@ class IRMethod:
     is_virtual: bool = False
     is_pure_virtual: bool = False
     is_noexcept: bool = False
-    is_varargs: bool = False  # True if C++ method is variadic (...)
-    is_overload: bool = False   # set during IR build when multiple same-name methods exist
-    is_operator: bool = False   # True if this is a C++ operator overload
-    operator_type: Optional[str] = None  # canonical operator spelling e.g. "operator+", "operator-unary"
-    is_conversion_operator: bool = False         # True if this is a C++ conversion operator (operator Type())
-    conversion_target_type: Optional[str] = None # the type this operator converts to, e.g. "bool", "int"
-    access: str = "public"    # "public", "protected" (available but suppressed by default)
+    is_varargs: bool = False
+    is_overload: bool = False
+    is_operator: bool = False
+    operator_type: Optional[str] = None
+    is_conversion_operator: bool = False
+    conversion_target_type: Optional[str] = None
+    access: str = "public"    # "public", "protected", or "public_via_trampoline"
     source_file: Optional[str] = None
-    emit: bool = True
-    rename: Optional[str] = None    # set by transforms to change the binding name
-    attributes: List[str] = field(default_factory=list)   # raw [[...]] attribute contents
-    return_type_override: Optional[str] = None   # overrides return_type in output only
-    return_ownership: str = "none"               # "none" | "cpp" | "script"
-    return_keep_alive: bool = False              # True → py::keep_alive<0, 1>() (return kept alive by self)
-    allow_thread: bool = False                   # hint: release GIL around call
-    wrapper_code: Optional[str] = None           # if set, template emits lambda instead of &Class::method
-    doc: Optional[str] = None                    # documentation string from [[tsujikiri::doc("…")]]
-    is_deprecated: bool = False                  # True if marked [[deprecated]] in C++
-    deprecation_message: Optional[str] = None    # optional message from [[deprecated("msg")]]
-    code_injections: List[IRCodeInjection] = field(default_factory=list)
-    overload_priority: Optional[int] = None     # lower = higher priority; None = natural order
-    exception_policy: Optional[str] = None      # "none" | "pass_through" | "abort" | None = default
-    api_since: Optional[str] = None             # semver: first version this entity is available
-    api_until: Optional[str] = None             # semver: first version this entity is removed
+    is_deprecated: bool = False
+    deprecation_message: Optional[str] = None
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
 class IRConstructor:
     parameters: List[IRParameter] = field(default_factory=list)
-    is_overload: bool = False   # set when multiple constructors exist
+    is_overload: bool = False
     is_noexcept: bool = False
     is_explicit: bool = False
-    is_deleted: bool = False    # True if = delete
-    is_varargs: bool = False    # True if C++ constructor is variadic (...)
-    emit: bool = True
-    doc: Optional[str] = None               # documentation string
+    is_deleted: bool = False
+    is_varargs: bool = False
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
-    code_injections: List[IRCodeInjection] = field(default_factory=list)
 
 
 @dataclass
@@ -97,11 +76,6 @@ class IRField:
     type_spelling: str
     is_const: bool = False
     is_static: bool = False
-    emit: bool = True
-    rename: Optional[str] = None
-    read_only: bool = False   # force read-only even if not const in C++
-    type_override: Optional[str] = None     # replaces type_spelling in output only
-    doc: Optional[str] = None               # documentation string
     attributes: List[str] = field(default_factory=list)
 
 
@@ -109,9 +83,6 @@ class IRField:
 class IREnumValue:
     name: str
     value: int
-    emit: bool = True
-    rename: Optional[str] = None            # binding-visible name override
-    doc: Optional[str] = None               # documentation string from [[tsujikiri::doc("…")]]
     attributes: List[str] = field(default_factory=list)
 
 
@@ -120,17 +91,11 @@ class IREnum:
     name: str
     qualified_name: str
     values: List[IREnumValue] = field(default_factory=list)
-    emit: bool = True
-    is_scoped: bool = False     # True if declared as "enum class" or "enum struct"
-    is_anonymous: bool = False  # True if the enum has no name (anonymous enum)
-    is_arithmetic: bool = False # True if the enum supports bitwise operations (py::arithmetic())
-    rename: Optional[str] = None            # binding-visible name override
-    doc: Optional[str] = None               # documentation string
+    is_scoped: bool = False
+    is_anonymous: bool = False
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
-    api_since: Optional[str] = None
-    api_until: Optional[str] = None
 
 
 @dataclass
@@ -138,7 +103,7 @@ class IRProperty:
     """A synthetic property binding backed by getter/setter methods."""
     name: str
     getter: str
-    setter: Optional[str] = None   # None = read-only property
+    setter: Optional[str] = None
     type_spelling: str = ""
     emit: bool = True
     doc: Optional[str] = None
@@ -147,10 +112,9 @@ class IRProperty:
 @dataclass
 class IRUsingDeclaration:
     """A C++ using declaration that re-exports an inherited member (e.g. using Base::method)."""
-    member_name: str                  # member name being introduced (e.g. "method")
-    base_qualified_name: str          # qualified name of base class (e.g. "ns::Base"), may be empty
-    access: str = "public"            # access specifier of the using declaration
-    emit: bool = True
+    member_name: str
+    base_qualified_name: str
+    access: str = "public"
 
 
 @dataclass
@@ -158,45 +122,31 @@ class IRClass:
     name: str
     qualified_name: str
     namespace: str
-    bases: List[IRBase] = field(default_factory=list)        # base classes with access specifier
+    parent_class: Optional[str] = None
+    source_file: Optional[str] = None
+    variable_name: str = ""
+    bases: List[IRBase] = field(default_factory=list)
     inner_classes: List[IRClass] = field(default_factory=list)
     constructors: List[IRConstructor] = field(default_factory=list)
     methods: List[IRMethod] = field(default_factory=list)
     fields: List[IRField] = field(default_factory=list)
     enums: List[IREnum] = field(default_factory=list)
-    properties: List[IRProperty] = field(default_factory=list)  # synthetic getter/setter properties
-    has_virtual_methods: bool = False   # True if any method is virtual or pure virtual
-    is_abstract: bool = False           # True if any method is pure virtual
-    emit: bool = True
-    rename: Optional[str] = None
-    doc: Optional[str] = None               # documentation string
-    variable_name: str = ""         # camelCase binding variable name
-    parent_class: Optional[str] = None   # for inner classes
-    source_file: Optional[str] = None
-    attributes: List[str] = field(default_factory=list)
-    copyable: Optional[bool] = None     # None = infer from C++; True/False = forced
-    movable: Optional[bool] = None      # None = infer from C++; True/False = forced
-    force_abstract: bool = False        # suppress constructors even if C++ is not abstract
-    holder_type: Optional[str] = None   # e.g. "std::shared_ptr" — affects binding declaration
-    has_deleted_copy_constructor: bool = False   # True if copy constructor is = delete or absent
-    has_deleted_move_constructor: bool = False   # True if move constructor is = delete or absent
+    using_declarations: List[IRUsingDeclaration] = field(default_factory=list)
+    has_virtual_methods: bool = False
+    is_abstract: bool = False
+    has_deleted_copy_constructor: bool = False
+    has_deleted_move_constructor: bool = False
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
-    generate_hash: bool = False         # True → emit __hash__ using std::hash<T>
-    smart_pointer_kind: Optional[str] = None    # "shared", "unique", or "weak"
-    smart_pointer_managed_type: Optional[str] = None  # inner type name for smart pointer wrappers
-    using_declarations: List[IRUsingDeclaration] = field(default_factory=list)
-    code_injections: List[IRCodeInjection] = field(default_factory=list)
-    api_since: Optional[str] = None
-    api_until: Optional[str] = None
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
 class IRExceptionRegistration:
     """Registration of a C++ exception type as a Python exception class."""
-    cpp_exception_type: str           # C++ qualified type (e.g. "ns::MyException")
-    python_exception_name: str        # Python class name (e.g. "MyException")
-    base_python_exception: str = "Exception"  # Python base exception class
+    cpp_exception_type: str
+    python_exception_name: str
+    base_python_exception: str = "Exception"
 
 
 @dataclass
@@ -208,37 +158,23 @@ class IRFunction:
     parameters: List[IRParameter] = field(default_factory=list)
     is_overload: bool = False
     is_noexcept: bool = False
-    is_varargs: bool = False    # True if C++ function is variadic (...)
-    is_operator: bool = False   # True if this is a C++ operator overload (free function)
-    operator_type: Optional[str] = None  # canonical operator spelling e.g. "operator<<"
-    emit: bool = True
-    rename: Optional[str] = None
-    attributes: List[str] = field(default_factory=list)
-    return_type_override: Optional[str] = None   # overrides return_type in output only (mirrors IRMethod)
-    return_ownership: str = "none"               # "none" | "cpp" | "script" (mirrors IRMethod)
-    return_keep_alive: bool = False              # True → py::keep_alive<0, 1>() (mirrors IRMethod)
-    allow_thread: bool = False                   # hint: release GIL around call (mirrors IRMethod)
-    wrapper_code: Optional[str] = None           # if set, template emits lambda instead of &qualified_name
-    doc: Optional[str] = None                    # documentation string
+    is_varargs: bool = False
+    is_operator: bool = False
+    operator_type: Optional[str] = None
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
-    overload_priority: Optional[int] = None     # lower = higher priority; None = natural order
-    exception_policy: Optional[str] = None      # "none" | "pass_through" | "abort" | None = default
-    api_since: Optional[str] = None             # semver: first version this entity is available
-    api_until: Optional[str] = None             # semver: first version this entity is removed
+    attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
 class IRModule:
-    """Root IR object for an entire parsed translation unit."""
+    """Root IR object for a parsed translation unit (clang data only)."""
     name: str
     namespaces: List[str] = field(default_factory=list)
     classes: List[IRClass] = field(default_factory=list)
     functions: List[IRFunction] = field(default_factory=list)
     enums: List[IREnum] = field(default_factory=list)
-    class_by_name: Dict[str, IRClass] = field(default_factory=dict)  # for topo-sort
-    exception_registrations: List[IRExceptionRegistration] = field(default_factory=list)
-    code_injections: List[IRCodeInjection] = field(default_factory=list)
+    class_by_name: Dict[str, IRClass] = field(default_factory=dict)
 
 
 def merge_modules(modules: List[IRModule]) -> IRModule:

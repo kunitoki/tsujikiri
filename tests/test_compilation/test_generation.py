@@ -472,15 +472,15 @@ class TestTypesystemScenarioPybind11Generation:
 
 
 # ---------------------------------------------------------------------------
-# Transform pipeline integration — OverloadPriority + ExceptionPolicy
+# Transform pipeline integration — overload_priority + exception_policy
 # ---------------------------------------------------------------------------
 
 class TestTransformPipelineIntegration:
-    """OverloadPriority and ExceptionPolicy transforms via full parse → transform pipeline."""
+    """overload_priority and exception_policy transforms via full parse → transform pipeline."""
 
     def test_overload_priority_sets_ir_field_on_parsed_overload(self, geo_module):
         module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="OverloadPriority", kwargs={
+        specs = [TransformSpec(stage="overload_priority", kwargs={
             "class": "Circle",
             "method": "resize",
             "signature": "void resize(double, double)",
@@ -494,7 +494,7 @@ class TestTransformPipelineIntegration:
 
     def test_overload_priority_leaves_other_overload_unchanged(self, geo_module):
         module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="OverloadPriority", kwargs={
+        specs = [TransformSpec(stage="overload_priority", kwargs={
             "class": "Circle",
             "method": "resize",
             "signature": "void resize(double, double)",
@@ -507,7 +507,7 @@ class TestTransformPipelineIntegration:
 
     def test_exception_policy_on_parsed_method(self, audio_module):
         module = copy.deepcopy(audio_module)
-        specs = [TransformSpec(stage="ExceptionPolicy", kwargs={
+        specs = [TransformSpec(stage="exception_policy", kwargs={
             "class": "Reverb",
             "method": "process",
             "policy": "pass_through",
@@ -520,7 +520,7 @@ class TestTransformPipelineIntegration:
 
     def test_exception_policy_wildcard_applies_to_all_classes(self, geo_module):
         module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="ExceptionPolicy", kwargs={
+        specs = [TransformSpec(stage="exception_policy", kwargs={
             "policy": "abort",
         })]
         build_pipeline_from_config(specs).run(module)
@@ -530,7 +530,7 @@ class TestTransformPipelineIntegration:
 
     def test_exception_policy_on_free_function(self, engine_module):
         module = copy.deepcopy(engine_module)
-        specs = [TransformSpec(stage="ExceptionPolicy", kwargs={
+        specs = [TransformSpec(stage="exception_policy", kwargs={
             "function": "dot",
             "policy": "none",
         })]
@@ -559,3 +559,233 @@ class TestTransformPipelineIntegration:
         pipeline = build_pipeline_from_config(specs)
         pipeline.run(module)
         assert pipeline.unmatched_stages() == []
+
+
+# ---------------------------------------------------------------------------
+# transforms scenario — verifies every transform stage in generated output
+# ---------------------------------------------------------------------------
+
+class TestTransformsLuaBridge3Generation:
+    """Generation tests for every transform stage — luabridge3 output."""
+
+    def test_rename_class(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert '"Manager"' in out, "rename_class: Manager present"
+        assert '"WidgetManager"' not in out, "rename_class: WidgetManager absent"
+
+    def test_suppress_class(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "WidgetInternal" not in out, "suppress_class: WidgetInternal absent"
+
+    def test_rename_method(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert '"get_id"' in out, "rename_method: get_id binding present"
+        assert '"getIdInternal"' not in out, "rename_method: getIdInternal binding absent"
+
+    def test_suppress_method(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "legacyReset" not in out, "suppress_method: legacyReset absent"
+
+    def test_inject_method(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert '"describe"' in out, "inject_method: describe binding present"
+        assert out.count('"describe"') == 1, "inject_method: describe appears exactly once"
+
+    def test_modify_method(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert '"process_data"' in out, "modify_method: process_data present"
+        assert '"processData"' not in out, "modify_method: processData absent"
+
+    def test_remove_overload(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "luabridge::overload<float>" not in out, "remove_overload: float overload absent"
+        assert "luabridge::overload<int>(&trf::Widget::update)" in out, "remove_overload: int overload kept"
+        assert "luabridge::overload<double>(&trf::Widget::update)" in out, "remove_overload: double overload kept"
+
+    def test_inject_property(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert '"raw_value"' in out, "inject_property: raw_value binding present"
+        assert "getRawValue" in out, "inject_property: getter referenced"
+        assert "setRawValue" in out, "inject_property: setter referenced"
+
+    def test_modify_field_rename(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert '"id"' in out, "modify_field rename: 'id' binding present"
+        assert "o.id_" in out, "modify_field rename: C++ field id_ referenced via lambda"
+
+    def test_modify_field_remove(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "cache_name_" not in out, "modify_field remove: cache_name_ absent"
+
+    def test_inject_code(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "static_assert" in out, "inject_code: static_assert present in output"
+
+    def test_rename_enum(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert '"Color"' in out, "rename_enum: Color namespace present"
+        assert '"OldColor"' not in out, "rename_enum: OldColor namespace absent"
+
+    def test_rename_enum_value(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "Crimson" in out, "rename_enum_value: Crimson present"
+        assert '"Red"' not in out, "rename_enum_value: Red binding absent"
+
+    def test_suppress_enum_value(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "Alpha" not in out, "suppress_enum_value: Alpha absent"
+
+    def test_suppress_enum(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "WidgetState" not in out, "suppress_enum: WidgetState absent"
+
+    def test_rename_function(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert '"compute_score"' in out, "rename_function: compute_score present"
+        assert '"computeWidgetScore"' not in out, "rename_function: computeWidgetScore absent"
+
+    def test_suppress_function(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "internalUtility" not in out, "suppress_function: internalUtility absent"
+
+    def test_inject_function(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "&trf::makeWidget" in out, "inject_function: makeWidget referenced"
+        assert out.count('"make_widget"') == 1, "inject_function: make_widget appears exactly once"
+
+    def test_modify_function(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert '"process_widget"' in out, "modify_function: process_widget present"
+
+    def test_suppress_base(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "deriveClass<trf::DerivedWidget, trf::Widget>" in out, "suppress_base: Widget base kept"
+        assert "trf::DerivedWidget, trf::BaseHelper" not in out, "suppress_base: BaseHelper not in DerivedWidget bases"
+
+    def test_resolve_using_declarations(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "self.extendedMethod" in out, "resolve_using_declarations: extendedMethod bound via lambda"
+        assert "self.extendedValue" in out, "resolve_using_declarations: extendedValue bound via lambda"
+        assert "trf::ExtendedWidget& self" in out, "resolve_using_declarations: lambda uses ExtendedWidget"
+
+    def test_expand_spaceship(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "__lt" in out, "expand_spaceship: __lt metamethod present"
+        assert "__le" in out, "expand_spaceship: __le metamethod present"
+        assert "__eq" in out, "expand_spaceship: __eq metamethod present"
+        assert "std::is_lt" in out, "expand_spaceship: std::is_lt in lambda"
+        assert "std::is_eq" in out, "expand_spaceship: std::is_eq in lambda"
+
+    def test_add_type_mapping(self, transforms_module, luabridge3_output_config):
+        out = _generate(transforms_module, luabridge3_output_config)
+        assert "WidgetTag" not in out, "add_type_mapping: WidgetTag not in output"
+        assert "unsigned char" in out, "add_type_mapping: unsigned char present after remapping"
+
+
+class TestTransformsPybind11Generation:
+    """Generation tests for every transform stage — pybind11 output."""
+
+    def test_rename_class(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert '"Manager"' in out, "rename_class: Manager present"
+        assert '"WidgetManager"' not in out, "rename_class: WidgetManager absent"
+
+    def test_suppress_class(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "WidgetInternal" not in out, "suppress_class: WidgetInternal absent"
+
+    def test_rename_method(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert '"get_id"' in out, "rename_method: get_id present"
+        assert '"getIdInternal"' not in out, "rename_method: getIdInternal absent"
+
+    def test_suppress_method(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "legacyReset" not in out, "suppress_method: legacyReset absent"
+
+    def test_inject_method(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert '"describe"' in out, "inject_method: describe present"
+        assert out.count('"describe"') == 1, "inject_method: describe once"
+
+    def test_modify_method(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert '"process_data"' in out, "modify_method: process_data present"
+
+    def test_modify_argument(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert 'py::arg("option")' in out, "modify_argument: option arg name"
+        assert 'py::arg("name")' in out, "modify_argument: name arg name"
+
+    def test_remove_overload(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "py::overload_cast<float>" not in out, "remove_overload: float overload absent"
+        assert "py::overload_cast<int>(&trf::Widget::update)" in out, "remove_overload: int overload kept"
+
+    def test_inject_property(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert '"raw_value"' in out, "inject_property: raw_value present"
+
+    def test_modify_field_rename(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert '"id"' in out, "modify_field rename: id present"
+        assert "cache_name_" not in out, "modify_field remove: cache_name_ absent"
+
+    def test_inject_code(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "static_assert" in out, "inject_code: static_assert present"
+
+    def test_enum_transforms(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert '"Color"' in out, "rename_enum: Color present"
+        assert "Crimson" in out, "rename_enum_value: Crimson present"
+        assert "Alpha" not in out, "suppress_enum_value: Alpha absent"
+        assert "WidgetState" not in out, "suppress_enum: WidgetState absent"
+
+    def test_function_transforms(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert '"compute_score"' in out, "rename_function: compute_score present"
+        assert "internalUtility" not in out, "suppress_function: internalUtility absent"
+        assert '"process_widget"' in out, "modify_function: process_widget present"
+
+    def test_set_type_hint(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "std::shared_ptr<trf::SharedNode>" in out, "set_type_hint: shared_ptr holder used"
+
+    def test_expose_protected(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "using trf::Widget::onRender" in out, "expose_protected Widget: using declaration in trampoline"
+        assert "using trf::SharedNode::computeValue" in out, "expose_protected SharedNode: using in trampoline"
+
+    def test_register_exception(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "py::register_exception<trf::TransformError>" in out, "register_exception present"
+
+    def test_mark_deprecated_method_still_present(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "&trf::WidgetManager::increment" in out, "mark_deprecated: increment still bound"
+
+    def test_expand_spaceship(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "__lt__" in out, "expand_spaceship: __lt__ present"
+        assert "__le__" in out, "expand_spaceship: __le__ present"
+        assert "__eq__" in out, "expand_spaceship: __eq__ present"
+        assert "__gt__" in out, "expand_spaceship: __gt__ present"
+        assert "__ge__" in out, "expand_spaceship: __ge__ present"
+        assert "__ne__" in out, "expand_spaceship: __ne__ present"
+        assert "std::is_lt" in out, "expand_spaceship: std::is_lt in lambda"
+
+    def test_suppress_base(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "py::class_<trf::DerivedWidget, trf::Widget>" in out, "suppress_base: Widget kept"
+        assert "trf::DerivedWidget, trf::BaseHelper" not in out, "suppress_base: BaseHelper not in DerivedWidget bases"
+
+    def test_resolve_using_declarations(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "self.extendedMethod" in out, "resolve_using_declarations: extendedMethod bound via lambda"
+        assert "self.extendedValue" in out, "resolve_using_declarations: extendedValue bound via lambda"
+        assert "trf::ExtendedWidget& self" in out, "resolve_using_declarations: lambda uses ExtendedWidget"
+
+    def test_add_type_mapping(self, transforms_module, pybind11_output_config):
+        out = _generate(transforms_module, pybind11_output_config)
+        assert "WidgetTag" not in out, "add_type_mapping: WidgetTag remapped"

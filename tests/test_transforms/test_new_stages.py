@@ -8,14 +8,16 @@ import io
 import pytest
 
 from tsujikiri.ir import (
-    IRClass,
     IRCodeInjection,
-    IRConstructor,
-    IRField,
-    IRMethod,
-    IRModule,
-    IRParameter,
     IRProperty,
+)
+from tsujikiri.tir import (
+    TIRClass,
+    TIRConstructor,
+    TIRField,
+    TIRMethod,
+    TIRModule,
+    TIRParameter,
 )
 from tsujikiri.transforms import (
     InjectCodeStage,
@@ -33,57 +35,57 @@ from tsujikiri.transforms import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _simple_module() -> IRModule:
+def _simple_module() -> TIRModule:
     methods = [
-        IRMethod(
+        TIRMethod(
             name="getValue", spelling="getValue",
             qualified_name="Cls::getValue", return_type="int",
             parameters=[],
         ),
-        IRMethod(
+        TIRMethod(
             name="process", spelling="process",
             qualified_name="Cls::process", return_type="void",
-            parameters=[IRParameter("x", "int")],
+            parameters=[TIRParameter("x", "int")],
         ),
-        IRMethod(
+        TIRMethod(
             name="process", spelling="process",
             qualified_name="Cls::process", return_type="void",
-            parameters=[IRParameter("x", "float")],
+            parameters=[TIRParameter("x", "float")],
             is_overload=True,
         ),
-        IRMethod(
+        TIRMethod(
             name="staticHelper", spelling="staticHelper",
             qualified_name="Cls::staticHelper", return_type="int",
-            parameters=[IRParameter("a", "int"), IRParameter("b", "float")],
+            parameters=[TIRParameter("a", "int"), TIRParameter("b", "float")],
             is_static=True,
         ),
     ]
     ctors = [
-        IRConstructor(parameters=[]),
-        IRConstructor(parameters=[IRParameter("v", "int")]),
+        TIRConstructor(parameters=[]),
+        TIRConstructor(parameters=[TIRParameter("v", "int")]),
     ]
     fields = [
-        IRField(name="data_", type_spelling="int"),
-        IRField(name="max_", type_spelling="float", is_const=True),
+        TIRField(name="data_", type_spelling="int"),
+        TIRField(name="max_", type_spelling="float", is_const=True),
     ]
-    cls = IRClass(
+    cls = TIRClass(
         name="Cls", qualified_name="ns::Cls", namespace="ns",
         methods=list(methods),
         constructors=list(ctors),
         fields=list(fields),
     )
-    return IRModule(name="m", classes=[cls], class_by_name={"Cls": cls})
+    return TIRModule(name="m", classes=[cls], class_by_name={"Cls": cls})
 
 
-def _get_cls(mod: IRModule, name: str = "Cls") -> IRClass:
+def _get_cls(mod: TIRModule, name: str = "Cls") -> TIRClass:
     return next(c for c in mod.classes if c.name == name)
 
 
-def _get_method(mod: IRModule, name: str, cls: str = "Cls") -> IRMethod:
+def _get_method(mod: TIRModule, name: str, cls: str = "Cls") -> TIRMethod:
     return next(m for m in _get_cls(mod, cls).methods if m.name == name)
 
 
-def _get_field(mod: IRModule, name: str, cls: str = "Cls") -> IRField:
+def _get_field(mod: TIRModule, name: str, cls: str = "Cls") -> TIRField:
     return next(f for f in _get_cls(mod, cls).fields if f.name == name)
 
 
@@ -136,8 +138,8 @@ class TestModifyMethodStage:
             assert m.allow_thread is True
 
     def test_does_not_affect_other_class(self):
-        other = IRClass(name="Other", qualified_name="ns::Other", namespace="ns",
-                        methods=[IRMethod("foo", "foo", "ns::Other::foo", "void")])
+        other = TIRClass(name="Other", qualified_name="ns::Other", namespace="ns",
+                        methods=[TIRMethod("foo", "foo", "ns::Other::foo", "void")])
         mod = _simple_module()
         mod.classes.append(other)
         ModifyMethodStage(**{"class": "Cls", "method": "getValue", "rename": "get"}).apply(mod)

@@ -95,7 +95,12 @@ def _cmake_configure(scenario: str) -> bool:
     """
     build_dir = _build_dir(scenario)
     build_dir.mkdir(parents=True, exist_ok=True)
-    if (build_dir / "CMakeCache.txt").exists():
+    build_system_present = (
+        (build_dir / "Makefile").exists()
+        or (build_dir / "build.ninja").exists()
+        or any(build_dir.glob("*.sln"))
+    )
+    if (build_dir / "CMakeCache.txt").exists() and build_system_present:
         return True
     cmake_args = [
         "cmake",
@@ -228,3 +233,9 @@ class TestCMakeBuild:
         assert _cmake_build_all("typesystem"), "typesystem build failed"
         assert _run_executable("typesystem", "test_typesystem_luabridge3"), "typesystem luabridge3 run failed"
         assert _run_pybind11_verify("typesystem"), "typesystem pybind11 verify failed"
+
+    def test_transforms(self) -> None:
+        assert _cmake_configure("transforms"), "transforms cmake configure failed"
+        assert _cmake_build_all("transforms"), "transforms build failed"
+        assert _run_executable("transforms", "test_transforms_luabridge3"), "transforms luabridge3 run failed"
+        assert _run_pybind11_verify("transforms"), "transforms pybind11 verify failed"

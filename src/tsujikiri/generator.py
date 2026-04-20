@@ -27,12 +27,12 @@ import jinja2
 from tsujikiri.configurations import GenerationConfig, OutputConfig, TypesystemConfig, load_output_config
 from tsujikiri.formats import _FORMATS_DIR
 from tsujikiri.generator_filters import camel_to_snake, snake_to_camel, code_at, param_name, param_pairs
-from tsujikiri.ir import (
-    IRClass,
-    IREnum,
-    IRFunction,
-    IRMethod,
-    IRModule,
+from tsujikiri.tir import (
+    TIRClass,
+    TIREnum,
+    TIRFunction,
+    TIRMethod,
+    TIRModule,
 )
 
 
@@ -121,14 +121,14 @@ class Generator:
     # Public entry point
     # ------------------------------------------------------------------
 
-    def generate(self, module: IRModule, out: io.TextIOBase, api_version: str = "") -> None:
+    def generate(self, module: TIRModule, out: io.TextIOBase, api_version: str = "") -> None:
         self.generate_from_template(module, out, api_version)
 
     # ------------------------------------------------------------------
     # Single-template rendering
     # ------------------------------------------------------------------
 
-    def generate_from_template(self, module: IRModule, out: io.TextIOBase, api_version: str = "") -> None:
+    def generate_from_template(self, module: TIRModule, out: io.TextIOBase, api_version: str = "") -> None:
         """Render the format's single Jinja2 template with full IR context."""
         ctx = self._build_ir_context(module, api_version)
 
@@ -198,7 +198,7 @@ class Generator:
     # IR context building
     # ------------------------------------------------------------------
 
-    def _build_ir_context(self, module: IRModule, api_version: str = "") -> Dict[str, Any]:
+    def _build_ir_context(self, module: TIRModule, api_version: str = "") -> Dict[str, Any]:
         """Build a plain-data context dict from the IR for template rendering."""
         vir = self._version_in_range  # shorthand
         topo = self._topo_sort(module.classes, module.class_by_name)
@@ -249,8 +249,8 @@ class Generator:
 
     def _flatten_class_ctx(
         self,
-        ir_class: IRClass,
-        module_functions: Optional[List[IRFunction]] = None,
+        ir_class: TIRClass,
+        module_functions: Optional[List[TIRFunction]] = None,
         api_version: str = "",
     ) -> List[Dict[str, Any]]:
         """Return class ctx followed by inner-class ctxs (recursive, flattened)."""
@@ -261,10 +261,50 @@ class Generator:
                 result.extend(self._flatten_class_ctx(inner, module_functions, api_version))
         return result
 
-    def _build_enum_ctx(self, enum: IREnum) -> Dict[str, Any]:
+    @staticmethod
+    def _decompose(namespace: str, qualified_name: str) -> tuple[list[str], list[str], Optional[str]]:
+        """Split a qualified_name into (parts, namespaces, parent_class).
+
+        namespace      – C++ namespace string only, e.g. "a::b::c"
+        qualified_name – full C++ path,  e.g. "a::b::c::d::e"
+
+        Returns:
+          parts        – every component, e.g. ["a","b","c","d","e"]
+          namespaces   – namespace components only, e.g. ["a","b","c"]
+          parent_class – immediate enclosing class/enum name, e.g. "d", or None
+        """
+        ns_parts: list[str] = namespace.split("::") if namespace else []
+        qn_parts: list[str] = qualified_name.split("::") if qualified_name else []
+        class_chain = qn_parts[len(ns_parts):-1]
+        return qn_parts, ns_parts, (class_chain[-1] if class_chain else None)
+
+    def _build_enum_ctx(self, enum: TIREnum, namespace: str = "") -> Dict[str, Any]:
+        if not namespace:
+            qn = enum.qualified_name.split("::")
+            namespace = "::".join(qn[:-1]) if len(qn) > 1 else ""
+        parts, namespaces, parent_class = self._decompose(namespace, enum.qualified_name)
+        values = []
+        for v in enum.values:
+            if not v.emit:
+                continue
+            value_qn = f"{enum.qualified_name}::{v.name}"
+            v_parts, v_namespaces, v_parent_class = self._decompose(namespace, value_qn)
+            values.append({
+                "name": v.binding_name,
+                "original_name": v.name,
+                "parts": v_parts,
+                "namespaces": v_namespaces,
+                "parent_class": v_parent_class,
+                "number": str(v.value),
+                "doc": v.doc,
+                "attributes": list(v.attributes),
+            })
         return {
-            "name": enum.rename or enum.name,
+            "name": enum.binding_name,
             "qualified_name": enum.qualified_name,
+            "parts": parts,
+            "namespaces": namespaces,
+            "parent_class": parent_class,
             "is_scoped": enum.is_scoped,
             "is_anonymous": enum.is_anonymous,
             "is_arithmetic": enum.is_arithmetic,
@@ -272,26 +312,16 @@ class Generator:
             "deprecation_message": enum.deprecation_message or "",
             "doc": enum.doc,
             "attributes": list(enum.attributes),
-            "values": [
-                {
-                    "name": v.rename or v.name,
-                    "original_name": v.name,
-                    "number": str(v.value),
-                    "doc": v.doc,
-                    "attributes": list(v.attributes),
-                }
-                for v in enum.values
-                if v.emit
-            ],
+            "values": values,
         }
 
-    def _build_function_group_ctxs(self, functions: List[IRFunction]) -> List[Dict[str, Any]]:
+    def _build_function_group_ctxs(self, functions: List[TIRFunction]) -> List[Dict[str, Any]]:
         effective_return_fn = lambda fn: fn.return_type_override or fn.return_type  # noqa: E731
         active = [fn for fn in functions if fn.emit and not self._is_unsupported(effective_return_fn(fn))]
-        groups: Dict[str, List[IRFunction]] = {}
+        groups: Dict[str, List[TIRFunction]] = {}
         order: List[str] = []
         for fn in active:
-            key = fn.rename or fn.name
+            key = fn.binding_name
             if key not in groups:
                 groups[key] = []
                 order.append(key)
@@ -305,16 +335,21 @@ class Generator:
             for i, fn in enumerate(group):
                 is_last = i == len(group) - 1
                 eff_return = effective_return_fn(fn)
+                fn_parts, fn_namespaces, fn_parent_class = self._decompose(fn.namespace, fn.qualified_name)
                 fns.append({
-                    "name": fn.rename or fn.name,
+                    "name": fn.binding_name,
                     "spelling": fn.qualified_name,
+                    "parts": fn_parts,
+                    "namespaces": fn_namespaces,
+                    "parent_class": fn_parent_class,
                     "params": [
                         {
-                            "name": p.rename or p.name,
+                            "name": p.binding_name,
                             "original_name": p.name,
                             "type": self._map_type(p.type_override or p.type_spelling),
                             "raw_type": p.type_override or p.type_spelling,
                             "ownership": p.ownership,
+                            "index": p.index,
                             "default": p.default_override or p.default_value,
                         }
                         for p in fn.parameters
@@ -342,8 +377,8 @@ class Generator:
             })
         return result
 
-    def _build_class_ctx(self, ir_class: IRClass, module_functions: Optional[List[IRFunction]] = None, api_version: str = "") -> Dict[str, Any]:
-        name = ir_class.rename or ir_class.name
+    def _build_class_ctx(self, ir_class: TIRClass, module_functions: Optional[List[TIRFunction]] = None, api_version: str = "") -> Dict[str, Any]:
+        name = ir_class.binding_name
 
         # Only emit=True public bases for deriveClass<> template usage
         public_bases = [
@@ -367,7 +402,7 @@ class Generator:
                         "is_pure_virtual": m.is_pure_virtual,
                         "params": [
                             {
-                                "name": p.rename or p.name,
+                                "name": p.binding_name,
                                 "type": self._map_type(p.type_override or p.type_spelling),
                                 "raw_type": p.type_override or p.type_spelling,
                             }
@@ -386,11 +421,12 @@ class Generator:
                 {
                     "params": [
                         {
-                            "name": p.rename or p.name,
+                            "name": p.binding_name,
                             "original_name": p.name,
                             "type": self._map_type(p.type_override or p.type_spelling),
                             "raw_type": p.type_override or p.type_spelling,
                             "ownership": p.ownership,
+                            "index": p.index,
                             "default": p.default_override or p.default_value,
                         }
                         for p in ctor.parameters
@@ -407,17 +443,19 @@ class Generator:
         }
 
         # Method groups (preserving original order)
+        # Exclude public_via_trampoline: protected methods only accessible in trampoline, not as bound methods
         effective_return = lambda m: m.return_type_override or m.return_type  # noqa: E731
         methods = [
             m for m in ir_class.methods
             if m.emit
+            and m.access != "public_via_trampoline"
             and not self._is_unsupported(effective_return(m))
             and self._version_in_range(api_version, m.api_since, m.api_until)
         ]
-        mgroups: Dict[tuple, List[IRMethod]] = {}
+        mgroups: Dict[tuple, List[TIRMethod]] = {}
         morder: List[tuple] = []
         for m in methods:
-            key = (m.rename or m.name, m.is_static)
+            key = (m.binding_name, m.is_static)
             if key not in mgroups:
                 mgroups[key] = []
                 morder.append(key)
@@ -431,16 +469,21 @@ class Generator:
             method_ctxs = []
             for i, m in enumerate(group):
                 is_last = i == len(group) - 1
+                m_parts, m_namespaces, m_parent_class = self._decompose(ir_class.namespace, m.qualified_name)
                 method_ctxs.append({
                     "name": group_name,
                     "spelling": m.spelling,
+                    "parts": m_parts,
+                    "namespaces": m_namespaces,
+                    "parent_class": m_parent_class,
                     "params": [
                         {
-                            "name": p.rename or p.name,
+                            "name": p.binding_name,
                             "original_name": p.name,
                             "type": self._map_type(p.type_override or p.type_spelling),
                             "raw_type": p.type_override or p.type_spelling,
                             "ownership": p.ownership,
+                            "index": p.index,
                             "default": p.default_override or p.default_value,
                         }
                         for p in m.parameters
@@ -458,6 +501,7 @@ class Generator:
                     "is_virtual": m.is_virtual,
                     "is_pure_virtual": m.is_pure_virtual,
                     "is_noexcept": m.is_noexcept,
+                    "access": m.access or "public",
                     "is_operator": m.is_operator,
                     "operator_type": m.operator_type or "",
                     "operator_name": self.cfg.operator_mappings.get(m.operator_type or "", "") if m.is_operator else "",
@@ -478,19 +522,26 @@ class Generator:
             })
 
         # Fields (excluding unsupported types and emit=False)
-        fields = [
-            {
-                "name": f.rename or f.name,
+        fields = []
+        for f in ir_class.fields:
+            if not f.emit or self._is_unsupported(f.type_override or f.type_spelling):
+                continue
+            f_parts, f_namespaces, f_parent_class = self._decompose(
+                ir_class.namespace, f"{ir_class.qualified_name}::{f.name}"
+            )
+            fields.append({
+                "name": f.binding_name,
+                "original_name": f.name,
+                "parts": f_parts,
+                "namespaces": f_namespaces,
+                "parent_class": f_parent_class,
                 "type": self._map_type(f.type_override or f.type_spelling),
                 "raw_type": f.type_override or f.type_spelling,
                 "is_const": f.is_const,
                 "is_static": f.is_static,
                 "read_only": f.read_only or f.is_const,
                 "doc": f.doc,
-            }
-            for f in ir_class.fields
-            if f.emit and not self._is_unsupported(f.type_override or f.type_spelling)
-        ]
+            })
 
         # Synthetic getter/setter properties
         properties = [
@@ -518,10 +569,14 @@ class Generator:
                             has_free_ostream_op = True
                             break
 
+        cls_parts, cls_namespaces, cls_parent_class = self._decompose(ir_class.namespace, ir_class.qualified_name)
         return {
             "name": name,
             "cpp_name": ir_class.name,
             "qualified_name": ir_class.qualified_name,
+            "parts": cls_parts,
+            "namespaces": cls_namespaces,
+            "parent_class": cls_parent_class,
             "doc": ir_class.doc,
             "attributes": list(ir_class.attributes),
             "is_deprecated": ir_class.is_deprecated,
@@ -558,14 +613,14 @@ class Generator:
             "method_groups": method_groups,
             "fields": fields,
             "properties": properties,
-            "enums": [self._build_enum_ctx(e) for e in ir_class.enums if e.emit],
+            "enums": [self._build_enum_ctx(e, ir_class.namespace) for e in ir_class.enums if e.emit],
             "code_injections": [{"position": c.position, "code": c.code} for c in ir_class.code_injections],
             "declaration_injections": [{"position": c.position, "code": c.code} for c in ir_class.code_injections if c.position == "declaration"],
         }
 
-    def _compute_overload_kind(self, group: List[IRMethod], method: IRMethod) -> str:
+    def _compute_overload_kind(self, group: List[TIRMethod], method: TIRMethod) -> str:
         """Return 'const', 'nonconst', or 'overload' for the cast type of this method."""
-        def _eff_args(m: IRMethod) -> str:
+        def _eff_args(m: TIRMethod) -> str:
             return ", ".join((p.type_override or p.type_spelling) for p in m.parameters if p.emit)
 
         method_args = _eff_args(method)
@@ -644,7 +699,7 @@ class Generator:
         all_unsupported = self.cfg.unsupported_types + self.extra_unsupported
         return any(t in type_spelling for t in all_unsupported)
 
-    def _topo_sort(self, classes: List[IRClass], class_by_name: Dict[str, IRClass]) -> List[IRClass]:  # noqa: ARG002
+    def _topo_sort(self, classes: List[TIRClass], class_by_name: Dict[str, TIRClass]) -> List[TIRClass]:  # noqa: ARG002
         """Kahn's algorithm: emit bases before derived classes."""
         nodes = [c for c in classes if c.emit]
         qualified_set = {c.qualified_name for c in nodes}

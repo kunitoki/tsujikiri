@@ -11,10 +11,10 @@ from unittest.mock import MagicMock, patch
 import tsujikiri.formats as tsujikiri_formats
 from tsujikiri.configurations import OutputConfig
 from tsujikiri.generator import Generator, ItemFirstEnvironment, _type_lookup_candidates
-from tsujikiri.ir import IRBase, IRClass, IRConstructor, IREnumValue, IRField, IRFunction, IRMethod, IRModule, IRParameter
+from tsujikiri.tir import TIRBase, TIRClass, TIRConstructor, TIREnumValue, TIRField, TIRFunction, TIRMethod, TIRModule, TIRParameter
 
 
-def _generate(module: IRModule, output_config) -> str:
+def _generate(module: TIRModule, output_config) -> str:
     buf = io.StringIO()
     Generator(output_config).generate(module, buf)
     return buf.getvalue()
@@ -46,22 +46,22 @@ class TestClassTemplates:
         assert '.beginClass<mylib::MyClass>("MyClass")' in out
 
     def test_derived_class_uses_derived_begin(self, luabridge3_output_config):
-        base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        variable_name="classBase")
-        derived = IRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
-                          bases=[IRBase("ns::Base")], variable_name="classDerived")
-        mod = IRModule(name="m", classes=[base, derived],
+        derived = TIRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
+                          bases=[TIRBase("ns::Base")], variable_name="classDerived")
+        mod = TIRModule(name="m", classes=[base, derived],
                        class_by_name={"Base": base, "Derived": derived})
         out = _generate(mod, luabridge3_output_config)
         assert '.deriveClass<ns::Derived, ns::Base>("Derived")' in out
 
     def test_topo_sort_emits_base_before_derived(self, luabridge3_output_config):
-        base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        variable_name="classBase")
-        derived = IRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
-                          bases=[IRBase("ns::Base")], variable_name="classDerived")
+        derived = TIRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
+                          bases=[TIRBase("ns::Base")], variable_name="classDerived")
         # Deliberately put derived first in list; topo sort should fix ordering
-        mod = IRModule(name="m", classes=[derived, base],
+        mod = TIRModule(name="m", classes=[derived, base],
                        class_by_name={"Base": base, "Derived": derived})
         gen = Generator(luabridge3_output_config)
         sorted_names = [c.name for c in gen._topo_sort(mod.classes, mod.class_by_name)]
@@ -160,9 +160,9 @@ class TestFunctionTemplates:
 
 class TestUnsupportedTypes:
     def test_unsupported_return_type_excluded(self, make_ir_module, luabridge3_output_config):
-        from tsujikiri.ir import IRMethod
+        from tsujikiri.tir import TIRMethod
         mod = make_ir_module()
-        bad_method = IRMethod(
+        bad_method = TIRMethod(
             name="bad", spelling="bad",
             qualified_name="mylib::MyClass::bad",
             return_type="CFStringRef",
@@ -179,7 +179,7 @@ class TestUnsupportedTypes:
 class TestGenerationConfig:
     def test_extra_unsupported_types_not_present(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
-        bad = IRMethod(
+        bad = TIRMethod(
             name="doThing", spelling="doThing",
             qualified_name="mylib::MyClass::doThing",
             return_type="MyOpaqueType",
@@ -248,18 +248,18 @@ class TestTypeMappings:
 
 class TestRenaming:
     def test_renamed_class_uses_new_name_in_template(self, luabridge3_output_config):
-        cls = IRClass(name="Ugly", qualified_name="ns::Ugly", namespace="ns",
+        cls = TIRClass(name="Ugly", qualified_name="ns::Ugly", namespace="ns",
                       variable_name="classUgly", rename="Pretty")
-        mod = IRModule(name="m", classes=[cls], class_by_name={"Ugly": cls})
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"Ugly": cls})
         out = _generate(mod, luabridge3_output_config)
         assert '"Pretty"' in out
 
     def test_renamed_method_uses_new_name(self, luabridge3_output_config):
-        m = IRMethod(name="getValueLong", spelling="getValueLong",
+        m = TIRMethod(name="getValueLong", spelling="getValueLong",
                      qualified_name="Cls::getValueLong", return_type="int", rename="get")
-        cls = IRClass(name="Cls", qualified_name="ns::Cls", namespace="ns",
+        cls = TIRClass(name="Cls", qualified_name="ns::Cls", namespace="ns",
                       variable_name="classCls", methods=[m])
-        mod = IRModule(name="m", classes=[cls], class_by_name={"Cls": cls})
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"Cls": cls})
         out = _generate(mod, luabridge3_output_config)
         assert '.addFunction("get"' in out
         assert "getValueLong" in out  # spelling still used for the pointer
@@ -271,21 +271,21 @@ class TestRenaming:
 
 class TestInnerClasses:
     def test_inner_class_emitted(self, luabridge3_output_config):
-        inner = IRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns",
+        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns",
                         variable_name="classOuterInner")
-        outer = IRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
+        outer = TIRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
                         variable_name="classOuter", inner_classes=[inner])
-        mod = IRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
+        mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
         out = _generate(mod, luabridge3_output_config)
         assert "Inner" in out
 
     def test_suppressed_inner_class_skipped(self, luabridge3_output_config):
-        inner = IRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns",
+        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns",
                         variable_name="classOuterInner")
         inner.emit = False
-        outer = IRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
+        outer = TIRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
                         variable_name="classOuter", inner_classes=[inner])
-        mod = IRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
+        mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
         out = _generate(mod, luabridge3_output_config)
         assert "Inner" not in out
 
@@ -296,13 +296,13 @@ class TestInnerClasses:
 
 class TestConstNonConstOverload:
     def test_const_nonconst_overload_uses_cast(self, luabridge3_output_config):
-        m_const = IRMethod(name="get", spelling="get", qualified_name="C::get",
+        m_const = TIRMethod(name="get", spelling="get", qualified_name="C::get",
                            return_type="int", is_const=True, is_overload=True)
-        m_nonconst = IRMethod(name="get", spelling="get", qualified_name="C::get",
+        m_nonconst = TIRMethod(name="get", spelling="get", qualified_name="C::get",
                               return_type="int", is_const=False, is_overload=True)
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", methods=[m_const, m_nonconst])
-        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"C": cls})
         out = _generate(mod, luabridge3_output_config)
         assert "C::get" in out
 
@@ -313,11 +313,11 @@ class TestConstNonConstOverload:
 
 class TestFieldEdgeCases:
     def test_suppressed_field_skipped_in_emit(self, luabridge3_output_config):
-        f = IRField(name="secret_", type_spelling="int")
+        f = TIRField(name="secret_", type_spelling="int")
         f.emit = False
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", fields=[f])
-        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"C": cls})
         out = _generate(mod, luabridge3_output_config)
         assert "secret_" not in out
 
@@ -328,10 +328,10 @@ class TestFieldEdgeCases:
         assert "---@field value_" not in out
 
     def test_unsupported_field_type_excluded(self, luabridge3_output_config):
-        f = IRField(name="data_", type_spelling="CFStringRef")
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        f = TIRField(name="data_", type_spelling="CFStringRef")
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", fields=[f])
-        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"C": cls})
         out = _generate(mod, luabridge3_output_config)
         assert "data_" not in out
 
@@ -342,9 +342,9 @@ class TestFieldEdgeCases:
 
 class TestFunctionUnsupportedType:
     def test_unsupported_function_return_excluded(self, luabridge3_output_config):
-        fn = IRFunction(name="badFn", qualified_name="ns::badFn",
+        fn = TIRFunction(name="badFn", qualified_name="ns::badFn",
                         namespace="ns", return_type="CFStringRef")
-        mod = IRModule(name="m", functions=[fn])
+        mod = TIRModule(name="m", functions=[fn])
         out = _generate(mod, luabridge3_output_config)
         assert "badFn" not in out
 
@@ -355,11 +355,11 @@ class TestFunctionUnsupportedType:
 
 class TestTopoSortCycle:
     def test_cycle_classes_still_emitted(self, luabridge3_output_config):
-        cls_a = IRClass(name="A", qualified_name="ns::A", namespace="ns",
-                        variable_name="classA", bases=[IRBase("ns::B")])
-        cls_b = IRClass(name="B", qualified_name="ns::B", namespace="ns",
-                        variable_name="classB", bases=[IRBase("ns::A")])
-        mod = IRModule(name="m", classes=[cls_a, cls_b],
+        cls_a = TIRClass(name="A", qualified_name="ns::A", namespace="ns",
+                        variable_name="classA", bases=[TIRBase("ns::B")])
+        cls_b = TIRClass(name="B", qualified_name="ns::B", namespace="ns",
+                        variable_name="classB", bases=[TIRBase("ns::A")])
+        mod = TIRModule(name="m", classes=[cls_a, cls_b],
                        class_by_name={"A": cls_a, "B": cls_b})
         gen = Generator(luabridge3_output_config)
         sorted_classes = gen._topo_sort(mod.classes, mod.class_by_name)
@@ -603,22 +603,22 @@ class TestIRMetadataInContext:
             template="{% for cls in classes %}{{ cls.name }}{% endfor %}",
         )
         gen = Generator(cfg)
-        mod = IRModule(name="m", classes=[ir_class], class_by_name={ir_class.name: ir_class})
+        mod = TIRModule(name="m", classes=[ir_class], class_by_name={ir_class.name: ir_class})
         return gen._build_class_ctx(ir_class)
 
     def test_method_is_virtual_in_context(self):
-        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn",
+        m = TIRMethod(name="fn", spelling="fn", qualified_name="C::fn",
                      return_type="void", is_virtual=True)
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", methods=[m], has_virtual_methods=True)
         ctx = self._ctx_class(cls)
         assert ctx["has_virtual_methods"] is True
         assert ctx["method_groups"][0]["methods"][0]["is_virtual"] is True
 
     def test_method_is_pure_virtual_in_context(self):
-        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn",
+        m = TIRMethod(name="fn", spelling="fn", qualified_name="C::fn",
                      return_type="void", is_virtual=True, is_pure_virtual=True)
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", methods=[m],
                       has_virtual_methods=True, is_abstract=True)
         ctx = self._ctx_class(cls)
@@ -626,52 +626,52 @@ class TestIRMetadataInContext:
         assert ctx["method_groups"][0]["methods"][0]["is_pure_virtual"] is True
 
     def test_method_is_noexcept_in_context(self):
-        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn",
+        m = TIRMethod(name="fn", spelling="fn", qualified_name="C::fn",
                      return_type="void", is_noexcept=True)
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", methods=[m])
         ctx = self._ctx_class(cls)
         assert ctx["method_groups"][0]["methods"][0]["is_noexcept"] is True
 
     def test_method_not_noexcept_by_default(self):
-        m = IRMethod(name="fn", spelling="fn", qualified_name="C::fn", return_type="void")
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        m = TIRMethod(name="fn", spelling="fn", qualified_name="C::fn", return_type="void")
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", methods=[m])
         ctx = self._ctx_class(cls)
         assert ctx["method_groups"][0]["methods"][0]["is_noexcept"] is False
 
     def test_constructor_is_noexcept_in_context(self):
-        ctor = IRConstructor(parameters=[], is_noexcept=True)
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        ctor = TIRConstructor(parameters=[], is_noexcept=True)
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", constructors=[ctor])
         ctx = self._ctx_class(cls)
         assert ctx["constructor_group"]["constructors"][0]["is_noexcept"] is True
 
     def test_constructor_is_explicit_in_context(self):
-        ctor = IRConstructor(parameters=[IRParameter("x", "int")], is_explicit=True)
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        ctor = TIRConstructor(parameters=[TIRParameter("x", "int")], is_explicit=True)
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", constructors=[ctor])
         ctx = self._ctx_class(cls)
         assert ctx["constructor_group"]["constructors"][0]["is_explicit"] is True
 
     def test_constructor_not_explicit_by_default(self):
-        ctor = IRConstructor(parameters=[])
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        ctor = TIRConstructor(parameters=[])
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC", constructors=[ctor])
         ctx = self._ctx_class(cls)
         assert ctx["constructor_group"]["constructors"][0]["is_explicit"] is False
 
     def test_class_not_abstract_by_default(self):
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC")
         ctx = self._ctx_class(cls)
         assert ctx["is_abstract"] is False
         assert ctx["has_virtual_methods"] is False
 
     def test_bases_in_context(self):
-        cls = IRClass(name="D", qualified_name="ns::D", namespace="ns",
+        cls = TIRClass(name="D", qualified_name="ns::D", namespace="ns",
                       variable_name="classD",
-                      bases=[IRBase("ns::A", "public"), IRBase("ns::B", "protected")])
+                      bases=[TIRBase("ns::A", "public"), TIRBase("ns::B", "protected")])
         ctx = self._ctx_class(cls)
         assert ctx["bases"] == [
             {"qualified_name": "ns::A", "access": "public", "emit": True},
@@ -680,25 +680,25 @@ class TestIRMetadataInContext:
         assert ctx["base_name"] == "ns::A"
 
     def test_public_bases_in_context(self):
-        cls = IRClass(name="D", qualified_name="ns::D", namespace="ns",
+        cls = TIRClass(name="D", qualified_name="ns::D", namespace="ns",
                       variable_name="classD",
-                      bases=[IRBase("ns::A", "public"), IRBase("ns::B", "protected")])
+                      bases=[TIRBase("ns::A", "public"), TIRBase("ns::B", "protected")])
         ctx = self._ctx_class(cls)
         assert ctx["public_bases"] == [
             {"qualified_name": "ns::A", "short_name": "A"},
         ]
 
     def test_suppressed_base_excluded_from_public_bases(self):
-        base = IRBase("ns::A", "public")
+        base = TIRBase("ns::A", "public")
         base.emit = False
-        cls = IRClass(name="D", qualified_name="ns::D", namespace="ns",
+        cls = TIRClass(name="D", qualified_name="ns::D", namespace="ns",
                       variable_name="classD", bases=[base])
         ctx = self._ctx_class(cls)
         assert ctx["public_bases"] == []
         assert ctx["base_name"] == ""
 
     def test_no_bases_context(self):
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                       variable_name="classC")
         ctx = self._ctx_class(cls)
         assert ctx["bases"] == []
@@ -706,7 +706,7 @@ class TestIRMetadataInContext:
 
     def test_function_is_noexcept_in_context(self):
         from tsujikiri.configurations import OutputConfig
-        fn = IRFunction(name="foo", qualified_name="ns::foo",
+        fn = TIRFunction(name="foo", qualified_name="ns::foo",
                         namespace="ns", return_type="void", is_noexcept=True)
         cfg = OutputConfig(
             format_name="test", format_version="1", description="", template="",
@@ -717,7 +717,7 @@ class TestIRMetadataInContext:
 
     def test_function_not_noexcept_by_default(self):
         from tsujikiri.configurations import OutputConfig
-        fn = IRFunction(name="foo", qualified_name="ns::foo",
+        fn = TIRFunction(name="foo", qualified_name="ns::foo",
                         namespace="ns", return_type="void")
         cfg = OutputConfig(
             format_name="test", format_version="1", description="", template="",
@@ -774,8 +774,8 @@ class TestCustomData:
             format_name="test", format_version="1", description="", template=template,
         )
 
-    def _mod(self) -> IRModule:
-        return IRModule(name="m")
+    def _mod(self) -> TIRModule:
+        return TIRModule(name="m")
 
     def test_custom_data_empty_by_default(self):
         cfg = self._cfg("{{ custom_data }}")
@@ -879,14 +879,14 @@ class TestTopoSortDiamond:
     def test_diamond_dependency_base_first(self, luabridge3_output_config):
         """A -> B and A -> C: processing B decrements in_degree[A] to 1 (not 0),
         covering the False branch of ``if in_degree[dep_qname] == 0``."""
-        base_b = IRClass(name="B", qualified_name="ns::B", namespace="ns",
+        base_b = TIRClass(name="B", qualified_name="ns::B", namespace="ns",
                          variable_name="classB")
-        base_c = IRClass(name="C", qualified_name="ns::C", namespace="ns",
+        base_c = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
                          variable_name="classC")
-        child_a = IRClass(
+        child_a = TIRClass(
             name="A", qualified_name="ns::A", namespace="ns",
             variable_name="classA",
-            bases=[IRBase("ns::B"), IRBase("ns::C")],
+            bases=[TIRBase("ns::B"), TIRBase("ns::C")],
         )
 
         class_by_name: dict = {"A": child_a, "B": base_b, "C": base_c}
@@ -968,7 +968,7 @@ class TestTypesystemGenerator:
         )
         gen = Generator(cfg, typesystem=ts)
         buf = io.StringIO()
-        gen.generate(IRModule(name="test"), buf)
+        gen.generate(TIRModule(name="test"), buf)
         assert buf.getvalue() == "MyColor"
 
     def test_conversion_rules_empty_without_typesystem(self) -> None:
@@ -978,7 +978,7 @@ class TestTypesystemGenerator:
         )
         gen = Generator(cfg)
         buf = io.StringIO()
-        gen.generate(IRModule(name="test"), buf)
+        gen.generate(TIRModule(name="test"), buf)
         assert buf.getvalue() == "0"
 
 

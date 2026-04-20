@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from tsujikiri.ir import IRClass, IRModule
+from tsujikiri.tir import TIRClass, TIRModule
 
 
 # ---------------------------------------------------------------------------
@@ -40,8 +40,8 @@ class CompatibilityReport:
 # Canonical builders (format-agnostic, raw C++ types, emit=True only)
 # ---------------------------------------------------------------------------
 
-def _canonical_class(ir_class: IRClass) -> Dict[str, Any]:
-    name = ir_class.rename or ir_class.name
+def _canonical_class(ir_class: TIRClass) -> Dict[str, Any]:
+    name = ir_class.binding_name
 
     constructors = sorted(
         [tuple(p.type_spelling for p in c.parameters) for c in ir_class.constructors if c.emit]
@@ -52,7 +52,7 @@ def _canonical_class(ir_class: IRClass) -> Dict[str, Any]:
         if not m.emit:
             continue
         methods.append({
-            "name": m.rename or m.name,
+            "name": m.binding_name,
             "params": [p.type_spelling for p in m.parameters],
             "return_type": m.return_type,
             "is_static": m.is_static,
@@ -64,7 +64,7 @@ def _canonical_class(ir_class: IRClass) -> Dict[str, Any]:
         if not f.emit:
             continue
         fields.append({
-            "name": f.rename or f.name,
+            "name": f.binding_name,
             "type": f.type_spelling,
             "is_const": f.is_const,
         })
@@ -96,7 +96,7 @@ def _canonical_enum_entry(enum) -> Dict[str, Any]:
 # Public: compute
 # ---------------------------------------------------------------------------
 
-def compute_manifest(module: IRModule) -> Dict[str, Any]:
+def compute_manifest(module: TIRModule) -> Dict[str, Any]:
     """Build a canonical manifest dict from a fully-filtered/transformed IRModule.
 
     The ``version`` field is a SHA-256 hex digest of the ``api`` section
@@ -112,7 +112,7 @@ def compute_manifest(module: IRModule) -> Dict[str, Any]:
         if not fn.emit:
             continue
         functions.append({
-            "name": fn.rename or fn.name,
+            "name": fn.binding_name,
             "params": [p.type_spelling for p in fn.parameters],
             "return_type": fn.return_type,
         })

@@ -30,7 +30,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from tsujikiri.configurations import AttributeHandlerConfig
-from tsujikiri.ir import IRClass, IRModule
+from tsujikiri.tir import TIRClass, TIRModule
 
 
 _BUILTIN_HANDLERS: Dict[str, str] = {
@@ -122,7 +122,7 @@ class AttributeProcessor:
         # Custom handlers extend (and can override) the built-ins.
         self.handlers: Dict[str, str] = {**_BUILTIN_HANDLERS, **config.handlers}
 
-    def apply(self, module: IRModule) -> None:
+    def apply(self, module: TIRModule) -> None:
         for cls in module.classes:
             self._process_class(cls)
         for fn in module.functions:
@@ -132,7 +132,7 @@ class AttributeProcessor:
             for val in enum.values:
                 _apply_attrs(val, self.handlers)
 
-    def _process_class(self, cls: IRClass) -> None:
+    def _process_class(self, cls: TIRClass) -> None:
         _apply_attrs(cls, self.handlers)
         for method in cls.methods:
             _apply_attrs(method, self.handlers)

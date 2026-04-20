@@ -18,16 +18,16 @@ from tsujikiri.configurations import (
     SourceFilter,
 )
 from tsujikiri.filters import FilterEngine
-from tsujikiri.ir import (
-    IRClass,
-    IRConstructor,
-    IREnum,
-    IREnumValue,
-    IRField,
-    IRFunction,
-    IRMethod,
-    IRModule,
-    IRParameter,
+from tsujikiri.tir import (
+    TIRBase,
+    TIRClass,
+    TIRConstructor,
+    TIREnum,
+    TIRField,
+    TIRFunction,
+    TIRMethod,
+    TIRModule,
+    TIRParameter,
 )
 
 HERE = Path(__file__).parent
@@ -37,23 +37,24 @@ HERE = Path(__file__).parent
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _module_with_classes(*names: str, source_file: str | None = None) -> IRModule:
+def _module_with_classes(*names: str, source_file: str | None = None) -> TIRModule:
     classes = [
-        IRClass(name=n, qualified_name=f"ns::{n}", namespace="ns",
-                source_file=source_file)
+        TIRClass(name=n, qualified_name=f"ns::{n}", namespace="ns",
+                 source_file=source_file)
         for n in names
     ]
-    return IRModule(name="m", classes=classes,
-                    class_by_name={c.name: c for c in classes})
+    return TIRModule(name="m", classes=classes,  # type: ignore[arg-type, list-item]
+                     class_by_name={c.name: c for c in classes})  # type: ignore[misc]
 
 
-def _module_with_methods(*method_names: str) -> tuple[IRModule, IRClass]:
+def _module_with_methods(*method_names: str) -> tuple[TIRModule, TIRClass]:
     methods = [
-        IRMethod(name=n, spelling=n, qualified_name=f"Cls::{n}", return_type="void")
+        TIRMethod(name=n, spelling=n, qualified_name=f"Cls::{n}", return_type="void")
         for n in method_names
     ]
-    cls = IRClass(name="Cls", qualified_name="ns::Cls", namespace="ns", methods=list(methods))
-    mod = IRModule(name="m", classes=[cls], class_by_name={"Cls": cls})
+    cls = TIRClass(name="Cls", qualified_name="ns::Cls", namespace="ns",
+                   methods=list(methods))  # type: ignore[arg-type]
+    mod = TIRModule(name="m", classes=[cls], class_by_name={"Cls": cls})  # type: ignore[arg-type, list-item]
     return mod, cls
 
 
@@ -170,13 +171,13 @@ class TestMethodFilter:
 
     def test_per_class_does_not_affect_other_classes(self):
         methods = [
-            IRMethod(name="perClassOnly", spelling="perClassOnly",
-                     qualified_name="Other::perClassOnly", return_type="void")
+            TIRMethod(name="perClassOnly", spelling="perClassOnly",
+                      qualified_name="Other::perClassOnly", return_type="void")
         ]
-        other_cls = IRClass(name="Other", qualified_name="ns::Other",
-                            namespace="ns", methods=methods)
-        mod = IRModule(name="m", classes=[other_cls],
-                       class_by_name={"Other": other_cls})
+        other_cls = TIRClass(name="Other", qualified_name="ns::Other",
+                             namespace="ns", methods=methods)  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[other_cls],
+                        class_by_name={"Other": other_cls})  # type: ignore[arg-type, list-item]
         FilterEngine(FilterConfig(
             methods=MethodFilter(per_class={"Cls": [FilterPattern("perClassOnly")]})
         )).apply(mod)
@@ -189,10 +190,11 @@ class TestMethodFilter:
 
 class TestConstructorFilter:
     def _cls_with_ctors(self, *param_lists):
-        ctors = [IRConstructor(parameters=[IRParameter("x", t) for t in pl])
+        ctors = [TIRConstructor(parameters=[TIRParameter("x", t) for t in pl])
                  for pl in param_lists]
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns", constructors=ctors)
-        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
+                       constructors=ctors)  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"C": cls})  # type: ignore[arg-type, list-item]
         return mod, cls
 
     def test_include_false_suppresses_all(self):
@@ -227,9 +229,10 @@ class TestConstructorFilter:
 
 class TestFieldFilter:
     def _cls_with_fields(self, *names):
-        fields = [IRField(name=n, type_spelling="int") for n in names]
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns", fields=list(fields))
-        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        fields = [TIRField(name=n, type_spelling="int") for n in names]
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
+                       fields=list(fields))  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"C": cls})  # type: ignore[arg-type, list-item]
         return mod, cls
 
     def test_global_blacklist(self):
@@ -255,15 +258,15 @@ class TestFieldFilter:
 
 class TestFunctionFilter:
     def _mod_with_fns(*names):
-        fns = [IRFunction(name=n, qualified_name=f"ns::{n}",
-                          namespace="ns", return_type="void")
+        fns = [TIRFunction(name=n, qualified_name=f"ns::{n}",
+                           namespace="ns", return_type="void")
                for n in names]
-        return IRModule(name="m", functions=list(fns))
+        return TIRModule(name="m", functions=list(fns))  # type: ignore[arg-type, list-item]
 
     def test_blacklist(self):
-        mod = IRModule(name="m", functions=[
-            IRFunction(name="keep", qualified_name="ns::keep", namespace="ns", return_type="void"),
-            IRFunction(name="skip", qualified_name="ns::skip", namespace="ns", return_type="void"),
+        mod = TIRModule(name="m", functions=[  # type: ignore[arg-type, list-item]
+            TIRFunction(name="keep", qualified_name="ns::keep", namespace="ns", return_type="void"),
+            TIRFunction(name="skip", qualified_name="ns::skip", namespace="ns", return_type="void"),
         ])
         FilterEngine(FilterConfig(
             functions=FunctionFilter(blacklist=[FilterPattern("skip")])
@@ -272,9 +275,9 @@ class TestFunctionFilter:
         assert emitted == ["keep"]
 
     def test_whitelist(self):
-        mod = IRModule(name="m", functions=[
-            IRFunction(name="foo", qualified_name="ns::foo", namespace="ns", return_type="void"),
-            IRFunction(name="bar", qualified_name="ns::bar", namespace="ns", return_type="void"),
+        mod = TIRModule(name="m", functions=[  # type: ignore[arg-type, list-item]
+            TIRFunction(name="foo", qualified_name="ns::foo", namespace="ns", return_type="void"),
+            TIRFunction(name="bar", qualified_name="ns::bar", namespace="ns", return_type="void"),
         ])
         FilterEngine(FilterConfig(
             functions=FunctionFilter(whitelist=[FilterPattern("foo")])
@@ -289,13 +292,13 @@ class TestFunctionFilter:
 
 class TestEnumFilter:
     def _mod_with_enums(*names):
-        enums = [IREnum(name=n, qualified_name=f"ns::{n}") for n in names]
-        return IRModule(name="m", enums=list(enums))
+        enums = [TIREnum(name=n, qualified_name=f"ns::{n}") for n in names]
+        return TIRModule(name="m", enums=list(enums))  # type: ignore[arg-type, list-item]
 
     def test_blacklist(self):
-        mod = IRModule(name="m", enums=[
-            IREnum(name="Keep", qualified_name="ns::Keep"),
-            IREnum(name="Skip", qualified_name="ns::Skip"),
+        mod = TIRModule(name="m", enums=[  # type: ignore[arg-type, list-item]
+            TIREnum(name="Keep", qualified_name="ns::Keep"),
+            TIREnum(name="Skip", qualified_name="ns::Skip"),
         ])
         FilterEngine(FilterConfig(
             enums=EnumFilter(blacklist=[FilterPattern("Skip")])
@@ -304,9 +307,9 @@ class TestEnumFilter:
         assert emitted == ["Keep"]
 
     def test_whitelist_suppresses_non_matching(self):
-        mod = IRModule(name="m", enums=[
-            IREnum(name="Keep", qualified_name="ns::Keep"),
-            IREnum(name="Other", qualified_name="ns::Other"),
+        mod = TIRModule(name="m", enums=[  # type: ignore[arg-type, list-item]
+            TIREnum(name="Keep", qualified_name="ns::Keep"),
+            TIREnum(name="Other", qualified_name="ns::Other"),
         ])
         FilterEngine(FilterConfig(
             enums=EnumFilter(whitelist=[FilterPattern("Keep")])
@@ -321,47 +324,49 @@ class TestEnumFilter:
 
 class TestPreSuppressedNodes:
     def test_pre_suppressed_class_skips_filter_class(self):
-        cls = IRClass(name="X", qualified_name="ns::X", namespace="ns")
+        cls = TIRClass(name="X", qualified_name="ns::X", namespace="ns")
         cls.emit = False
-        mod = IRModule(name="m", classes=[cls], class_by_name={"X": cls})
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"X": cls})  # type: ignore[arg-type, list-item]
         FilterEngine(FilterConfig()).apply(mod)
         assert cls.emit is False
 
     def test_pre_suppressed_method_skips_filter(self):
-        method = IRMethod(name="f", spelling="f", qualified_name="C::f", return_type="void")
+        method = TIRMethod(name="f", spelling="f", qualified_name="C::f", return_type="void")
         method.emit = False
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns", methods=[method])
-        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
+                       methods=[method])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"C": cls})  # type: ignore[arg-type, list-item]
         FilterEngine(FilterConfig()).apply(mod)
         assert method.emit is False
 
     def test_pre_suppressed_field_skips_filter(self):
-        f = IRField(name="x_", type_spelling="int")
+        f = TIRField(name="x_", type_spelling="int")
         f.emit = False
-        cls = IRClass(name="C", qualified_name="ns::C", namespace="ns", fields=[f])
-        mod = IRModule(name="m", classes=[cls], class_by_name={"C": cls})
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
+                       fields=[f])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"C": cls})  # type: ignore[arg-type, list-item]
         FilterEngine(FilterConfig()).apply(mod)
         assert f.emit is False
 
     def test_pre_suppressed_function_skips_filter(self):
-        fn = IRFunction(name="g", qualified_name="ns::g", namespace="ns", return_type="void")
+        fn = TIRFunction(name="g", qualified_name="ns::g", namespace="ns", return_type="void")
         fn.emit = False
-        mod = IRModule(name="m", functions=[fn])
+        mod = TIRModule(name="m", functions=[fn])  # type: ignore[arg-type, list-item]
         FilterEngine(FilterConfig()).apply(mod)
         assert fn.emit is False
 
     def test_pre_suppressed_enum_skips_filter(self):
-        en = IREnum(name="E", qualified_name="ns::E")
+        en = TIREnum(name="E", qualified_name="ns::E")
         en.emit = False
-        mod = IRModule(name="m", enums=[en])
+        mod = TIRModule(name="m", enums=[en])  # type: ignore[arg-type, list-item]
         FilterEngine(FilterConfig()).apply(mod)
         assert en.emit is False
 
     def test_inner_class_recursive_filter(self):
-        inner = IRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
-        outer = IRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
-                        inner_classes=[inner])
-        mod = IRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
+        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
+        outer = TIRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
+                         inner_classes=[inner])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})  # type: ignore[arg-type, list-item]
         FilterEngine(FilterConfig(
             classes=ClassFilter(blacklist=[FilterPattern("Inner")])
         )).apply(mod)
@@ -374,42 +379,80 @@ class TestPreSuppressedNodes:
 
 class TestVarargsFilter:
     def test_varargs_method_suppressed(self):
-        varargs_m = IRMethod(
+        varargs_m = TIRMethod(
             name="log", spelling="log", qualified_name="ns::Foo::log",
             return_type="void", is_varargs=True,
         )
-        normal_m = IRMethod(
+        normal_m = TIRMethod(
             name="info", spelling="info", qualified_name="ns::Foo::info",
             return_type="void", is_varargs=False,
         )
-        cls = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
-                      methods=[varargs_m, normal_m])
-        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
+                       methods=[varargs_m, normal_m])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})  # type: ignore[arg-type, list-item]
         FilterEngine(FilterConfig()).apply(mod)
         assert varargs_m.emit is False
         assert normal_m.emit is True
 
     def test_varargs_function_suppressed(self):
-        vfn = IRFunction(
+        vfn = TIRFunction(
             name="printf", qualified_name="ns::printf", namespace="ns",
             return_type="int", is_varargs=True,
         )
-        normal_fn = IRFunction(
+        normal_fn = TIRFunction(
             name="puts", qualified_name="ns::puts", namespace="ns",
             return_type="int", is_varargs=False,
         )
-        mod = IRModule(name="m", functions=[vfn, normal_fn])
+        mod = TIRModule(name="m", functions=[vfn, normal_fn])  # type: ignore[arg-type, list-item]
         FilterEngine(FilterConfig()).apply(mod)
         assert vfn.emit is False
         assert normal_fn.emit is True
 
     def test_non_varargs_not_affected(self):
-        m = IRMethod(
+        m = TIRMethod(
             name="compute", spelling="compute", qualified_name="ns::Foo::compute",
             return_type="int", is_varargs=False,
         )
-        cls = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
-                      methods=[m])
-        mod = IRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
+                       methods=[m])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})  # type: ignore[arg-type, list-item]
         FilterEngine(FilterConfig()).apply(mod)
         assert m.emit is True
+
+
+class TestBaseFilter:
+    def test_base_outside_namespace_suppressed(self) -> None:
+        base = TIRBase("std::runtime_error", "public")
+        cls = TIRClass(name="MyError", qualified_name="ns::MyError", namespace="ns",
+                       bases=[base])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"MyError": cls})  # type: ignore[arg-type, list-item]
+        cfg = FilterConfig(namespaces=["ns"])
+        FilterEngine(cfg).apply(mod)
+        assert base.emit is False
+
+    def test_base_inside_namespace_kept(self) -> None:
+        base = TIRBase("ns::Base", "public")
+        cls = TIRClass(name="Child", qualified_name="ns::Child", namespace="ns",
+                       bases=[base])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"Child": cls})  # type: ignore[arg-type, list-item]
+        cfg = FilterConfig(namespaces=["ns"])
+        FilterEngine(cfg).apply(mod)
+        assert base.emit is True
+
+    def test_base_no_namespace_filter_kept(self) -> None:
+        base = TIRBase("std::runtime_error", "public")
+        cls = TIRClass(name="MyError", qualified_name="ns::MyError", namespace="ns",
+                       bases=[base])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"MyError": cls})  # type: ignore[arg-type, list-item]
+        FilterEngine(FilterConfig()).apply(mod)
+        assert base.emit is True
+
+    def test_pre_suppressed_base_skipped(self) -> None:
+        base = TIRBase("std::runtime_error", "public")
+        base.emit = False
+        cls = TIRClass(name="MyError", qualified_name="ns::MyError", namespace="ns",
+                       bases=[base])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"MyError": cls})  # type: ignore[arg-type, list-item]
+        cfg = FilterConfig(namespaces=["ns"])
+        FilterEngine(cfg).apply(mod)
+        assert base.emit is False

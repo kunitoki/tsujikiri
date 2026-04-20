@@ -6,16 +6,16 @@ from __future__ import annotations
 
 import pytest
 
-from tsujikiri.ir import (
-    IRBase,
-    IRClass,
-    IREnum,
-    IREnumValue,
-    IRFunction,
-    IRMethod,
-    IRModule,
-    IRParameter,
-    IRUsingDeclaration,
+from tsujikiri.tir import (
+    TIRBase,
+    TIRClass,
+    TIREnum,
+    TIREnumValue,
+    TIRFunction,
+    TIRMethod,
+    TIRModule,
+    TIRParameter,
+    TIRUsingDeclaration,
 )
 from tsujikiri.transforms import (
     ExpandSpaceshipStage,
@@ -32,14 +32,14 @@ from tsujikiri.transforms import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _module_with_class(methods=None, enums=None) -> IRModule:
-    cls = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
+def _module_with_class(methods=None, enums=None) -> TIRModule:
+    cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
                   methods=methods or [], enums=enums or [])
-    enum = IREnum(name="Color", qualified_name="ns::Color",
-                  values=[IREnumValue("Red", 0), IREnumValue("Green", 1)])
-    fn = IRFunction(name="helper", qualified_name="ns::helper", namespace="ns",
+    enum = TIREnum(name="Color", qualified_name="ns::Color",
+                  values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)])
+    fn = TIRFunction(name="helper", qualified_name="ns::helper", namespace="ns",
                     return_type="void")
-    mod = IRModule(name="m", classes=[cls], enums=[enum], functions=[fn])
+    mod = TIRModule(name="m", classes=[cls], enums=[enum], functions=[fn])
     mod.class_by_name["Foo"] = cls
     return mod
 
@@ -51,7 +51,7 @@ def _module_with_class(methods=None, enums=None) -> IRModule:
 class TestMarkDeprecatedStage:
     def test_mark_method_deprecated(self):
         mod = _module_with_class(methods=[
-            IRMethod(name="oldMethod", spelling="oldMethod",
+            TIRMethod(name="oldMethod", spelling="oldMethod",
                      qualified_name="ns::Foo::oldMethod", return_type="void"),
         ])
         MarkDeprecatedStage(target="method", **{"class": "Foo", "method": "oldMethod",
@@ -85,7 +85,7 @@ class TestMarkDeprecatedStage:
 
     def test_mark_without_message(self):
         mod = _module_with_class(methods=[
-            IRMethod(name="m", spelling="m", qualified_name="ns::Foo::m",
+            TIRMethod(name="m", spelling="m", qualified_name="ns::Foo::m",
                      return_type="void"),
         ])
         MarkDeprecatedStage(target="method", **{"class": "Foo", "method": "m"}).apply(mod)
@@ -116,7 +116,7 @@ class TestMarkDeprecatedStage:
     def test_mark_method_no_match(self):
         """Method pattern doesn't match — no method is marked deprecated (978->977 branch)."""
         mod = _module_with_class(methods=[
-            IRMethod(name="keep", spelling="keep", qualified_name="ns::Foo::keep",
+            TIRMethod(name="keep", spelling="keep", qualified_name="ns::Foo::keep",
                      return_type="void"),
         ])
         MarkDeprecatedStage(target="method", **{"class": "Foo", "method": "nonexistent"}).apply(mod)
@@ -142,16 +142,16 @@ class TestMarkDeprecatedStage:
 
 class TestExpandSpaceshipStage:
     def _spaceship_module(self):
-        spaceship = IRMethod(
+        spaceship = TIRMethod(
             name="operator<=>", spelling="operator<=>",
             qualified_name="ns::Foo::operator<=>",
             return_type="auto",
-            parameters=[IRParameter(name="rhs", type_spelling="const ns::Foo &")],
+            parameters=[TIRParameter(name="rhs", type_spelling="const ns::Foo &")],
             is_operator=True, operator_type="operator<=>", is_const=True,
         )
-        cls = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
+        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
                       methods=[spaceship])
-        mod = IRModule(name="m", classes=[cls])
+        mod = TIRModule(name="m", classes=[cls])
         mod.class_by_name["Foo"] = cls
         return mod
 
@@ -185,21 +185,21 @@ class TestExpandSpaceshipStage:
 
     def test_mixed_class_non_spaceship_method_unchanged(self):
         """Regular methods in a class with spaceship should be left emit=True."""
-        spaceship = IRMethod(
+        spaceship = TIRMethod(
             name="operator<=>", spelling="operator<=>",
             qualified_name="ns::Foo::operator<=>",
             return_type="auto",
-            parameters=[IRParameter(name="rhs", type_spelling="const ns::Foo &")],
+            parameters=[TIRParameter(name="rhs", type_spelling="const ns::Foo &")],
             is_operator=True, operator_type="operator<=>", is_const=True,
         )
-        regular = IRMethod(
+        regular = TIRMethod(
             name="getValue", spelling="getValue",
             qualified_name="ns::Foo::getValue",
             return_type="int",
         )
-        cls = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
+        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
                       methods=[spaceship, regular])
-        mod = IRModule(name="m", classes=[cls])
+        mod = TIRModule(name="m", classes=[cls])
         mod.class_by_name["Foo"] = cls
         ExpandSpaceshipStage(**{"class": "Foo"}).apply(mod)
         get_value = next(m for m in cls.methods if m.name == "getValue")
@@ -265,20 +265,20 @@ class TestSetTypeHintExtended:
 # ---------------------------------------------------------------------------
 
 class TestExposeProtectedStage:
-    def _module_with_protected(self) -> IRModule:
-        protected = IRMethod(
+    def _module_with_protected(self) -> TIRModule:
+        protected = TIRMethod(
             name="helper", spelling="helper",
             qualified_name="ns::Foo::helper",
             return_type="void", access="protected", emit=False,
         )
-        public = IRMethod(
+        public = TIRMethod(
             name="doWork", spelling="doWork",
             qualified_name="ns::Foo::doWork",
             return_type="void", access="public", emit=True,
         )
-        cls = IRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
+        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
                       methods=[protected, public])
-        mod = IRModule(name="m", classes=[cls])
+        mod = TIRModule(name="m", classes=[cls])
         mod.class_by_name["Foo"] = cls
         return mod
 
@@ -314,22 +314,22 @@ class TestExposeProtectedStage:
 # ---------------------------------------------------------------------------
 
 class TestResolveUsingDeclarationsStage:
-    def _module(self) -> IRModule:
-        base_method = IRMethod(
+    def _module(self) -> TIRModule:
+        base_method = TIRMethod(
             name="compute", spelling="compute",
             qualified_name="ns::Base::compute",
             return_type="int", access="public", emit=True,
         )
-        base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        methods=[base_method])
-        derived = IRClass(
+        derived = TIRClass(
             name="Derived", qualified_name="ns::Derived", namespace="ns",
-            bases=[IRBase(qualified_name="ns::Base", access="public")],
+            bases=[TIRBase(qualified_name="ns::Base", access="public")],
             using_declarations=[
-                IRUsingDeclaration(member_name="compute", base_qualified_name="ns::Base"),
+                TIRUsingDeclaration(member_name="compute", base_qualified_name="ns::Base"),
             ],
         )
-        mod = IRModule(name="m", classes=[base, derived])
+        mod = TIRModule(name="m", classes=[base, derived])
         mod.class_by_name["Base"] = base
         mod.class_by_name["Derived"] = derived
         return mod
@@ -353,7 +353,7 @@ class TestResolveUsingDeclarationsStage:
         mod = self._module()
         # Pre-populate derived with the method
         derived = next(c for c in mod.classes if c.name == "Derived")
-        derived.methods.append(IRMethod(
+        derived.methods.append(TIRMethod(
             name="compute", spelling="compute",
             qualified_name="ns::Derived::compute",
             return_type="int",
@@ -364,33 +364,33 @@ class TestResolveUsingDeclarationsStage:
 
     def test_unknown_base_graceful(self):
         """Should not raise when base class is not in the module."""
-        derived = IRClass(
+        derived = TIRClass(
             name="Derived", qualified_name="ns::Derived", namespace="ns",
             using_declarations=[
-                IRUsingDeclaration(member_name="foo", base_qualified_name="ns::Unknown"),
+                TIRUsingDeclaration(member_name="foo", base_qualified_name="ns::Unknown"),
             ],
         )
-        mod = IRModule(name="m", classes=[derived])
+        mod = TIRModule(name="m", classes=[derived])
         mod.class_by_name["Derived"] = derived
         ResolveUsingDeclarationsStage().apply(mod)  # should not raise
 
     def test_suppressed_using_declaration_skipped(self):
-        """IRUsingDeclaration with emit=False should not trigger resolution."""
-        base_method = IRMethod(
+        """TIRUsingDeclaration with emit=False should not trigger resolution."""
+        base_method = TIRMethod(
             name="compute", spelling="compute",
             qualified_name="ns::Base::compute",
             return_type="int", access="public", emit=True,
         )
-        base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        methods=[base_method])
-        derived = IRClass(
+        derived = TIRClass(
             name="Derived", qualified_name="ns::Derived", namespace="ns",
-            bases=[IRBase(qualified_name="ns::Base", access="public")],
+            bases=[TIRBase(qualified_name="ns::Base", access="public")],
             using_declarations=[
-                IRUsingDeclaration(member_name="compute", base_qualified_name="ns::Base", emit=False),
+                TIRUsingDeclaration(member_name="compute", base_qualified_name="ns::Base", emit=False),
             ],
         )
-        mod = IRModule(name="m", classes=[base, derived])
+        mod = TIRModule(name="m", classes=[base, derived])
         mod.class_by_name["Base"] = base
         mod.class_by_name["Derived"] = derived
         ResolveUsingDeclarationsStage().apply(mod)
@@ -400,22 +400,22 @@ class TestResolveUsingDeclarationsStage:
 
     def test_fallback_base_search_when_qname_empty(self):
         """When base_qualified_name is empty, stage falls back to searching bases."""
-        base_method = IRMethod(
+        base_method = TIRMethod(
             name="compute", spelling="compute",
             qualified_name="ns::Base::compute",
             return_type="int", access="public", emit=True,
         )
-        base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        methods=[base_method])
-        derived = IRClass(
+        derived = TIRClass(
             name="Derived", qualified_name="ns::Derived", namespace="ns",
-            bases=[IRBase(qualified_name="ns::Base", access="public")],
+            bases=[TIRBase(qualified_name="ns::Base", access="public")],
             using_declarations=[
                 # empty base_qualified_name → triggers fallback search
-                IRUsingDeclaration(member_name="compute", base_qualified_name=""),
+                TIRUsingDeclaration(member_name="compute", base_qualified_name=""),
             ],
         )
-        mod = IRModule(name="m", classes=[base, derived])
+        mod = TIRModule(name="m", classes=[base, derived])
         mod.class_by_name["Base"] = base
         mod.class_by_name["Derived"] = derived
         ResolveUsingDeclarationsStage().apply(mod)
@@ -424,16 +424,16 @@ class TestResolveUsingDeclarationsStage:
 
     def test_fallback_no_match_in_base(self):
         """Fallback search when no base has matching method name."""
-        base = IRClass(name="Base", qualified_name="ns::Base", namespace="ns",
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
                        methods=[])  # no matching method
-        derived = IRClass(
+        derived = TIRClass(
             name="Derived", qualified_name="ns::Derived", namespace="ns",
-            bases=[IRBase(qualified_name="ns::Base", access="public")],
+            bases=[TIRBase(qualified_name="ns::Base", access="public")],
             using_declarations=[
-                IRUsingDeclaration(member_name="compute", base_qualified_name=""),
+                TIRUsingDeclaration(member_name="compute", base_qualified_name=""),
             ],
         )
-        mod = IRModule(name="m", classes=[base, derived])
+        mod = TIRModule(name="m", classes=[base, derived])
         mod.class_by_name["Base"] = base
         mod.class_by_name["Derived"] = derived
         ResolveUsingDeclarationsStage().apply(mod)
@@ -443,14 +443,14 @@ class TestResolveUsingDeclarationsStage:
 
     def test_fallback_base_not_in_module(self):
         """Base class listed in cls.bases but NOT in module.classes → candidate is None."""
-        derived = IRClass(
+        derived = TIRClass(
             name="Derived", qualified_name="ns::Derived", namespace="ns",
-            bases=[IRBase(qualified_name="ns::ExternalBase", access="public")],
+            bases=[TIRBase(qualified_name="ns::ExternalBase", access="public")],
             using_declarations=[
-                IRUsingDeclaration(member_name="compute", base_qualified_name=""),
+                TIRUsingDeclaration(member_name="compute", base_qualified_name=""),
             ],
         )
-        mod = IRModule(name="m", classes=[derived])
+        mod = TIRModule(name="m", classes=[derived])
         mod.class_by_name["Derived"] = derived
         ResolveUsingDeclarationsStage().apply(mod)
         # ExternalBase not in module → nothing copied
@@ -464,7 +464,7 @@ class TestResolveUsingDeclarationsStage:
 
 class TestRegisterExceptionStage:
     def test_registers_exception(self):
-        mod = IRModule(name="m")
+        mod = TIRModule(name="m")
         RegisterExceptionStage(cpp_type="ns::ParseError", python_name="ParseError").apply(mod)
         assert len(mod.exception_registrations) == 1
         exc = mod.exception_registrations[0]
@@ -473,7 +473,7 @@ class TestRegisterExceptionStage:
         assert exc.base_python_exception == "Exception"
 
     def test_custom_base(self):
-        mod = IRModule(name="m")
+        mod = TIRModule(name="m")
         RegisterExceptionStage(
             cpp_type="ns::IoError",
             python_name="IoError",
@@ -482,12 +482,12 @@ class TestRegisterExceptionStage:
         assert mod.exception_registrations[0].base_python_exception == "OSError"
 
     def test_default_python_name_from_cpp_type(self):
-        mod = IRModule(name="m")
+        mod = TIRModule(name="m")
         RegisterExceptionStage(cpp_type="ns::MyError").apply(mod)
         assert mod.exception_registrations[0].python_exception_name == "MyError"
 
     def test_multiple_registrations(self):
-        mod = IRModule(name="m")
+        mod = TIRModule(name="m")
         RegisterExceptionStage(cpp_type="ns::ErrA", python_name="ErrA").apply(mod)
         RegisterExceptionStage(cpp_type="ns::ErrB", python_name="ErrB").apply(mod)
         assert len(mod.exception_registrations) == 2

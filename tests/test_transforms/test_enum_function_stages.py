@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from tsujikiri.ir import (
-    IRBase,
-    IRClass,
-    IRConstructor,
-    IREnum,
-    IREnumValue,
-    IRField,
-    IRFunction,
-    IRMethod,
-    IRModule,
-    IRParameter,
+from tsujikiri.tir import (
+    TIRBase,
+    TIRClass,
+    TIRConstructor,
+    TIREnum,
+    TIREnumValue,
+    TIRFunction,
+    TIRMethod,
+    TIRModule,
+    TIRParameter,
 )
 from tsujikiri.transforms import (
     InjectConstructorStage,
@@ -36,34 +35,34 @@ from tsujikiri.transforms import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_module() -> IRModule:
+def _make_module() -> TIRModule:
     """Module with two top-level enums, a class with a nested enum, and two free functions."""
-    color = IREnum(
+    color = TIREnum(
         name="Color", qualified_name="ns::Color",
-        values=[IREnumValue("Red", 0), IREnumValue("Green", 1), IREnumValue("Blue", 2)],
+        values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1), TIREnumValue("Blue", 2)],
     )
-    state = IREnum(
+    state = TIREnum(
         name="State", qualified_name="ns::State",
-        values=[IREnumValue("On", 1), IREnumValue("Off", 0)],
+        values=[TIREnumValue("On", 1), TIREnumValue("Off", 0)],
     )
-    nested_enum = IREnum(
+    nested_enum = TIREnum(
         name="Flag", qualified_name="ns::Cls::Flag",
-        values=[IREnumValue("A", 0), IREnumValue("B", 1)],
+        values=[TIREnumValue("A", 0), TIREnumValue("B", 1)],
     )
-    cls = IRClass(
+    cls = TIRClass(
         name="Cls", qualified_name="ns::Cls", namespace="ns",
         enums=[nested_enum],
         bases=[
-            IRBase("ns::Base", "public"),
-            IRBase("ns::Hidden", "public"),
+            TIRBase("ns::Base", "public"),
+            TIRBase("ns::Hidden", "public"),
         ],
-        constructors=[IRConstructor(parameters=[IRParameter("x", "int")])],
+        constructors=[TIRConstructor(parameters=[TIRParameter("x", "int")])],
     )
-    fn1 = IRFunction(name="compute", qualified_name="ns::compute", namespace="ns", return_type="double",
-                     parameters=[IRParameter("x", "double")])
-    fn2 = IRFunction(name="internal_helper", qualified_name="ns::internal_helper",
+    fn1 = TIRFunction(name="compute", qualified_name="ns::compute", namespace="ns", return_type="double",
+                     parameters=[TIRParameter("x", "double")])
+    fn2 = TIRFunction(name="internal_helper", qualified_name="ns::internal_helper",
                      namespace="ns", return_type="void")
-    return IRModule(
+    return TIRModule(
         name="m",
         classes=[cls],
         enums=[color, state],
@@ -72,15 +71,15 @@ def _make_module() -> IRModule:
     )
 
 
-def _enum(mod: IRModule, name: str) -> IREnum:
+def _enum(mod: TIRModule, name: str) -> TIREnum:
     return next(e for e in mod.enums if e.name == name)
 
 
-def _fn(mod: IRModule, name: str) -> IRFunction:
+def _fn(mod: TIRModule, name: str) -> TIRFunction:
     return next(f for f in mod.functions if f.name == name)
 
 
-def _cls(mod: IRModule, name: str = "Cls") -> IRClass:
+def _cls(mod: TIRModule, name: str = "Cls") -> TIRClass:
     return next(c for c in mod.classes if c.name == name)
 
 
@@ -115,19 +114,19 @@ class TestFindEnums:
 
     def test_deeply_nested_inner_class_enum(self):
         """_find_enums recurses into inner_classes of a class."""
-        inner_enum = IREnum(
+        inner_enum = TIREnum(
             name="Inner", qualified_name="ns::Outer::Inner::Inner",
-            values=[IREnumValue("X", 0)],
+            values=[TIREnumValue("X", 0)],
         )
-        inner_cls = IRClass(
+        inner_cls = TIRClass(
             name="Inner", qualified_name="ns::Outer::Inner", namespace="ns",
             enums=[inner_enum],
         )
-        outer_cls = IRClass(
+        outer_cls = TIRClass(
             name="Outer", qualified_name="ns::Outer", namespace="ns",
             inner_classes=[inner_cls],
         )
-        mod = IRModule(name="m", classes=[outer_cls])
+        mod = TIRModule(name="m", classes=[outer_cls])
         result = _find_enums(mod, "Inner")
         assert len(result) == 1
         assert result[0].name == "Inner"
@@ -386,8 +385,8 @@ class TestInjectConstructorStage:
         assert all(c.is_overload for c in cls.constructors)
 
     def test_injects_into_empty_class(self):
-        cls = IRClass(name="Empty", qualified_name="ns::Empty", namespace="ns")
-        mod = IRModule(name="m", classes=[cls], class_by_name={"Empty": cls})
+        cls = TIRClass(name="Empty", qualified_name="ns::Empty", namespace="ns")
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"Empty": cls})
         InjectConstructorStage(**{"class": "Empty", "parameters": []}).apply(mod)
         assert len(cls.constructors) == 1
         assert cls.constructors[0].is_overload is False

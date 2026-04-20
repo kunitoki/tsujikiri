@@ -145,16 +145,75 @@ When multiple methods share the same binding name:
 
 Fields are read-only when `const` in C++ or when `read_only: true` is set via `modify_field`.
 
+When a field is renamed, the binding string uses the binding name and the C++ member pointer uses the original C++ name:
+
+```cpp
+// C++ field `myField_` renamed to `myField` via rename_field or [[tsujikiri::rename(...)]]
+.addProperty("my_field", &mylib::Shape::myField_)
+//            ^^^^^^^^^ binding name (snake_case applied)
+//                                     ^^^^^^^^^ original C++ name
+```
+
 ### Enum Registration
 
 Top-level enums and class-member enums are exposed as nested namespaces with lambda accessors:
 
 ```cpp
 .beginNamespace("Color")
-    .addProperty("Red",   +[] { return static_cast<std::underlying_type_t<mylib::Color>>(mylib::Color::Red); })
-    .addProperty("Green", +[] { return static_cast<std::underlying_type_t<mylib::Color>>(mylib::Color::Green); })
-    .addProperty("Blue",  +[] { return static_cast<std::underlying_type_t<mylib::Color>>(mylib::Color::Blue); })
+    .addProperty("Red",   +[] { return static_cast<std::underlying_type_t<mylib::Color>>(mylib::Color::kRed); })
+    .addProperty("Green", +[] { return static_cast<std::underlying_type_t<mylib::Color>>(mylib::Color::kGreen); })
+    .addProperty("Blue",  +[] { return static_cast<std::underlying_type_t<mylib::Color>>(mylib::Color::kBlue); })
 .endNamespace()
+```
+
+When an enum value is renamed (e.g. `kRed` → `Red`), the property name uses the binding name and the C++ reference uses the original C++ name:
+
+```cpp
+.addProperty("Red", +[] { return static_cast<...>(mylib::Color::kRed); })
+//            ^^^^^ binding name          original C++ enumerator ^^^^^
+```
+
+### Operator Metamethods
+
+C++ operator overloads are automatically mapped to Lua metamethods using the built-in `operator_mappings` table. The following operators are supported:
+
+| C++ operator | Lua metamethod | Description |
+|-------------|----------------|-------------|
+| `operator+` | `__add` | Addition |
+| `operator-` (binary) | `__sub` | Subtraction |
+| `operator-` (unary) | `__unm` | Negation |
+| `operator*` | `__mul` | Multiplication |
+| `operator/` | `__div` | Division |
+| `operator%` | `__mod` | Modulo |
+| `operator==` | `__eq` | Equality |
+| `operator<` | `__lt` | Less than |
+| `operator<=` | `__le` | Less or equal |
+| `operator()` | `__call` | Call |
+| `operator&` | `__band` | Bitwise AND |
+| `operator\|` | `__bor` | Bitwise OR |
+| `operator^` | `__bxor` | Bitwise XOR |
+| `operator~` | `__bnot` | Bitwise NOT |
+| `operator<<` | `__shl` | Bitwise left shift |
+| `operator>>` | `__shr` | Bitwise right shift |
+
+Note: `__index` and `__newindex` are used internally by LuaBridge3 and are never emitted.
+
+Operators without a mapping (e.g. `operator++`) are silently skipped.
+
+```cpp
+// C++ class with operator overloads:
+struct Vec3 {
+    Vec3 operator+(const Vec3& rhs) const;
+    Vec3 operator-() const;
+    bool operator==(const Vec3& rhs) const;
+};
+
+// Generated binding:
+.beginClass<ns::Vec3>("Vec3")
+    .addFunction("__add", &ns::Vec3::operator+)
+    .addFunction("__unm", &ns::Vec3::operator-)
+    .addFunction("__eq",  &ns::Vec3::operator==)
+.endClass()
 ```
 
 ### API Version Embedding
@@ -334,6 +393,28 @@ function Calculator.max(a, b) end
 function Calculator:add(a, b) end
 ```
 
+### Operator Metamethods
+
+Lua metamethods are emitted as instance methods with the metamethod name. The same operator mappings as luabridge3 are used, so luals annotations stay in sync with the bindings:
+
+```lua
+---@param other Vec3
+---@return Vec3
+function Vec3:__add(other) end
+
+---@return Vec3
+function Vec3:__unm() end
+
+---@param other Vec3
+---@return boolean
+function Vec3:__eq(other) end
+
+---@return string
+function Vec3:__tostring() end
+```
+
+The `__tostring` metamethod always emits `---@return string` regardless of the C++ return type. Operators without a mapping are silently skipped.
+
 ### Enums
 
 ```lua
@@ -360,8 +441,9 @@ tsujikiri -i project.input.yml --target pybind11 src/py_bindings.cpp
 ```cpp
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-namespace py = pybind11;
 #include "myproject.hpp"
+
+namespace py = pybind11;
 
 PYBIND11_MODULE(myproject, m)
 {
@@ -417,14 +499,30 @@ Method names are converted from `camelCase` to `snake_case` via the `camel_to_sn
 .def_readonly("radius", &mylib::Circle::radius_) // read-only
 ```
 
+When a field is renamed, the binding string uses the binding name and the C++ member pointer uses the original C++ name:
+
+```cpp
+// C++ field `myField_` renamed to `myField` via rename_field or [[tsujikiri::rename(...)]]
+.def_readwrite("my_field", &mylib::Shape::myField_)
+//              ^^^^^^^^^ binding name (snake_case applied)
+//                                        ^^^^^^^^^ original C++ name
+```
+
 ### Enum Registration
 
 ```cpp
 py::enum_<mylib::Color>(m, "Color", "Colour enumeration")
-    .value("Red",   mylib::Color::Red,   "The red channel")
-    .value("Green", mylib::Color::Green)
-    .value("Blue",  mylib::Color::Blue)
+    .value("Red",   mylib::Color::kRed,   "The red channel")
+    .value("Green", mylib::Color::kGreen)
+    .value("Blue",  mylib::Color::kBlue)
     .export_values();
+```
+
+When an enum value is renamed (e.g. `kRed` → `Red`), the `.value(...)` string uses the binding name and the C++ enumerator reference uses the original C++ name:
+
+```cpp
+.value("Red", mylib::Color::kRed)
+//     ^^^^^ binding name  ^^^^ original C++ enumerator name
 ```
 
 ### API Version Embedding
@@ -562,6 +660,9 @@ The generator builds a plain-data context dict passed to the Jinja2 template. Te
 |-------|------|-------------|
 | `name` | `string` | Binding name (rename or original) |
 | `qualified_name` | `string` | Fully-qualified C++ name (e.g. `mylib::Circle`) |
+| `parts` | `list[string]` | Every component of the C++ path, e.g. `["mylib", "Circle"]` |
+| `namespaces` | `list[string]` | Namespace components only, e.g. `["mylib"]` |
+| `parent_class` | `string\|null` | Immediate enclosing class name when the class is an inner class, else `null` |
 | `attributes` | `list[string]` | Raw C++ attribute contents |
 | `doc` | `string` | Documentation string (from `[[tsujikiri::doc(...)]]`, else `""`) |
 | `bases` | `list[{qualified_name, access}]` | All base classes |
@@ -624,6 +725,9 @@ method_group = {
 method = {
     name: string,              # binding name
     spelling: string,          # original C++ method name (for &Class::spelling)
+    parts: [string],           # every component of the C++ path, e.g. ["ns","Cls","method"]
+    namespaces: [string],      # namespace components only, e.g. ["ns"]
+    parent_class: string|null, # enclosing class name (always set for methods)
     params: [param],
     return_type: string,       # mapped type (via map_type filter)
     raw_return_type: string,   # unmapped C++ type
@@ -661,13 +765,20 @@ param = {
 ```
 field = {
     name: string,              # binding name (after rename)
+    original_name: string,     # original C++ member name (before any rename)
+    parts: [string],           # every component of the C++ path, e.g. ["ns","Cls","field"]
+    namespaces: [string],      # namespace components only, e.g. ["ns"]
+    parent_class: string|null, # enclosing class name (always set for fields)
     type: string,              # mapped type
     raw_type: string,          # unmapped C++ type spelling
-    read_only: bool,           # true if const or forced read-only
+    is_const: bool,            # true if the C++ field is const-qualified
+    is_static: bool,           # true if the C++ field is static
+    read_only: bool,           # true if const or forced read-only (via modify_field)
     doc: string,               # documentation string (from [[tsujikiri::doc(...)]], else "")
-    attributes: [string]
 }
 ```
+
+`original_name` is the raw C++ member name as clang parsed it. When a `[[tsujikiri::rename(...)]]` attribute or `rename_field` transform is applied, `name` changes to the binding-visible name but `original_name` stays unchanged. Templates that reference the C++ member (e.g. `&Class::memberName`) must use `original_name`, not `name`.
 
 ### Enum Dict
 
@@ -675,12 +786,18 @@ field = {
 enum = {
     name: string,
     qualified_name: string,    # e.g. "mylib::Color"
+    parts: [string],           # every component of the C++ path, e.g. ["mylib","Color"]
+    namespaces: [string],      # namespace components only, e.g. ["mylib"]
+    parent_class: string|null, # enclosing class name when nested in a class, else null
     doc: string,               # documentation string (from [[tsujikiri::doc(...)]], else "")
     attributes: [string],
     values: [
         {
             name: string,          # binding name (after rename)
             original_name: string, # original C++ enum member name (for C++ symbol reference)
+            parts: [string],       # every component, e.g. ["mylib","Color","kRed"]
+            namespaces: [string],  # namespace components only, e.g. ["mylib"]
+            parent_class: string|null, # the enum name, e.g. "Color"
             number: string,        # integer value as string
             doc: string,           # documentation string (from [[tsujikiri::doc(...)]], else "")
             attributes: [string]
@@ -690,6 +807,30 @@ enum = {
 ```
 
 The `original_name` on enum values is the original C++ enumerator name. When a rename transform or `[[tsujikiri::rename(...)]]` is applied, `name` changes but `original_name` stays unchanged. Templates that reference the C++ enum (e.g. `EnumType::EnumeratorName`) must use `original_name`.
+
+### Symbol Decomposition Fields
+
+Every symbol context dict (class, method, field, enum, enum value, free function) carries three fields that describe its position in the C++ namespace/class hierarchy:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `parts` | `list[string]` | All path components from root to this symbol, e.g. `["a","b","c","d","e"]` |
+| `namespaces` | `list[string]` | Only the C++ namespace components (no class names), e.g. `["a","b","c"]` |
+| `parent_class` | `string\|null` | Immediate enclosing class or enum name (`"d"`), or `null` when none |
+
+For `namespace a::b::c { struct d { int e; }; }`:
+
+| Symbol | `parts` | `namespaces` | `parent_class` |
+|--------|---------|--------------|----------------|
+| class `d` | `["a","b","c","d"]` | `["a","b","c"]` | `null` |
+| field `e` | `["a","b","c","d","e"]` | `["a","b","c"]` | `"d"` |
+| method `m` | `["a","b","c","d","m"]` | `["a","b","c"]` | `"d"` |
+| top-level enum `Color` | `["a","b","c","Color"]` | `["a","b","c"]` | `null` |
+| class-nested enum `d::Color` | `["a","b","c","d","Color"]` | `["a","b","c"]` | `"d"` |
+| enum value `Color::Red` | `["a","b","c","Color","Red"]` | `["a","b","c"]` | `"Color"` |
+| free function `f` | `["a","b","c","f"]` | `["a","b","c"]` | `null` |
+
+These fields always use original C++ names — renames applied via transforms or attributes do not affect them.
 
 ### Function Group Dict
 
@@ -702,7 +843,10 @@ function_group = {
     functions: [
         {
             name: string,
-            spelling: string,   # qualified_name (e.g. "mylib::computeArea")
+            spelling: string,          # qualified_name (e.g. "mylib::computeArea")
+            parts: [string],           # every component, e.g. ["mylib","computeArea"]
+            namespaces: [string],      # namespace components only, e.g. ["mylib"]
+            parent_class: string|null, # always null for free functions
             params: [param],
             return_type: string,
             raw_return_type: string,
