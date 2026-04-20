@@ -177,20 +177,16 @@ wheels = [
 ]
 
 [[package]]
-name = "libclang"
-version = "18.1.1"
+name = "libclang-ng"
+version = "19.1.7"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6e/5c/ca35e19a4f142adffa27e3d652196b7362fa612243e2b916845d801454fc/libclang-18.1.1.tar.gz", hash = "sha256:a1214966d08d73d971287fc3ead8dfaf82eb07fb197680d8b3859dbbbbf78250", size = 39612, upload-time = "2024-03-17T16:04:37.434Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4b/49/f5e3e7e1419872b69f6f5e82ba56e33955a74bd537d8a1f5f1eff2f3668a/libclang-18.1.1-1-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:0b2e143f0fac830156feb56f9231ff8338c20aecfe72b4ffe96f19e5a1dbb69a", size = 25836045, upload-time = "2024-06-30T17:40:31.646Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/e5/fc61bbded91a8830ccce94c5294ecd6e88e496cc85f6704bf350c0634b70/libclang-18.1.1-py2.py3-none-macosx_10_9_x86_64.whl", hash = "sha256:6f14c3f194704e5d09769108f03185fce7acaf1d1ae4bbb2f30a72c2400cb7c5", size = 26502641, upload-time = "2024-03-18T15:52:26.722Z" },
-    { url = "https://files.pythonhosted.org/packages/db/ed/1df62b44db2583375f6a8a5e2ca5432bbdc3edb477942b9b7c848c720055/libclang-18.1.1-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:83ce5045d101b669ac38e6da8e58765f12da2d3aafb3b9b98d88b286a60964d8", size = 26420207, upload-time = "2024-03-17T15:00:26.63Z" },
-    { url = "https://files.pythonhosted.org/packages/1d/fc/716c1e62e512ef1c160e7984a73a5fc7df45166f2ff3f254e71c58076f7c/libclang-18.1.1-py2.py3-none-manylinux2010_x86_64.whl", hash = "sha256:c533091d8a3bbf7460a00cb6c1a71da93bffe148f172c7d03b1c31fbf8aa2a0b", size = 24515943, upload-time = "2024-03-17T16:03:45.942Z" },
-    { url = "https://files.pythonhosted.org/packages/3c/3d/f0ac1150280d8d20d059608cf2d5ff61b7c3b7f7bcf9c0f425ab92df769a/libclang-18.1.1-py2.py3-none-manylinux2014_aarch64.whl", hash = "sha256:54dda940a4a0491a9d1532bf071ea3ef26e6dbaf03b5000ed94dd7174e8f9592", size = 23784972, upload-time = "2024-03-17T16:12:47.677Z" },
-    { url = "https://files.pythonhosted.org/packages/fe/2f/d920822c2b1ce9326a4c78c0c2b4aa3fde610c7ee9f631b600acb5376c26/libclang-18.1.1-py2.py3-none-manylinux2014_armv7l.whl", hash = "sha256:cf4a99b05376513717ab5d82a0db832c56ccea4fd61a69dbb7bccf2dfb207dbe", size = 20259606, upload-time = "2024-03-17T16:17:42.437Z" },
-    { url = "https://files.pythonhosted.org/packages/2d/c2/de1db8c6d413597076a4259cea409b83459b2db997c003578affdd32bf66/libclang-18.1.1-py2.py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:69f8eb8f65c279e765ffd28aaa7e9e364c776c17618af8bff22a8df58677ff4f", size = 24921494, upload-time = "2024-03-17T16:14:20.132Z" },
-    { url = "https://files.pythonhosted.org/packages/0b/2d/3f480b1e1d31eb3d6de5e3ef641954e5c67430d5ac93b7fa7e07589576c7/libclang-18.1.1-py2.py3-none-win_amd64.whl", hash = "sha256:4dd2d3b82fab35e2bf9ca717d7b63ac990a3519c7e312f19fa8e86dcc712f7fb", size = 26415083, upload-time = "2024-03-17T16:42:21.703Z" },
-    { url = "https://files.pythonhosted.org/packages/71/cf/e01dc4cc79779cd82d77888a88ae2fa424d93b445ad4f6c02bfc18335b70/libclang-18.1.1-py2.py3-none-win_arm64.whl", hash = "sha256:3f0e1f49f04d3cd198985fea0511576b0aee16f9ff0e0f0cad7f9c57ec3c20e8", size = 22361112, upload-time = "2024-03-17T16:42:59.565Z" },
+    { url = "https://files.pythonhosted.org/packages/38/59/6265cc2d8affb6bce06f9cdeccf9bcfd7359f9366b5da08030ebff078a21/libclang_ng-19.1.7-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:dd8eb51132c49257a930b5806a3e1d9e7a7d6d220d4d6d6ac2e212af2e2f4af4", size = 28148565, upload-time = "2026-04-20T21:30:26.116Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/8e/e89db9382e582517b4866948c97bc3123c626c9cb167ced1545a488cdb7f/libclang_ng-19.1.7-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b683c82178034c6a6bc3720eb6f36819b2cf07241bde918f4c738177a05bddf6", size = 27164738, upload-time = "2026-04-20T21:29:21.585Z" },
+    { url = "https://files.pythonhosted.org/packages/27/4e/4290424a6d83fb0cffb78162cd2ac5cef58cb1230f30e322ea355ae811e0/libclang_ng-19.1.7-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:462c192710d4f57690f9b56a5afab7fbf0b8e6a491ee7ee1b14c0d3790f9c022", size = 24536473, upload-time = "2026-04-20T21:30:26.484Z" },
+    { url = "https://files.pythonhosted.org/packages/04/22/d3a06a0a0dee44d932b97bedb0b717a26e398d766b823462f292ca6146d0/libclang_ng-19.1.7-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:a44e6a6385f00e28fc676af54f9ee7e3f0a708590af1925818b1f100e07452b5", size = 26368458, upload-time = "2026-04-20T21:29:49.198Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/c9/317678d173f01503dd1b5b262c512ab300fcd3d9d9e7b3a475bfd5408eed/libclang_ng-19.1.7-py3-none-win_amd64.whl", hash = "sha256:43de205805000f0eea30a6e933b9b3912ab50291fb1ddabf6f0f436103c6ab22", size = 20930881, upload-time = "2026-04-20T21:29:22.781Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/08/259ea1049831c050b9914f3acd7678227f3828046c7aa63d9d0a23e2d7a4/libclang_ng-19.1.7-py3-none-win_arm64.whl", hash = "sha256:dfb1759d0ac91dfc3b892b24bc3deb6a0b25cdbd2fb8b15da0806fab83569586", size = 18420622, upload-time = "2026-04-20T21:29:18.711Z" },
 ]
 
 [[package]]
@@ -499,7 +495,7 @@ source = { editable = "." }
 dependencies = [
     { name = "clang-format" },
     { name = "jinja2" },
-    { name = "libclang" },
+    { name = "libclang-ng" },
     { name = "pyyaml" },
 ]
 
@@ -519,7 +515,7 @@ requires-dist = [
     { name = "clang-format", specifier = "==22.1.3" },
     { name = "cmake", marker = "extra == 'dev'", specifier = ">=3.20" },
     { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "libclang", specifier = "==18.1.1" },
+    { name = "libclang-ng", specifier = "==19.1.7" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },

@@ -7,9 +7,7 @@
 ## Requirements
 
 - Python 3.12 or later
-- libclang 16 (the Python `libclang` package wraps the system libclang)
-
-On macOS, libclang ships with Xcode Command Line Tools. On Linux, install `libclang-16-dev` from your package manager.
+- libclang 19 (the Python `libclang-ng` package wraps the system libclang)
 
 ---
 
