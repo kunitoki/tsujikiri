@@ -7,12 +7,15 @@ import clang.cindex
 from tsujikiri.clang_base_enumerations import (
     AccessSpecifier,
     AvailabilityKind,
+    BinaryOperator,
     CursorKind,
     ExceptionSpecificationKind,
     LinkageKind,
     RefQualifierKind,
+    StorageClass,
     TemplateArgumentKind,
     TLSKind,
+    TokenKind,
     TypeKind,
 )
 
@@ -81,3 +84,27 @@ class TestTLSKindEq:
 
     def test_not_implemented_for_non_clang_type(self):
         assert TLSKind.NONE.__eq__(42) is NotImplemented
+
+
+class TestTokenKindEq:
+    def test_eq_with_clang_type(self):
+        assert TokenKind.PUNCTUATION == clang.cindex.TokenKind.from_id(0)
+
+    def test_not_implemented_for_non_clang_type(self):
+        assert TokenKind.PUNCTUATION.__eq__(42) is NotImplemented
+
+
+class TestBinaryOperatorEq:
+    def test_eq_with_clang_type(self):
+        assert BinaryOperator.Invalid == clang.cindex.BinaryOperator.from_id(0)
+
+    def test_not_implemented_for_non_clang_type(self):
+        assert BinaryOperator.Invalid.__eq__(42) is NotImplemented
+
+
+class TestStorageClassEq:
+    def test_eq_with_clang_type(self):
+        assert StorageClass.INVALID == clang.cindex.StorageClass.from_id(0)
+
+    def test_not_implemented_for_non_clang_type(self):
+        assert StorageClass.INVALID.__eq__(42) is NotImplemented

@@ -4,6 +4,7 @@ default:
 # Create/update a local virtual environment from pyproject metadata including dev dependencies.
 sync:
     uv sync --extra dev
+    uv run src/tsujikiri/helpers/generate_clang_base_enumeration_member_types.py
 
 # Build wheel and source distribution.
 wheel: sync
