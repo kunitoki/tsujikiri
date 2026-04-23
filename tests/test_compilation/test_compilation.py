@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -70,19 +71,29 @@ def _fetch_all_deps() -> None:
             continue
         if src_dir.exists():
             shutil.rmtree(src_dir)  # remove partial/corrupt clone
-        result = subprocess.run(
-            [
-                "git", "clone",
-                "--depth", "1",
-                "--branch", str(dep["tag"]),
-                "--single-branch",
-                str(dep["url"]),
-                str(src_dir),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        print(result.stdout + result.stderr)
+        returncode = -1
+        retries = 100
+        while returncode != 0 and retries > 0:
+            result = subprocess.run(
+                [
+                    "git", "clone",
+                    "--depth", "1",
+                    "--branch", str(dep["tag"]),
+                    "--single-branch",
+                    str(dep["url"]),
+                    str(src_dir),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            returncode = result.returncode
+            if returncode != 0:
+                time.sleep(1)
+            retries -= 1
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to clone dep '{name}': {result.stderr}")
 
