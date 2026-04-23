@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import tsujikiri.formats as tsujikiri_formats
 from tsujikiri.configurations import OutputConfig
 from tsujikiri.generator import Generator, ItemFirstEnvironment, _type_lookup_candidates
-from tsujikiri.tir import TIRBase, TIRClass, TIRConstructor, TIREnumValue, TIRField, TIRFunction, TIRMethod, TIRModule, TIRParameter
+from tsujikiri.tir import TIRBase, TIRClass, TIRConstructor, TIRField, TIRFunction, TIRMethod, TIRModule, TIRParameter
 
 
 def _generate(module: TIRModule, output_config) -> str:
@@ -603,7 +603,7 @@ class TestIRMetadataInContext:
             template="{% for cls in classes %}{{ cls.name }}{% endfor %}",
         )
         gen = Generator(cfg)
-        mod = TIRModule(name="m", classes=[ir_class], class_by_name={ir_class.name: ir_class})
+        _ = TIRModule(name="m", classes=[ir_class], class_by_name={ir_class.name: ir_class})
         return gen._build_class_ctx(ir_class)
 
     def test_method_is_virtual_in_context(self):
@@ -908,7 +908,7 @@ class TestTypesystemGenerator:
     def test_typesystem_primitive_mapping_fallback(self, luabridge3_output_config: OutputConfig) -> None:
         from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
         ts = TypesystemConfig(
-            primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", python_name="int")]
+            primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", target_name="int")]
         )
         gen = Generator(luabridge3_output_config, typesystem=ts)
         assert gen._map_type("int64_t") == "int"
@@ -916,7 +916,7 @@ class TestTypesystemGenerator:
     def test_output_config_type_mapping_wins_over_typesystem(self) -> None:
         from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
         ts = TypesystemConfig(
-            primitive_types=[PrimitiveTypeEntry(cpp_name="MyType", python_name="from_typesystem")]
+            primitive_types=[PrimitiveTypeEntry(cpp_name="MyType", target_name="from_typesystem")]
         )
         cfg = OutputConfig(
             format_name="test",

@@ -46,3 +46,6 @@ jobs:
 
       - name: Run mypy
         run: uv run mypy
+
+      - name: Run ruff
+        run: uv run ruff check src tests

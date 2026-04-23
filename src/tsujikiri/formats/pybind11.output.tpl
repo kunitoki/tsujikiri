@@ -26,7 +26,7 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- endblock %}
 {%- block exception_registrations %}
 {%- for exc in exception_registrations %}
-  py::register_exception<{{ exc.cpp_type }}>(m, "{{ exc.python_name }}");
+  py::register_exception<{{ exc.cpp_type }}>(m, "{{ exc.target_name }}");
 {%- endfor %}
 {%- endblock %}
 {%- for enum in enums %}

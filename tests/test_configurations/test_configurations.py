@@ -8,7 +8,6 @@ import pytest
 
 from tsujikiri.configurations import (
     FilterPattern,
-    FormatOverrideConfig,
     InputConfig,
     OutputConfig,
     SourceConfig,

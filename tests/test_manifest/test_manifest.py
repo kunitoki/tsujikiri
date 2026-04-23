@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -117,18 +116,6 @@ def _enum(name, values=None, emit=True) -> TIREnum:
 # ---------------------------------------------------------------------------
 
 class TestComputeManifest:
-    def test_same_module_same_version(self):
-        mod = _make_module(classes=[_cls(methods=[_method("add", ["int", "int"], "int")])])
-        m1 = compute_manifest(mod)
-        m2 = compute_manifest(mod)
-        assert m1["uid"] == m2["uid"]
-
-    def test_version_is_sha256_hex(self):
-        mod = _make_module()
-        m = compute_manifest(mod)
-        assert len(m["uid"]) == 64
-        assert all(c in "0123456789abcdef" for c in m["uid"])
-
     def test_module_name_in_manifest(self):
         mod = _make_module(name="mylib")
         m = compute_manifest(mod)
@@ -137,13 +124,13 @@ class TestComputeManifest:
     def test_empty_module_has_version(self):
         mod = _make_module()
         m = compute_manifest(mod)
-        assert "uid" in m
+        assert "version" in m
         assert "api" in m
 
     def test_emit_false_class_excluded(self):
         mod_with = _make_module(classes=[_cls(emit=True)])
         mod_without = _make_module(classes=[_cls(emit=False)])
-        assert compute_manifest(mod_with)["uid"] != compute_manifest(mod_without)["uid"]
+        assert compute_manifest(mod_with)["api"]["classes"] != []
         assert compute_manifest(mod_without)["api"]["classes"] == []
 
     def test_emit_false_method_excluded(self):
@@ -183,49 +170,6 @@ class TestComputeManifest:
         manifest = compute_manifest(mod)
         assert manifest["api"]["classes"][0]["methods"][0]["name"] == "x"
 
-    def test_version_changes_when_method_param_added(self):
-        mod_v1 = _make_module(classes=[_cls(methods=[_method("add", ["int"], "int")])])
-        mod_v2 = _make_module(classes=[_cls(methods=[_method("add", ["int", "double"], "int")])])
-        assert compute_manifest(mod_v1)["uid"] != compute_manifest(mod_v2)["uid"]
-
-    def test_version_changes_when_method_removed(self):
-        mod_v1 = _make_module(classes=[_cls(methods=[_method("add"), _method("sub")])])
-        mod_v2 = _make_module(classes=[_cls(methods=[_method("add")])])
-        assert compute_manifest(mod_v1)["uid"] != compute_manifest(mod_v2)["uid"]
-
-    def test_version_changes_when_return_type_changes(self):
-        mod_v1 = _make_module(classes=[_cls(methods=[_method("get", return_type="int")])])
-        mod_v2 = _make_module(classes=[_cls(methods=[_method("get", return_type="double")])])
-        assert compute_manifest(mod_v1)["uid"] != compute_manifest(mod_v2)["uid"]
-
-    def test_version_changes_when_constructor_changes(self):
-        mod_v1 = _make_module(classes=[_cls(constructors=[_ctor(["int"])])])
-        mod_v2 = _make_module(classes=[_cls(constructors=[_ctor(["int", "double"])])])
-        assert compute_manifest(mod_v1)["uid"] != compute_manifest(mod_v2)["uid"]
-
-    def test_version_changes_when_field_type_changes(self):
-        mod_v1 = _make_module(classes=[_cls(fields=[_field("x", "int")])])
-        mod_v2 = _make_module(classes=[_cls(fields=[_field("x", "double")])])
-        assert compute_manifest(mod_v1)["uid"] != compute_manifest(mod_v2)["uid"]
-
-    def test_version_changes_when_enum_value_added(self):
-        mod_v1 = _make_module(enums=[_enum("Color", ["Red", "Green"])])
-        mod_v2 = _make_module(enums=[_enum("Color", ["Red", "Green", "Blue"])])
-        assert compute_manifest(mod_v1)["uid"] != compute_manifest(mod_v2)["uid"]
-
-    def test_version_changes_when_enum_value_removed(self):
-        mod_v1 = _make_module(enums=[_enum("Color", ["Red", "Green", "Blue"])])
-        mod_v2 = _make_module(enums=[_enum("Color", ["Red", "Green"])])
-        assert compute_manifest(mod_v1)["uid"] != compute_manifest(mod_v2)["uid"]
-
-    def test_version_stable_across_insertion_order(self):
-        """Manifest version must be deterministic regardless of insertion order."""
-        cls_a = _cls("Alpha", methods=[_method("foo")])
-        cls_b = _cls("Beta", methods=[_method("bar")])
-        mod1 = _make_module(classes=[cls_a, cls_b])
-        mod2 = _make_module(classes=[cls_b, cls_a])
-        assert compute_manifest(mod1)["uid"] == compute_manifest(mod2)["uid"]
-
 
 # ---------------------------------------------------------------------------
 # save_manifest / load_manifest
@@ -238,7 +182,7 @@ class TestSaveLoad:
         path = tmp_path / "api.json"
         save_manifest(m, path)
         loaded = load_manifest(path)
-        assert loaded["uid"] == m["uid"]
+        assert loaded["version"] == m["version"]
         assert loaded["api"] == m["api"]
 
     def test_saved_file_is_valid_json(self, tmp_path):
@@ -247,7 +191,7 @@ class TestSaveLoad:
         save_manifest(compute_manifest(mod), path)
         with open(path) as f:
             parsed = json.load(f)
-        assert "uid" in parsed
+        assert "version" in parsed
 
 
 # ---------------------------------------------------------------------------
@@ -552,7 +496,7 @@ class TestSuggestVersionBump:
 
     def test_returns_none_when_semver_is_sha256(self):
         old = self._make_manifest()
-        old["version"] = old["uid"]  # a SHA-256 hash, not semver
+        old["version"] = "abcdefghijklmn"
         r = self._report(additive=["Class 'X' was added"])
         assert suggest_version_bump(old, r) is None
 

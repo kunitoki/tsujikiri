@@ -4,16 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from tsujikiri.configurations import (
     ContainerTypeEntry,
     ConversionRuleEntry,
     CustomTypeEntry,
-    DeclaredFunctionEntry,
-    LoadTypesystemEntry,
     PrimitiveTypeEntry,
-    SmartPointerTypeEntry,
     TypedefTypeEntry,
     TypesystemConfig,
     load_input_config,
@@ -42,14 +37,14 @@ class TestPrimitiveTypes:
             "typesystem:\n"
             "  primitive_types:\n"
             "    - cpp_name: \"int64_t\"\n"
-            "      python_name: \"int\"\n"
+            "      target_name: \"int\"\n"
             "    - cpp_name: \"double\"\n"
-            "      python_name: \"float\"\n"
+            "      target_name: \"float\"\n"
         )
         config = load_input_config(cfg)
         assert len(config.typesystem.primitive_types) == 2
-        assert config.typesystem.primitive_types[0] == PrimitiveTypeEntry(cpp_name="int64_t", python_name="int")
-        assert config.typesystem.primitive_types[1] == PrimitiveTypeEntry(cpp_name="double", python_name="float")
+        assert config.typesystem.primitive_types[0] == PrimitiveTypeEntry(cpp_name="int64_t", target_name="int")
+        assert config.typesystem.primitive_types[1] == PrimitiveTypeEntry(cpp_name="double", target_name="float")
 
 
 class TestTypedefTypes:
@@ -144,7 +139,7 @@ class TestLoadTypesystems:
             "typesystem:\n"
             "  primitive_types:\n"
             "    - cpp_name: \"int64_t\"\n"
-            "      python_name: \"int\"\n"
+            "      target_name: \"int\"\n"
             "  custom_types:\n"
             "    - cpp_name: \"QObject\"\n"
         )
@@ -154,7 +149,7 @@ class TestLoadTypesystems:
             "typesystem:\n"
             "  primitive_types:\n"
             "    - cpp_name: \"float\"\n"
-            "      python_name: \"float\"\n"
+            "      target_name: \"float\"\n"
             "  load_typesystems:\n"
             "    - path: base.input.yml\n"
         )
@@ -212,7 +207,7 @@ class TestLoadTypesystemsComposition:
             "typesystem:\n"
             "  primitive_types:\n"
             "    - cpp_name: \"int64_t\"\n"
-            "      python_name: \"int\"\n"
+            "      target_name: \"int\"\n"
         )
         child = tmp_path / "child.input.yml"
         child.write_text(
@@ -220,13 +215,13 @@ class TestLoadTypesystemsComposition:
             "typesystem:\n"
             "  primitive_types:\n"
             "    - cpp_name: \"int64_t\"\n"
-            "      python_name: \"long\"\n"
+            "      target_name: \"long\"\n"
             "  load_typesystems:\n"
             "    - path: base.input.yml\n"
         )
         config = load_input_config(child)
         entry = next(p for p in config.typesystem.primitive_types if p.cpp_name == "int64_t")
-        assert entry.python_name == "long"  # local wins over loaded
+        assert entry.target_name == "long"  # local wins over loaded
 
 
 class TestLoadTypesystemNoTypesystemSection:
@@ -242,7 +237,7 @@ class TestLoadTypesystemNoTypesystemSection:
             "typesystem:\n"
             "  primitive_types:\n"
             "    - cpp_name: \"int\"\n"
-            "      python_name: \"int\"\n"
+            "      target_name: \"int\"\n"
             "  load_typesystems:\n"
             "    - path: base.input.yml\n"
         )

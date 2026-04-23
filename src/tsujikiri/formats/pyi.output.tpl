@@ -162,7 +162,7 @@ def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.fir
 {%- block exception_stubs %}
 {%- for exc in exception_registrations %}
 
-class {{ exc.python_name }}({{ exc.base }}): ...
+class {{ exc.target_name }}({{ exc.base }}): ...
 {%- endfor %}
 {%- endblock %}
 {{ code_injections | code_at("end") }}

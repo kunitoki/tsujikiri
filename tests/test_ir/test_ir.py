@@ -884,7 +884,7 @@ class TestMergeTIRModules:
         fn = TIRFunction(name="f", qualified_name="ns::f", namespace="ns", return_type="void")
         en = TIREnum(name="E", qualified_name="ns::E")
         inj = IRCodeInjection(position="end", code="// code")
-        exc = IRExceptionRegistration(cpp_exception_type="MyEx", python_exception_name="MyEx")
+        exc = IRExceptionRegistration(cpp_exception_type="MyEx", target_exception_name="MyEx")
         m1 = TIRModule(name="mod", namespaces=["ns"])
         m1.classes.append(cls_a)  # type: ignore[arg-type]
         m1.enums.append(en)  # type: ignore[arg-type]

@@ -376,8 +376,8 @@ class TestExceptionRegistration:
         mod = TIRModule(name="m", exception_registrations=[
             IRExceptionRegistration(
                 cpp_exception_type="ns::ParseError",
-                python_exception_name="ParseError",
-                base_python_exception="Exception",
+                target_exception_name="ParseError",
+                base_target_exception="Exception",
             )
         ])
         out = _gen(mod, pybind11_cfg)
@@ -388,8 +388,8 @@ class TestExceptionRegistration:
         mod = TIRModule(name="m", exception_registrations=[
             IRExceptionRegistration(
                 cpp_exception_type="ns::ParseError",
-                python_exception_name="ParseError",
-                base_python_exception="ValueError",
+                target_exception_name="ParseError",
+                base_target_exception="ValueError",
             )
         ])
         out = _gen(mod, pyi_cfg)

@@ -229,8 +229,8 @@ class Generator:
             "exception_registrations": [
                 {
                     "cpp_type": er.cpp_exception_type,
-                    "python_name": er.python_exception_name,
-                    "base": er.base_python_exception,
+                    "target_name": er.target_exception_name,
+                    "base": er.base_target_exception,
                 }
                 for er in module.exception_registrations
             ],
@@ -680,7 +680,7 @@ class Generator:
         if self._typesystem:
             for pt in self._typesystem.primitive_types:
                 if pt.cpp_name == type_spelling:
-                    return pt.python_name
+                    return pt.target_name
             for tt in self._typesystem.typedef_types:
                 if tt.cpp_name == type_spelling:
                     return tt.source

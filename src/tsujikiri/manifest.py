@@ -8,7 +8,6 @@ or breaking (scripts that rely on the old surface may break at runtime).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -97,11 +96,7 @@ def _canonical_enum_entry(enum) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def compute_manifest(module: TIRModule) -> Dict[str, Any]:
-    """Build a canonical manifest dict from a fully-filtered/transformed IRModule.
-
-    The ``version`` field is a SHA-256 hex digest of the ``api`` section
-    serialised with sorted keys, so it is fully deterministic.
-    """
+    """Build a canonical manifest dict from a fully-filtered/transformed IRModule."""
     classes = sorted(
         [_canonical_class(c) for c in module.classes if c.emit],
         key=lambda c: c["name"],
@@ -129,13 +124,9 @@ def compute_manifest(module: TIRModule) -> Dict[str, Any]:
         "enums": enums,
     }
 
-    canonical = json.dumps(api, sort_keys=True)
-    uid = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
     return {
         "module": module.name,
         "version": "0.0.0",
-        "uid": uid,
         "api": api,
     }
 

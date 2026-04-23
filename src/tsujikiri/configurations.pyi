@@ -5,7 +5,7 @@ from typing import Any
 @dataclass
 class PrimitiveTypeEntry:
     cpp_name: str
-    python_name: str
+    target_name: str
 
 @dataclass
 class TypedefTypeEntry:

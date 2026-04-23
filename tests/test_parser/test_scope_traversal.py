@@ -1,9 +1,10 @@
 from pathlib import Path
 
-import pytest
+import clang.cindex as cindex
 
 from tsujikiri.parser import _is_inline_namespace
-import clang.cindex as cindex
+from tsujikiri.configurations import SourceConfig
+from tsujikiri.parser import parse_translation_unit
 
 FIXTURE = Path(__file__).parent / "nested_namespaces.hpp"
 
@@ -30,10 +31,6 @@ def test_regular_namespace_not_inline() -> None:
 
 
 # --- scope traversal integration tests ---
-
-from tsujikiri.configurations import SourceConfig
-from tsujikiri.parser import parse_translation_unit
-
 
 def test_nested_namespace_filter() -> None:
     source = SourceConfig(path=str(FIXTURE), parse_args=["-std=c++20"])

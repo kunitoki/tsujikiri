@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -66,11 +65,6 @@ class TestBuildParser:
         ])
         assert args.target == [["luabridge3", "out.cpp"], ["luals", "out.lua"]]
 
-    def test_classname_flag(self):
-        p = build_parser()
-        args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-", "--classname", "Foo"])
-        assert args.classname == "Foo"
-
     def test_dry_run_flag(self):
         p = build_parser()
         args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-", "--dry-run"])
@@ -108,7 +102,7 @@ class TestListFormats:
 
     def test_each_format_on_own_line(self):
         stdout, _ = _run("--list-formats")
-        lines = [l.strip() for l in stdout.splitlines() if l.strip()]
+        lines = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
         assert len(lines) >= 1
 
     def test_pyi_format_listed(self):
@@ -176,14 +170,6 @@ class TestGeneration:
         assert "getGlobalNamespace" in cpp_file.read_text(encoding="utf-8")
         assert "Widget" in lua_file.read_text(encoding="utf-8")
 
-    def test_classname_filter(self, simple_input_yml):
-        stdout, _ = _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", "-",
-            "--classname", "Widget",
-        )
-        assert "Widget" in stdout
-
     def test_custom_output_format_by_path(self, simple_input_yml, tmp_path):
         fmt = tmp_path / "noop.output.yml"
         fmt.write_text(
@@ -247,20 +233,6 @@ class TestFormatOverrides:
         stdout, _ = _run("--input", str(fmt_generation_input_yml), "--target", "luabridge3", "-")
         assert "// FMT PREFIX" in stdout
         assert "// FMT POSTFIX" in stdout
-
-
-# ---------------------------------------------------------------------------
-# --classname not matching (suppresses non-matching classes)
-# ---------------------------------------------------------------------------
-
-class TestClassnameNoMatch:
-    def test_classname_no_match_suppresses_class(self, simple_input_yml):
-        stdout, _ = _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", "-",
-            "--classname", "NonExistent",
-        )
-        assert ".beginClass" not in stdout
 
 
 # ---------------------------------------------------------------------------
@@ -356,8 +328,8 @@ class TestManifestCompatibility:
 
         assert manifest.exists()
         data = json.loads(manifest.read_text(encoding="utf-8"))
-        assert "uid" in data
-        assert len(data["uid"]) == 64  # SHA-256 hex digest
+        assert "version" in data
+        assert data["version"] == "0.0.0"
 
     def test_no_change_exits_0_and_manifest_unchanged(self, tmp_path):
         hpp = tmp_path / "api.hpp"
@@ -367,13 +339,13 @@ class TestManifestCompatibility:
 
         _run("--input", str(input_yml), "--target", "luabridge3", "-",
              "--manifest-file", str(manifest))
-        v1_version = json.loads(manifest.read_text())["uid"]
+        v1_version = json.loads(manifest.read_text())["version"]
 
         _, stderr = _run("--input", str(input_yml), "--target", "luabridge3", "-",
                          "--manifest-file", str(manifest), "--check-compat")
 
         assert "Breaking" not in stderr
-        assert json.loads(manifest.read_text())["uid"] == v1_version
+        assert json.loads(manifest.read_text())["version"] == v1_version
 
     def test_breaking_change_exits_1(self, tmp_path):
         """Core scenario: adding a parameter to a function is a breaking change.
@@ -388,7 +360,7 @@ class TestManifestCompatibility:
         _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
              "--target", "luabridge3", "-",
              "--manifest-file", str(manifest))
-        v1_version = json.loads(manifest.read_text())["uid"]
+        v1_version = json.loads(manifest.read_text())["version"]
 
         # v2: add a second parameter — breaking change
         v2_hpp = tmp_path / "v2.hpp"
@@ -409,7 +381,7 @@ class TestManifestCompatibility:
         assert "Breaking" in stderr
         assert "compute" in stderr
         # Manifest must NOT be updated — baseline stays at v1 for the next check
-        assert json.loads(manifest.read_text())["uid"] == v1_version
+        assert json.loads(manifest.read_text())["version"] == v1_version
 
     def test_breaking_change_method_on_class_exits_1(self, tmp_path):
         """Class method parameter count change is a breaking change."""
@@ -422,7 +394,7 @@ class TestManifestCompatibility:
         _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
              "--target", "luabridge3", "-",
              "--manifest-file", str(manifest))
-        v1_version = json.loads(manifest.read_text())["uid"]
+        v1_version = json.loads(manifest.read_text())["version"]
 
         v2_hpp = tmp_path / "v2.hpp"
         v2_hpp.write_text(
@@ -443,7 +415,7 @@ class TestManifestCompatibility:
         stderr = stderr_io.getvalue()
         assert "Breaking" in stderr
         assert "add" in stderr
-        assert json.loads(manifest.read_text())["uid"] == v1_version
+        assert json.loads(manifest.read_text())["version"] == v1_version
 
     def test_additive_change_exits_0_with_warning(self, tmp_path):
         """Adding a new function is additive — warns but does not fail."""
@@ -562,7 +534,6 @@ class TestManifestCompatibility:
         # Write a manifest with a non-semver version so suggest_version_bump returns None
         manifest.write_text(
             json.dumps({
-                "uid": "a" * 64,
                 "version": "not-semver",
                 "module": "api",
                 "api": {"classes": [], "functions": [], "enums": []},
@@ -577,7 +548,7 @@ class TestManifestCompatibility:
         assert "Suggested version bump" not in stderr
 
     def test_no_version_bump_message_when_versions_match(self, tmp_path):
-        """When the tampered manifest causes a uid mismatch but the comparison report
+        """When the tampered manifest causes a version mismatch but the comparison report
         is empty, bump_semver returns the same version — covering the False branch
         of ``if new_version != old_version``."""
         hpp = tmp_path / "api.hpp"
@@ -589,11 +560,10 @@ class TestManifestCompatibility:
              "--target", "luabridge3", "-",
              "--manifest-file", str(manifest))
 
-        # Tamper only the uid so the next run sees uid != new_uid,
+        # Tamper only the version so the next run sees version != new_version,
         # but the api content is identical → compare_manifests finds no changes
         # → bump_semver returns the same version as old_manifest["version"]
         m = json.loads(manifest.read_text(encoding="utf-8"))
-        m["uid"] = "0" * 64
         m["version"] = "2.0.0"
         manifest.write_text(json.dumps(m), encoding="utf-8")
 
@@ -604,8 +574,7 @@ class TestManifestCompatibility:
         assert "Suggested version bump" not in stderr
 
     def test_no_version_copied_when_uid_matches_no_version_key(self, tmp_path):
-        """uid unchanged AND old manifest has no ``version`` key —
-        covering the False branch of ``elif \"version\" in old_manifest``."""
+        """old manifest has no ``version`` key covering the False branch of ``elif \"version\" in old_manifest``."""
         hpp = tmp_path / "api.hpp"
         hpp.write_text("namespace api { int compute(int x); }\n")
         manifest = tmp_path / "api.json"
@@ -919,13 +888,3 @@ class TestVerbose:
             "--verbose",
         )
         assert "[filter] emitted:" in stderr
-
-    def test_verbose_suppressed_line_printed_when_classname_filter(self, simple_input_yml: Path) -> None:
-        """--verbose + --classname=NonExistent suppresses Widget → suppressed line printed (lines 243-244)."""
-        _, stderr = _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", "-",
-            "--verbose",
-            "--classname", "NonExistent",
-        )
-        assert "[filter] suppressed:" in stderr

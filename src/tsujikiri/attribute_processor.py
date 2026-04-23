@@ -27,7 +27,7 @@ and map attribute names to the same three simple actions:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from tsujikiri.configurations import AttributeHandlerConfig
 from tsujikiri.tir import TIRClass, TIRModule

@@ -1,6 +1,6 @@
 # tsujikiri Documentation
 
-**tsujikiri** (辻斬り — *"cut through C++ bindings"*) parses C++ headers via **libclang** and generates binding code through a **template-driven pipeline**. Define what to expose, plug in a target format, and get ready-to-compile bindings.
+**tsujikiri** (辻斬り — *"cut through C++ bindings"*) parses C++ headers via **libclang-ng** and generates binding code through a **template-driven pipeline**. Define what to expose, plug in a target format, and get ready-to-compile bindings.
 
 ---
 
@@ -8,7 +8,7 @@
 
 tsujikiri reads a YAML configuration file (`.input.yml`) that describes which C++ headers to parse, which classes and methods to expose, and how to transform the declarations for the target binding system.
 
-It parses each header using **libclang**, building an **Intermediate Representation (IR)** — a pure Python data model of all classes, methods, fields, constructors, enums, and free functions. The IR is then processed through three configurable phases — filtering, attribute processing, and transforms — before being rendered via a **Jinja2 template** into the final output.
+It parses each header using **libclang-ng**, building an **Intermediate Representation (IR)** — a pure Python data model of all classes, methods, fields, constructors, enums, and free functions. The IR is then processed through three configurable phases — filtering, attribute processing, and transforms — before being rendered via a **Jinja2 template** into the final output.
 
 Built-in support for [LuaBridge3](https://github.com/kunitoki/LuaBridge3) (Lua bindings), [Lua Language Server](https://luals.github.io/) (LuaLS type stubs), [pybind11](https://pybind11.readthedocs.io/) (Python bindings), and Python type stubs (`.pyi`). Custom formats are first-class citizens — define a `.output.yml` file with your Jinja2 template and point tsujikiri at it.
 
@@ -149,7 +149,18 @@ Using uv:
 uv pip install tsujikiri
 ```
 
-**Requirements:** Python ≥ 3.12.
+**Requirements:** Python ≥ 3.12, `libclang-ng` ≥ 19 (Clang 19–22 supported).
+
+To pin a specific Clang version use an extra:
+
+```bash
+pip install "tsujikiri[clang19]"   # Clang 19
+pip install "tsujikiri[clang20]"   # Clang 20
+pip install "tsujikiri[clang21]"   # Clang 21
+pip install "tsujikiri[clang22]"   # Clang 22
+```
+
+Only one `clangXX` extra may be active at a time. See [Getting Started](getting-started.md) for details.
 
 ---
 

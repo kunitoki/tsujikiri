@@ -200,7 +200,7 @@ transforms:
 
   - stage: register_exception
     cpp_type: trf::TransformError
-    python_name: TransformError
+    target_name: TransformError
     base: Exception
 
   # --- spaceship expansion (C++20) ---

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from tsujikiri.ir import (
     IRBase,

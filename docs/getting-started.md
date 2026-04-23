@@ -7,9 +7,7 @@
 ## Requirements
 
 - Python 3.12 or later
-- libclang 16 (the Python `libclang` package wraps the system libclang)
-
-On macOS, libclang ships with Xcode Command Line Tools. On Linux, install `libclang-16-dev` from your package manager.
+- `libclang-ng` ≥ 19 (Python wrapper around libclang; supports Clang 19–22)
 
 ---
 
@@ -22,6 +20,23 @@ pip install tsujikiri
 # With uv
 uv add tsujikiri
 ```
+
+### Pinning a Clang version
+
+By default tsujikiri pulls in `libclang-ng>=19`, which resolves to the latest available Clang release. To pin a specific version use one of the provided extras:
+
+```bash
+# pip — pick one
+pip install "tsujikiri[clang19]"
+pip install "tsujikiri[clang20]"
+pip install "tsujikiri[clang21]"
+pip install "tsujikiri[clang22]"
+
+# uv — pick one
+uv add "tsujikiri[clang21]"
+```
+
+Only one `clangXX` extra may be active at a time; they are mutually exclusive.
 
 Verify the installation:
 
@@ -213,7 +228,6 @@ tsujikiri [OPTIONS]
 |------|-------|----------|-------------|
 | `--input` | `-i` | `FILE` | Input config YAML (required) |
 | `--target` | `-t` | `FORMAT FILE` | Built-in format name or path to `.output.yml`, plus output file path (`-` for stdout). Repeatable. |
-| `--classname` | `-c` | `CLASS` | Generate bindings for a single class only (additive to config filters) |
 | `--formats-dir` | `-f` | `DIR` | Additional directory to search for `.output.yml` files (repeatable) |
 | `--list-formats` | | | Print available formats and exit |
 | `--dry-run` | | | Parse and filter only; print IR summary without generating code |

@@ -7,15 +7,15 @@ Filtering happens in filters.py after the full IR is built.
 from __future__ import annotations
 
 import re
-import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import clang
 from clang import cindex
+from clang.cindex import AccessSpecifier, AvailabilityKind, CursorKind
 
-from tsujikiri.clang_base_enumerations import AccessSpecifier, AvailabilityKind, CursorKind
 from tsujikiri.configurations import SourceConfig
 from tsujikiri.ir import (
     IRBase,
@@ -59,6 +59,31 @@ def _get_default_value(cursor) -> Optional[str]:
     return None
 
 
+def _normalize_type_spelling(spelling: str) -> str:
+    """Return a stable C++ type spelling independent of libclang token spacing."""
+    s = re.sub(r"\s+", " ", spelling).strip()
+    if not s:
+        return s
+
+    s = re.sub(r"\s*::\s*", "::", s)
+    # Preserve the space between qualifiers and a leading global qualifier:
+    # ``const ::std::string`` is valid, ``const::std::string`` is not.
+    s = re.sub(r"\b(const|volatile)::", r"\1 ::", s)
+
+    s = re.sub(r"\s*<\s*", "<", s)
+    s = re.sub(r"\s+>", ">", s)
+    s = re.sub(r"\s+>>", ">>", s)
+    s = re.sub(r"\s*,\s*", ", ", s)
+    s = re.sub(r"\(\s*", "(", s)
+    s = re.sub(r"\s+\)", ")", s)
+
+    s = re.sub(r"\s*&&", " __RREF__", s)
+    s = re.sub(r"\s*&", " &", s)
+    s = s.replace("__RREF__", "&&")
+    s = re.sub(r"\s*\*", " *", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def _type_from_tokens(cursor) -> str:
     """Extract parameter type spelling from source tokens.
 
@@ -69,29 +94,102 @@ def _type_from_tokens(cursor) -> str:
     name = cursor.spelling
     tokens = list(cursor.get_tokens())
     if not name or not tokens:
-        return cursor.type.spelling
+        return _normalize_type_spelling(cursor.type.spelling)
     for i, tok in enumerate(tokens):
         if tok.spelling == name:
             if i == 0:
-                return cursor.type.spelling
+                return _normalize_type_spelling(cursor.type.spelling)
             raw = " ".join(t.spelling for t in tokens[:i])
-            return re.sub(r"\s*::\s*", "::", raw).strip() or cursor.type.spelling
-    return cursor.type.spelling
+            return _normalize_type_spelling(raw) or _normalize_type_spelling(
+                cursor.type.spelling
+            )
+    return _normalize_type_spelling(cursor.type.spelling)
+
+
+def _param_types_from_fn_tokens(cursor) -> List[str]:
+    """Extract all parameter type spellings from a function cursor's token stream.
+
+    Fallback for a libclang 19 bug where PARM_DECL children of unnamed parameters
+    whose type is a complex template (e.g. ::std::function<T(U...)>) are given
+    a zero source extent and empty token stream, making _type_from_tokens unusable.
+    """
+    tokens = list(cursor.get_tokens())
+    name = cursor.spelling
+    start = -1
+    for i, tok in enumerate(tokens):
+        if tok.spelling == name:
+            if i + 1 < len(tokens) and tokens[i + 1].spelling == "(":
+                start = i + 2
+                break
+    if start < 0:
+        return []
+
+    params: List[str] = []
+    current: List[str] = []
+    depth_paren = 0
+    depth_angle = 0
+
+    for tok in tokens[start:]:
+        s = tok.spelling
+        if s == "<":
+            depth_angle += 1
+            current.append(s)
+        elif s == ">":
+            depth_angle -= 1
+            current.append(s)
+        elif s == "(":
+            depth_paren += 1
+            current.append(s)
+        elif s == ")":
+            if depth_paren == 0 and depth_angle == 0:
+                if current:
+                    raw = " ".join(current)
+                    normalized = _normalize_type_spelling(raw)
+                    if normalized:
+                        params.append(normalized)
+                break
+            depth_paren -= 1
+            current.append(s)
+        elif s == "," and depth_paren == 0 and depth_angle == 0:
+            raw = " ".join(current)
+            normalized = _normalize_type_spelling(raw)
+            if normalized:
+                params.append(normalized)
+            current = []
+        else:
+            current.append(s)
+
+    return params
 
 
 def _parse_parameters(cursor) -> List[IRParameter]:
     # Use PARM_DECL children and token-based type extraction to avoid a
     # libclang bug where constructors with initializer lists using std::move
     # cause parameter types to be reported incorrectly via cursor.type.spelling.
-    return [
-        IRParameter(
+    args = [arg for arg in cursor.get_children() if arg.kind == CursorKind.PARM_DECL]
+
+    # libclang 19 bug: unnamed PARM_DECL children whose type is a complex template
+    # (e.g. ::std::function<T(U...)>) get a zero source extent and empty token
+    # stream, so _type_from_tokens falls back to cursor.type.spelling which also
+    # returns the wrong type ('int'). In that case we fall back to parsing the
+    # parent function cursor's token stream.
+    has_zero_extent_unnamed = any(
+        not arg.spelling and not list(arg.get_tokens()) for arg in args
+    )
+    fallback_types: List[str] = _param_types_from_fn_tokens(cursor) if has_zero_extent_unnamed else []
+
+    result: List[IRParameter] = []
+    for i, arg in enumerate(args):
+        if not arg.spelling and not list(arg.get_tokens()) and i < len(fallback_types):
+            type_spelling = fallback_types[i]
+        else:
+            type_spelling = _type_from_tokens(arg)
+        result.append(IRParameter(
             name=arg.spelling,
-            type_spelling=_type_from_tokens(arg),
+            type_spelling=type_spelling,
             default_value=_get_default_value(arg),
-        )
-        for arg in cursor.get_children()
-        if arg.kind == CursorKind.PARM_DECL
-    ]
+        ))
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +260,15 @@ def _get_attributes(cursor) -> List[str]:
     # Text before the cursor start on the same line (leading attr, same line)
     before = lines[start_line - 1][:start_col - 1]
     attrs.extend(_collect_attr_blocks(before))
+
+    # clang 21+ may extend the cursor extent to include an attribute-only line
+    # before the declaration, making start_line the attribute line and start_col
+    # point past the "[[". In that case "before" misses the "[["; scan the full
+    # start line when it contains "[[" that "before" did not capture.
+    full_start = lines[start_line - 1]
+    if "[[" in full_start and "[[" not in before:
+        if not any(c in full_start for c in (";", "{", "}")):
+            attrs.extend(_collect_attr_blocks(full_start))
 
     # Text after the cursor end on the same line (trailing attr)
     after = lines[end_line - 1][end_col - 1:]
@@ -334,7 +441,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         if child.kind == CursorKind.CXX_METHOD:
             methods_by_name[child.spelling].append(child)
 
-    for spell, cursors in methods_by_name.items():
+    for cursors in methods_by_name.values():
         is_overload = len(cursors) > 1
         for m in cursors:
             params = _parse_parameters(m)
@@ -600,45 +707,16 @@ def parse_translation_unit(
     # Ensure we parse as C++ by default if not already specified
     if "-x" not in args:
         args = ["-x", "c++"] + args
+
     # Ensure sysroot and C++ stdlib headers on darwin.
-    if sys.platform == "darwin":
-        if "-isysroot" not in args:
-            try:
-                sysroot = subprocess.check_output(
-                    ["xcrun", "--show-sdk-path"], text=True, stderr=subprocess.DEVNULL
-                ).strip()
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                sysroot = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
-            args += ["-isysroot", sysroot]
-
-        # Point libclang at Xcode's clang resource directory so it uses the correct built-in headers (stdarg.h, stddef.h, …).
-        if "-resource-dir" not in args:
-            try:
-                resource_dir = subprocess.check_output(
-                    ["xcrun", "clang", "-print-resource-dir"], text=True, stderr=subprocess.DEVNULL
-                ).strip()
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                resource_dir = ""
-            if resource_dir and Path(resource_dir).is_dir():
-                args += ["-resource-dir", resource_dir]
-
-    elif sys.platform.startswith("linux"):
-        # On Linux, libclang pip package ships without builtin headers; point it at the
-        # system clang resource dir so stddef.h/stdarg.h etc. are found.
-        if "-resource-dir" not in args:
-            resource_dir = ""
-            for clang_bin in ["clang-18", "clang-17", "clang-16", "clang"]:
-                try:
-                    candidate = subprocess.check_output(
-                        [clang_bin, "-print-resource-dir"], text=True, stderr=subprocess.DEVNULL
-                    ).strip()
-                    if candidate and Path(candidate).is_dir():
-                        resource_dir = candidate
-                        break
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    continue
-            if resource_dir:
-                args += ["-resource-dir", resource_dir]
+    clang_native = Path(clang.__file__).parent / "native"
+    bundled_libcxx = clang_native / "libcxx"
+    bundled_resource = clang_native / "resource" / "include"
+    if bundled_libcxx.is_dir() and bundled_resource.is_dir():
+        if "-nostdinc++" not in args:
+            args.append("-nostdinc++")
+        if not any("libcxx" in a for a in args):
+            args += [f"-isystem{bundled_libcxx}", f"-isystem{bundled_resource}"]
 
     if verbose:
         print(f"[parse] {source_path}: args={args}", file=sys.stderr)

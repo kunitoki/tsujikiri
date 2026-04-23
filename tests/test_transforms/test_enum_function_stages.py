@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from tsujikiri.tir import (
     TIRBase,
     TIRClass,
@@ -11,7 +9,6 @@ from tsujikiri.tir import (
     TIREnum,
     TIREnumValue,
     TIRFunction,
-    TIRMethod,
     TIRModule,
     TIRParameter,
 )

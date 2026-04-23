@@ -24,7 +24,7 @@ import yaml
 class PrimitiveTypeEntry:
     """Maps a C++ type name to a target-language primitive name."""
     cpp_name: str
-    python_name: str
+    target_name: str
 
 
 @dataclass
@@ -418,7 +418,7 @@ def _merge_typesystem_into(target: TypesystemConfig, source: TypesystemConfig) -
 def _parse_typesystem_config(ts_raw: Dict[str, Any], config_dir: Optional[Path] = None) -> TypesystemConfig:
     """Parse the ``typesystem:`` block from an input config dict."""
     primitive_types = [
-        PrimitiveTypeEntry(cpp_name=e["cpp_name"], python_name=e["python_name"])
+        PrimitiveTypeEntry(cpp_name=e["cpp_name"], target_name=e["target_name"])
         for e in ts_raw.get("primitive_types", [])
     ]
     typedef_types = [

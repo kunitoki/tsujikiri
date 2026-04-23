@@ -1274,8 +1274,8 @@ Registers a C++ exception type as a binding-level exception class. For pybind11 
 ```yaml
 - stage: register_exception
   cpp_type: "ns::MyException"
-  python_name: "MyException"   # optional; defaults to the short C++ name
-  base: "Exception"            # optional; default Python base class
+  target_name: "MyException"   # optional; defaults to the short C++ name
+  base: "Exception"            # optional; default Exception base class
 ```
 
 **All keys:**
@@ -1283,15 +1283,15 @@ Registers a C++ exception type as a binding-level exception class. For pybind11 
 | Key | Type | Default | Notes |
 |-----|------|---------|-------|
 | `cpp_type` | string | — | Fully-qualified C++ exception type (required) |
-| `python_name` | string | (last `::` component of `cpp_type`) | Python class name for the exception |
-| `base` | string | `"Exception"` | Python base class |
+| `target_name` | string | (last `::` component of `cpp_type`) | Target class name for the exception |
+| `base` | string | `"Exception"` | Target base class |
 
 **Example — register a domain exception:**
 ```yaml
 transforms:
   - stage: register_exception
     cpp_type: "mylib::ParseError"
-    python_name: "ParseError"
+    target_name: "ParseError"
     base: "ValueError"
 ```
 
@@ -1303,7 +1303,7 @@ transforms:
 
   - stage: register_exception
     cpp_type: "mylib::TimeoutError"
-    python_name: "TimeoutError"
+    target_name: "TimeoutError"
     base: "OSError"
 ```
 

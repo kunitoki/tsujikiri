@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import dataclasses
 import json
 import re
@@ -45,12 +44,6 @@ def build_parser() -> argparse.ArgumentParser:
             "Output target: FORMAT is a built-in name (luabridge3) or path to .output.yml; "
             "FILE is the output path ('-' for stdout). Repeatable."
         ),
-    )
-    p.add_argument(
-        "--classname", "-c",
-        default=None,
-        metavar="CLASS",
-        help="Generate bindings for a single class only",
     )
     p.add_argument(
         "--formats-dir", "-f",
@@ -199,7 +192,6 @@ def _process_sources(
     source_entries,
     output_config,
     module_name: str,
-    classname_filter: Optional[str],
     trace_stream: Optional[IO],
     verbose: bool = False,
 ) -> tuple[TIRModule, list[str]]:
@@ -229,23 +221,13 @@ def _process_sources(
         )
         module = upgrade_module(ir_module)
 
-        if classname_filter:
-            for tir_class in module.classes:
-                if tir_class.name != classname_filter:
-                    tir_class.emit = False  # type: ignore[union-attr]
-
         FilterEngine(effective_filters).apply(module)
 
         if verbose:
-            suppressed_classes = [c.name for c in module.classes if not c.emit]
-            suppressed_fns = [f.name for f in module.functions if not f.emit]
-            suppressed_enums = [e.name for e in module.enums if not e.emit]
             emitted_classes = [c.name for c in module.classes if c.emit]
             emitted_fns = [f.name for f in module.functions if f.emit]
             emitted_enums = [e.name for e in module.enums if e.emit]
             print(f"[filter] emitted: classes={emitted_classes} functions={emitted_fns} enums={emitted_enums}", file=sys.stderr)
-            if suppressed_classes or suppressed_fns or suppressed_enums:
-                print(f"[filter] suppressed: classes={suppressed_classes} functions={suppressed_fns} enums={suppressed_enums}", file=sys.stderr)
 
         AttributeProcessor(input_config.attributes).apply(module)
 
@@ -311,7 +293,7 @@ def main() -> None:
     first_output_config = apply_format_inheritance(load_output_config(first_fmt_path), extra_dirs=extra_dirs)
 
     merged, all_includes = _process_sources(
-        input_config, source_entries, first_output_config, module_name, args.classname, trace_stream,
+        input_config, source_entries, first_output_config, module_name, trace_stream,
         verbose=args.verbose,
     )
 
@@ -340,24 +322,23 @@ def main() -> None:
         manifest_path = Path(args.manifest_file)
         if manifest_path.exists():
             old_manifest = load_manifest(manifest_path)
-            if "uid" in old_manifest and old_manifest["uid"] != manifest["uid"]:
-                report = compare_manifests(old_manifest, manifest)
-                if report.additive_changes:
-                    print("WARNING: Additive API changes:", file=sys.stderr)
-                    for ch in report.additive_changes:
-                        print(f"  + {ch}", file=sys.stderr)
-                if report.breaking_changes:
-                    print("ERROR: Breaking API changes detected:", file=sys.stderr)
-                    for ch in report.breaking_changes:
-                        print(f"  ! {ch}", file=sys.stderr)
-                    if args.check_compat:
-                        has_breaking = True
-                new_version = suggest_version_bump(old_manifest, report)
-                if new_version is not None:
-                    manifest["version"] = new_version
-                    old_version = old_manifest["version"]
-                    if new_version != old_version:
-                        print(f"INFO: Suggested version bump: {old_version} -> {new_version}", file=sys.stderr)
+            report = compare_manifests(old_manifest, manifest)
+            if report.additive_changes:
+                print("WARNING: Additive API changes:", file=sys.stderr)
+                for ch in report.additive_changes:
+                    print(f"  + {ch}", file=sys.stderr)
+            if report.breaking_changes:
+                print("ERROR: Breaking API changes detected:", file=sys.stderr)
+                for ch in report.breaking_changes:
+                    print(f"  ! {ch}", file=sys.stderr)
+                if args.check_compat:
+                    has_breaking = True
+            new_version = suggest_version_bump(old_manifest, report)
+            if new_version is not None:
+                manifest["version"] = new_version
+                old_version = old_manifest["version"]
+                if new_version != old_version:
+                    print(f"INFO: Suggested version bump: {old_version} -> {new_version}", file=sys.stderr)
 
     base_gen = input_config.generation
 
@@ -396,7 +377,7 @@ def main() -> None:
             fmt_path = resolve_format_path(fmt, extra_dirs=extra_dirs)
             output_config = apply_format_inheritance(load_output_config(fmt_path), extra_dirs=extra_dirs)
             target_merged, target_includes = _process_sources(
-                input_config, source_entries, output_config, module_name, args.classname, trace_stream,
+                input_config, source_entries, output_config, module_name, trace_stream,
                 verbose=args.verbose,
             )
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from tsujikiri.generator_filters import camel_to_snake, code_at, param_pairs, snake_to_camel
 
 

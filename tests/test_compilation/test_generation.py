@@ -422,7 +422,7 @@ class TestTypesystemScenarioLuaBridge3Generation:
 
     def test_primitive_type_mapping_in_overload_template(self, typesystem_module, luabridge3_output_config):
         # luabridge3 overload<type> uses mapped type — verify int64_t → I64 via typesystem
-        ts = TypesystemConfig(primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", python_name="I64")])
+        ts = TypesystemConfig(primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", target_name="I64")])
         out = _generate_with_options(typesystem_module, luabridge3_output_config, typesystem=ts)
         assert "luabridge::overload<I64>" in out
 

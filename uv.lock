@@ -1,6 +1,12 @@
 version = 1
 revision = 3
 requires-python = ">=3.12"
+conflicts = [[
+    { package = "tsujikiri", extra = "clang19" },
+    { package = "tsujikiri", extra = "clang20" },
+    { package = "tsujikiri", extra = "clang21" },
+    { package = "tsujikiri", extra = "clang22" },
+]]
 
 [[package]]
 name = "clang-format"
@@ -177,20 +183,55 @@ wheels = [
 ]
 
 [[package]]
-name = "libclang"
-version = "18.1.1"
+name = "libclang-ng"
+version = "19.1.7.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6e/5c/ca35e19a4f142adffa27e3d652196b7362fa612243e2b916845d801454fc/libclang-18.1.1.tar.gz", hash = "sha256:a1214966d08d73d971287fc3ead8dfaf82eb07fb197680d8b3859dbbbbf78250", size = 39612, upload-time = "2024-03-17T16:04:37.434Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4b/49/f5e3e7e1419872b69f6f5e82ba56e33955a74bd537d8a1f5f1eff2f3668a/libclang-18.1.1-1-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:0b2e143f0fac830156feb56f9231ff8338c20aecfe72b4ffe96f19e5a1dbb69a", size = 25836045, upload-time = "2024-06-30T17:40:31.646Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/e5/fc61bbded91a8830ccce94c5294ecd6e88e496cc85f6704bf350c0634b70/libclang-18.1.1-py2.py3-none-macosx_10_9_x86_64.whl", hash = "sha256:6f14c3f194704e5d09769108f03185fce7acaf1d1ae4bbb2f30a72c2400cb7c5", size = 26502641, upload-time = "2024-03-18T15:52:26.722Z" },
-    { url = "https://files.pythonhosted.org/packages/db/ed/1df62b44db2583375f6a8a5e2ca5432bbdc3edb477942b9b7c848c720055/libclang-18.1.1-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:83ce5045d101b669ac38e6da8e58765f12da2d3aafb3b9b98d88b286a60964d8", size = 26420207, upload-time = "2024-03-17T15:00:26.63Z" },
-    { url = "https://files.pythonhosted.org/packages/1d/fc/716c1e62e512ef1c160e7984a73a5fc7df45166f2ff3f254e71c58076f7c/libclang-18.1.1-py2.py3-none-manylinux2010_x86_64.whl", hash = "sha256:c533091d8a3bbf7460a00cb6c1a71da93bffe148f172c7d03b1c31fbf8aa2a0b", size = 24515943, upload-time = "2024-03-17T16:03:45.942Z" },
-    { url = "https://files.pythonhosted.org/packages/3c/3d/f0ac1150280d8d20d059608cf2d5ff61b7c3b7f7bcf9c0f425ab92df769a/libclang-18.1.1-py2.py3-none-manylinux2014_aarch64.whl", hash = "sha256:54dda940a4a0491a9d1532bf071ea3ef26e6dbaf03b5000ed94dd7174e8f9592", size = 23784972, upload-time = "2024-03-17T16:12:47.677Z" },
-    { url = "https://files.pythonhosted.org/packages/fe/2f/d920822c2b1ce9326a4c78c0c2b4aa3fde610c7ee9f631b600acb5376c26/libclang-18.1.1-py2.py3-none-manylinux2014_armv7l.whl", hash = "sha256:cf4a99b05376513717ab5d82a0db832c56ccea4fd61a69dbb7bccf2dfb207dbe", size = 20259606, upload-time = "2024-03-17T16:17:42.437Z" },
-    { url = "https://files.pythonhosted.org/packages/2d/c2/de1db8c6d413597076a4259cea409b83459b2db997c003578affdd32bf66/libclang-18.1.1-py2.py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:69f8eb8f65c279e765ffd28aaa7e9e364c776c17618af8bff22a8df58677ff4f", size = 24921494, upload-time = "2024-03-17T16:14:20.132Z" },
-    { url = "https://files.pythonhosted.org/packages/0b/2d/3f480b1e1d31eb3d6de5e3ef641954e5c67430d5ac93b7fa7e07589576c7/libclang-18.1.1-py2.py3-none-win_amd64.whl", hash = "sha256:4dd2d3b82fab35e2bf9ca717d7b63ac990a3519c7e312f19fa8e86dcc712f7fb", size = 26415083, upload-time = "2024-03-17T16:42:21.703Z" },
-    { url = "https://files.pythonhosted.org/packages/71/cf/e01dc4cc79779cd82d77888a88ae2fa424d93b445ad4f6c02bfc18335b70/libclang-18.1.1-py2.py3-none-win_arm64.whl", hash = "sha256:3f0e1f49f04d3cd198985fea0511576b0aee16f9ff0e0f0cad7f9c57ec3c20e8", size = 22361112, upload-time = "2024-03-17T16:42:59.565Z" },
+    { url = "https://files.pythonhosted.org/packages/80/89/08c472af70466fa79bca7749b5376c01c254a109015f7d43ccdee9c9263c/libclang_ng-19.1.7.2-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:d6bb037d53f3c4fcfc36a3e5a21242fdcbba3f89e1b2b9f787f75b15d2569ec3", size = 30612746, upload-time = "2026-04-22T19:12:14.14Z" },
+    { url = "https://files.pythonhosted.org/packages/39/e7/2bac5e01c709bdf54ab6c4fc7801e88a74e5fc43d412a98c5e5a59de652c/libclang_ng-19.1.7.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:835fa3ff1ff0365a6e19b4a1fc13f9464229e70bcd0106f5464cdc1d280f118f", size = 29628973, upload-time = "2026-04-22T19:11:12.963Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/62/b985858b7caaf684d1da9ca81984444c26991284ba2c2e9b01e2059e9215/libclang_ng-19.1.7.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:68624743969a3dd944eb6b6466d7c31c31c2dfcb7a866a331f1ef724cb73b253", size = 26864122, upload-time = "2026-04-22T20:00:38.094Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/98/aade63276029d37583238d9555d9bfab0ea3744cb06848de0284d1c6665f/libclang_ng-19.1.7.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:3e83ee0695481c78c23c52bca8a837730634034b4df38ccc667901c6ef075493", size = 27851709, upload-time = "2026-04-22T20:16:07.515Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/83/9d0a1eb44ae15693751a90e5a9a6d3aea432691940cc79b3787d7225dbcf/libclang_ng-19.1.7.2-py3-none-win_amd64.whl", hash = "sha256:1b281416ff6e98a09add6b1ba55de9f39411a3cd89c3f4719edcfcfac99a411a", size = 23395127, upload-time = "2026-04-22T19:11:48.841Z" },
+    { url = "https://files.pythonhosted.org/packages/30/c3/e38d87f1a9160b66d33f4e6114dbb94f2ee3a4fa9d64e5f3d3c2045f8614/libclang_ng-19.1.7.2-py3-none-win_arm64.whl", hash = "sha256:551d89e52410d8ba1bb8fc7e5c4699c4768b894eb132fa6b063fe5ae24e264fe", size = 20884872, upload-time = "2026-04-22T19:13:15.317Z" },
+]
+
+[[package]]
+name = "libclang-ng"
+version = "20.1.8.2"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/e9/05a7fe31a0a8952fb9082b50b748052734d80a948c67d25a0ca39e955b14/libclang_ng-20.1.8.2-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:f469d43ea9ef7501b263ba26ad1808cc8987c8ea832730ad5c198e9c4f8cc055", size = 33333973, upload-time = "2026-04-22T19:12:38.948Z" },
+    { url = "https://files.pythonhosted.org/packages/24/9b/9e15eb487ec953337b74862b768d80f0f92faf6940e339a47dfbddac8890/libclang_ng-20.1.8.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b2676ebd79bcd33ae1350d3830f2676c4be15c61c53f8cba078006b398a61af8", size = 32333897, upload-time = "2026-04-22T19:11:53.355Z" },
+    { url = "https://files.pythonhosted.org/packages/06/aa/a890e308615c9377455466d7e75b94f05aad6fc76ca30116239449be60c5/libclang_ng-20.1.8.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:500b7021ee0685c6e662cd7a76f14f6ccc9ff0918f5dca51aa2bdd52cd545408", size = 29462044, upload-time = "2026-04-22T20:04:18.472Z" },
+    { url = "https://files.pythonhosted.org/packages/76/0c/cf5dc39e4d016d9932a840b76f0ee170f72356087d8a37441305a827376c/libclang_ng-20.1.8.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:d07ab45008f1315813ea6d5ce3006ea218340649bf88ff250b60885b9fff091b", size = 30496673, upload-time = "2026-04-22T20:16:35.648Z" },
+    { url = "https://files.pythonhosted.org/packages/32/74/6ead4b8462cff86af7e223a41c7c8e4616bf9e3794a5e70528eac91618ea/libclang_ng-20.1.8.2-py3-none-win_amd64.whl", hash = "sha256:98fbb817c9131ddef0c88c208509963b95487c86368373c73f0534b3f8a90983", size = 25785801, upload-time = "2026-04-22T19:12:23.479Z" },
+    { url = "https://files.pythonhosted.org/packages/db/5c/2c17fc8598eed430c6465d233c481bfeb3c286cdca786e098c16ec27d688/libclang_ng-20.1.8.2-py3-none-win_arm64.whl", hash = "sha256:9adf0721e5ca3ed1f39e789e6c5c9a8fdd4ca95ed7a2fd144c0f28d93e6bf738", size = 23162338, upload-time = "2026-04-22T19:12:06.545Z" },
+]
+
+[[package]]
+name = "libclang-ng"
+version = "21.1.8.2"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/da/929c07c0a1f46ca4460414d260f84e88b3d2d15ba1083a8e409332f04c83/libclang_ng-21.1.8.2-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:d61e6d149b4b1c52785a2c01cd02f538f35de8e4aa3f29b838704d7c6d5bae54", size = 32948645, upload-time = "2026-04-22T19:12:46.465Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/c8/0e4c19b65ce305f2c1cd73c493ec0f0d8e77044dc60eac73c8bc9682f885/libclang_ng-21.1.8.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:f938af8c28e8ee7fd3ba5da7ed5b79452f29bfb51391e75abd983a0ea5b72e67", size = 31897502, upload-time = "2026-04-22T19:12:12.749Z" },
+    { url = "https://files.pythonhosted.org/packages/66/aa/c97083f31fd3952572fad5e75afa9224b4ceac55c97a1552c07fd76e15aa/libclang_ng-21.1.8.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:163aa1fe74eae27a67e5ea183bd27d5ae47425e17e02934e55a3a9a421b055c0", size = 28766735, upload-time = "2026-04-22T20:04:50.923Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/32/41db207435f54da0af690e16a1762b8ae57c380538717f664e5273bc53fd/libclang_ng-21.1.8.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:82351814464d32fb5645a9dd5789a6343400daba60e23ec76e85963b5303fd38", size = 29785931, upload-time = "2026-04-22T20:23:08.453Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/a4/13bc2d954f0848c9e52a2402586a1ee5ca7c9d59e6e545f8d0e7330a3ebe/libclang_ng-21.1.8.2-py3-none-win_amd64.whl", hash = "sha256:bf3d024214b3ee75a30278798599e5abcebff3c98c44e772d76704fc00b8921f", size = 25444626, upload-time = "2026-04-22T19:12:10.036Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/80/802efce2eefbe660bb60369cf1f29d9169136e811e4795719968a0b56c1f/libclang_ng-21.1.8.2-py3-none-win_arm64.whl", hash = "sha256:8567e1e64e256d3dd9c9085089b0acd0000a7938223bedb46daf2eca08f3b13c", size = 22759218, upload-time = "2026-04-22T19:12:32.632Z" },
+]
+
+[[package]]
+name = "libclang-ng"
+version = "22.1.4.2"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9d/79/93dd7866db6c0b37e1f93abfcc8e87879a46ecd5f52ca46673dd63ff605a/libclang_ng-22.1.4.2-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:25c2a760f92e5a05f70b363e59607a97341a7a778c30b2987cea4bf186c56b57", size = 33911241, upload-time = "2026-04-22T19:13:50.355Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/2b/67a2cc4b12c0c7ce1e918e74f0f7fcd40f4509b6a1a1f3b18bd438098b6e/libclang_ng-22.1.4.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:959cb4b15883b19e56704a68eceea015674c0830ecea423aa72e920225cf50ef", size = 33005943, upload-time = "2026-04-22T19:12:22.199Z" },
+    { url = "https://files.pythonhosted.org/packages/61/c6/ef0cae4dfb871eaae6811fb7873c64366ca7065ea1a590e858b267a96514/libclang_ng-22.1.4.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:41ee012632993d0ea25c60da539d63ad858bc3261aaa706e5a4286bd2afc8372", size = 29625190, upload-time = "2026-04-22T19:13:35.335Z" },
+    { url = "https://files.pythonhosted.org/packages/29/5b/465354e121f7e4ab0023e464d1e5f09165460b0aefbd2fe6250a57620e6d/libclang_ng-22.1.4.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:be0c485e086b1fd66fab5441df8507e863838f5b84f8cd327fe1eda2e93fb07a", size = 30594869, upload-time = "2026-04-22T19:12:25.952Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/21/45df66fce5a3d9cf6b42131d1ecc1423bc1f70b8304e27c1ccb3edd40eae/libclang_ng-22.1.4.2-py3-none-win_amd64.whl", hash = "sha256:701b282404800d3fcf6d7d408cfd49ebae3e6a85dfb3f80a920deba67000dfa9", size = 26174249, upload-time = "2026-04-22T19:12:26.286Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/05/de1e969a73ac5412b06bb72361c7763767c87be3d7eee12963afa155621f/libclang_ng-22.1.4.2-py3-none-win_arm64.whl", hash = "sha256:a76d7748d13fd47c0a604bfb752c5957171dbd715796daad8cd21b19fe5d8bcf", size = 23510995, upload-time = "2026-04-22T19:12:17.323Z" },
 ]
 
 [[package]]
@@ -321,7 +362,7 @@ name = "mypy"
 version = "1.20.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "librt", marker = "platform_python_implementation != 'PyPy'" },
+    { name = "librt", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang20') or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang21') or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang22') or (extra == 'extra-9-tsujikiri-clang20' and extra == 'extra-9-tsujikiri-clang21') or (extra == 'extra-9-tsujikiri-clang20' and extra == 'extra-9-tsujikiri-clang22') or (extra == 'extra-9-tsujikiri-clang21' and extra == 'extra-9-tsujikiri-clang22')" },
     { name = "mypy-extensions" },
     { name = "pathspec" },
     { name = "typing-extensions" },
@@ -409,7 +450,7 @@ name = "pytest"
 version = "9.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang20') or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang21') or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang22') or (extra == 'extra-9-tsujikiri-clang20' and extra == 'extra-9-tsujikiri-clang21') or (extra == 'extra-9-tsujikiri-clang20' and extra == 'extra-9-tsujikiri-clang22') or (extra == 'extra-9-tsujikiri-clang21' and extra == 'extra-9-tsujikiri-clang22')" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
@@ -494,22 +535,63 @@ wheels = [
 ]
 
 [[package]]
+name = "ruff"
+version = "0.15.11"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/8d/192f3d7103816158dfd5ea50d098ef2aec19194e6cbccd4b3485bdb2eb2d/ruff-0.15.11.tar.gz", hash = "sha256:f092b21708bf0e7437ce9ada249dfe688ff9a0954fc94abab05dcea7dcd29c33", size = 4637264, upload-time = "2026-04-16T18:46:26.58Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/1e/6aca3427f751295ab011828e15e9bf452200ac74484f1db4be0197b8170b/ruff-0.15.11-py3-none-linux_armv6l.whl", hash = "sha256:e927cfff503135c558eb581a0c9792264aae9507904eb27809cdcff2f2c847b7", size = 10607943, upload-time = "2026-04-16T18:46:05.967Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/26/1341c262e74f36d4e84f3d6f4df0ac68cd53331a66bfc5080daa17c84c0b/ruff-0.15.11-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:7a1b5b2938d8f890b76084d4fa843604d787a912541eae85fd7e233398bbb73e", size = 10988592, upload-time = "2026-04-16T18:46:00.742Z" },
+    { url = "https://files.pythonhosted.org/packages/03/71/850b1d6ffa9564fbb6740429bad53df1094082fe515c8c1e74b6d8d05f18/ruff-0.15.11-py3-none-macosx_11_0_arm64.whl", hash = "sha256:d4176f3d194afbdaee6e41b9ccb1a2c287dba8700047df474abfbe773825d1cb", size = 10338501, upload-time = "2026-04-16T18:46:03.723Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/11/cc1284d3e298c45a817a6aadb6c3e1d70b45c9b36d8d9cce3387b495a03a/ruff-0.15.11-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3b17c886fb88203ced3afe7f14e8d5ae96e9d2f4ccc0ee66aa19f2c2675a27e4", size = 10670693, upload-time = "2026-04-16T18:46:41.941Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/9e/f8288b034ab72b371513c13f9a41d9ba3effac54e24bfb467b007daee2ca/ruff-0.15.11-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:49fafa220220afe7758a487b048de4c8f9f767f37dfefad46b9dd06759d003eb", size = 10416177, upload-time = "2026-04-16T18:46:21.717Z" },
+    { url = "https://files.pythonhosted.org/packages/85/71/504d79abfd3d92532ba6bbe3d1c19fada03e494332a59e37c7c2dabae427/ruff-0.15.11-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:f2ab8427e74a00d93b8bda1307b1e60970d40f304af38bccb218e056c220120d", size = 11221886, upload-time = "2026-04-16T18:46:15.086Z" },
+    { url = "https://files.pythonhosted.org/packages/43/5a/947e6ab7a5ad603d65b474be15a4cbc6d29832db5d762cd142e4e3a74164/ruff-0.15.11-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:195072c0c8e1fc8f940652073df082e37a5d9cb43b4ab1e4d0566ab8977a13b7", size = 12075183, upload-time = "2026-04-16T18:46:07.944Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/a1/0b7bb6268775fdd3a0818aee8efd8f5b4e231d24dd4d528ced2534023182/ruff-0.15.11-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:a3a0996d486af3920dec930a2e7daed4847dfc12649b537a9335585ada163e9e", size = 11516575, upload-time = "2026-04-16T18:46:31.687Z" },
+    { url = "https://files.pythonhosted.org/packages/30/c3/bb5168fc4d233cc06e95f482770d0f3c87945a0cd9f614b90ea8dc2f2833/ruff-0.15.11-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1bef2cb556d509259f1fe440bb9cd33c756222cf0a7afe90d15edf0866702431", size = 11306537, upload-time = "2026-04-16T18:46:36.988Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/92/4cfae6441f3967317946f3b788136eecf093729b94d6561f963ed810c82e/ruff-0.15.11-py3-none-manylinux_2_31_riscv64.whl", hash = "sha256:030d921a836d7d4a12cf6e8d984a88b66094ccb0e0f17ddd55067c331191bf19", size = 11296813, upload-time = "2026-04-16T18:46:24.182Z" },
+    { url = "https://files.pythonhosted.org/packages/43/26/972784c5dde8313acde8ac71ba8ac65475b85db4a2352a76c9934361f9bc/ruff-0.15.11-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:0e783b599b4577788dbbb66b9addcef87e9a8832f4ce0c19e34bf55543a2f890", size = 10633136, upload-time = "2026-04-16T18:46:39.802Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/53/3985a4f185020c2f367f2e08a103032e12564829742a1b417980ce1514a0/ruff-0.15.11-py3-none-musllinux_1_2_armv7l.whl", hash = "sha256:ae90592246625ba4a34349d68ec28d4400d75182b71baa196ddb9f82db025ef5", size = 10424701, upload-time = "2026-04-16T18:46:10.381Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/57/bf0dfb32241b56c83bb663a826133da4bf17f682ba8c096973065f6e6a68/ruff-0.15.11-py3-none-musllinux_1_2_i686.whl", hash = "sha256:1f111d62e3c983ed20e0ca2e800f8d77433a5b1161947df99a5c2a3fb60514f0", size = 10873887, upload-time = "2026-04-16T18:46:29.157Z" },
+    { url = "https://files.pythonhosted.org/packages/02/05/e48076b2a57dc33ee8c7a957296f97c744ca891a8ffb4ffb1aaa3b3f517d/ruff-0.15.11-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:06f483d6646f59eaffba9ae30956370d3a886625f511a3108994000480621d1c", size = 11404316, upload-time = "2026-04-16T18:46:19.462Z" },
+    { url = "https://files.pythonhosted.org/packages/88/27/0195d15fe7a897cbcba0904792c4b7c9fdd958456c3a17d2ea6093716a9a/ruff-0.15.11-py3-none-win32.whl", hash = "sha256:476a2aa56b7da0b73a3ee80b6b2f0e19cce544245479adde7baa65466664d5f3", size = 10655535, upload-time = "2026-04-16T18:46:12.47Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/5e/c927b325bd4c1d3620211a4b96f47864633199feed60fa936025ab27e090/ruff-0.15.11-py3-none-win_amd64.whl", hash = "sha256:8b6756d88d7e234fb0c98c91511aae3cd519d5e3ed271cae31b20f39cb2a12a3", size = 11779692, upload-time = "2026-04-16T18:46:17.268Z" },
+    { url = "https://files.pythonhosted.org/packages/63/b6/aeadee5443e49baa2facd51131159fd6301cc4ccfc1541e4df7b021c37dd/ruff-0.15.11-py3-none-win_arm64.whl", hash = "sha256:063fed18cc1bbe0ee7393957284a6fe8b588c6a406a285af3ee3f46da2391ee4", size = 11032614, upload-time = "2026-04-16T18:46:34.487Z" },
+]
+
+[[package]]
 name = "tsujikiri"
 source = { editable = "." }
 dependencies = [
     { name = "clang-format" },
     { name = "jinja2" },
-    { name = "libclang" },
+    { name = "libclang-ng", version = "19.1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-9-tsujikiri-clang19' or (extra == 'extra-9-tsujikiri-clang20' and extra == 'extra-9-tsujikiri-clang21') or (extra == 'extra-9-tsujikiri-clang20' and extra == 'extra-9-tsujikiri-clang22') or (extra == 'extra-9-tsujikiri-clang21' and extra == 'extra-9-tsujikiri-clang22')" },
+    { name = "libclang-ng", version = "20.1.8.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-9-tsujikiri-clang20' or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang21') or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang22') or (extra == 'extra-9-tsujikiri-clang21' and extra == 'extra-9-tsujikiri-clang22')" },
+    { name = "libclang-ng", version = "21.1.8.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-9-tsujikiri-clang21' or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang20') or (extra == 'extra-9-tsujikiri-clang20' and extra == 'extra-9-tsujikiri-clang22') or (extra == 'extra-9-tsujikiri-clang19' and extra != 'extra-9-tsujikiri-clang21' and extra == 'extra-9-tsujikiri-clang22')" },
+    { name = "libclang-ng", version = "22.1.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-9-tsujikiri-clang22' or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang20') or (extra == 'extra-9-tsujikiri-clang19' and extra == 'extra-9-tsujikiri-clang21') or (extra == 'extra-9-tsujikiri-clang20' and extra == 'extra-9-tsujikiri-clang21') or (extra != 'extra-9-tsujikiri-clang19' and extra != 'extra-9-tsujikiri-clang20' and extra != 'extra-9-tsujikiri-clang21')" },
     { name = "pyyaml" },
 ]
 
 [package.optional-dependencies]
+clang19 = [
+    { name = "libclang-ng", version = "19.1.7.2", source = { registry = "https://pypi.org/simple" } },
+]
+clang20 = [
+    { name = "libclang-ng", version = "20.1.8.2", source = { registry = "https://pypi.org/simple" } },
+]
+clang21 = [
+    { name = "libclang-ng", version = "21.1.8.2", source = { registry = "https://pypi.org/simple" } },
+]
+clang22 = [
+    { name = "libclang-ng", version = "22.1.4.2", source = { registry = "https://pypi.org/simple" } },
+]
 dev = [
     { name = "cmake" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
+    { name = "ruff" },
     { name = "types-pyyaml" },
     { name = "zig-bin" },
 ]
@@ -519,16 +601,21 @@ requires-dist = [
     { name = "clang-format", specifier = "==22.1.3" },
     { name = "cmake", marker = "extra == 'dev'", specifier = ">=3.20" },
     { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "libclang", specifier = "==18.1.1" },
+    { name = "libclang-ng", specifier = ">=19" },
+    { name = "libclang-ng", marker = "extra == 'clang19'", specifier = ">=19,<20" },
+    { name = "libclang-ng", marker = "extra == 'clang20'", specifier = ">=20,<21" },
+    { name = "libclang-ng", marker = "extra == 'clang21'", specifier = ">=21,<22" },
+    { name = "libclang-ng", marker = "extra == 'clang22'", specifier = ">=22,<23" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.11" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "zig-bin", marker = "extra == 'dev'", specifier = ">=0.15.2" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["clang19", "clang20", "clang21", "clang22", "dev"]
 
 [[package]]
 name = "types-pyyaml"
