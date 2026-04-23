@@ -3,14 +3,6 @@ modify_constructor, remove_overload, inject_code, set_type_hint."""
 
 from __future__ import annotations
 
-import io
-
-import pytest
-
-from tsujikiri.ir import (
-    IRCodeInjection,
-    IRProperty,
-)
 from tsujikiri.tir import (
     TIRClass,
     TIRConstructor,

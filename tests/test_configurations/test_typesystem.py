@@ -4,16 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from tsujikiri.configurations import (
     ContainerTypeEntry,
     ConversionRuleEntry,
     CustomTypeEntry,
-    DeclaredFunctionEntry,
-    LoadTypesystemEntry,
     PrimitiveTypeEntry,
-    SmartPointerTypeEntry,
     TypedefTypeEntry,
     TypesystemConfig,
     load_input_config,

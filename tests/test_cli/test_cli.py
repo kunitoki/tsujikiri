@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -103,7 +102,7 @@ class TestListFormats:
 
     def test_each_format_on_own_line(self):
         stdout, _ = _run("--list-formats")
-        lines = [l.strip() for l in stdout.splitlines() if l.strip()]
+        lines = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
         assert len(lines) >= 1
 
     def test_pyi_format_listed(self):

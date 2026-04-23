@@ -7,7 +7,6 @@ import io
 from tsujikiri.generator import Generator
 from tsujikiri.ir import IRProperty
 from tsujikiri.tir import (
-    TIRBase,
     TIRClass,
     TIRConstructor,
     TIRFunction,

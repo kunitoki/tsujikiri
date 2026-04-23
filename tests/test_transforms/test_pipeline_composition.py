@@ -13,11 +13,9 @@ from tsujikiri.tir import (
     TIRClass,
     TIREnum,
     TIREnumValue,
-    TIRField,
     TIRFunction,
     TIRMethod,
     TIRModule,
-    TIRParameter,
 )
 from tsujikiri.transforms import (
     ModifyFunctionStage,

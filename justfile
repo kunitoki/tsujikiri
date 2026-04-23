@@ -17,24 +17,25 @@ tests *args:
     @just test clang21 {{args}}
     @just test clang22 {{args}}
 
+# Run tests with coverage report.
+coverage *args: sync
+    uv run pytest -n auto --cov=tsujikiri --cov-branch --cov-report=term-missing {{args}}
+
 # Regenerate inline stubs (src/tsujikiri/**/*.pyi) via stubgen.
 stubs: sync
     uv run stubgen -p tsujikiri -o src
 
 # Run mypy type checking.
-typecheck: sync
+check: sync
     uv run mypy
-
-# Run tests with coverage report.
-coverage *args: sync
-    uv run pytest -n auto --cov=tsujikiri --cov-branch --cov-report=term-missing {{args}}
+    uv run ruff check src tests
 
 # Build wheel and source distribution.
-wheel: sync typecheck stubs
+wheel: sync stubs check
     uv build
 
 # Publish a release (build + PyPI publish handled by .github/workflows/release.yml on tag push)
-publish version: typecheck stubs
+publish version: stubs check
     echo "__version__ = \"{{version}}\"" > src/tsujikiri/__init__.py
     perl -0pi -e 's/x=(\d+)/"x=" . ($1 + 1)/ge' README.md
 

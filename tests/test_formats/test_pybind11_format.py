@@ -7,7 +7,7 @@ import io
 import pytest
 
 from tsujikiri.generator import Generator
-from tsujikiri.ir import IRCodeInjection, IRProperty
+from tsujikiri.ir import IRProperty
 from tsujikiri.tir import (
     TIRBase,
     TIRClass,

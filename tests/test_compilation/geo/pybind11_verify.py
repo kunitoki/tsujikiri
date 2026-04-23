@@ -5,7 +5,6 @@ Requires PYTHONPATH to contain the directory with the built geo extension module
 """
 from __future__ import annotations
 
-import math
 import sys
 
 import geo  # type: ignore  # noqa: E402

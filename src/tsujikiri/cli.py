@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import dataclasses
 import json
 import re

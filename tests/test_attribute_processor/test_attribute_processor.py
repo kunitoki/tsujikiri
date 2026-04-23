@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from tsujikiri.attribute_processor import (
     AttributeProcessor,
     _apply_complex_builtin,

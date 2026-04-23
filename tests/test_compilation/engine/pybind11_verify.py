@@ -10,7 +10,6 @@ unsafe. We test only numeric/boolean API surface.
 """
 from __future__ import annotations
 
-import math
 import sys
 
 import engine  # type: ignore  # noqa: E402

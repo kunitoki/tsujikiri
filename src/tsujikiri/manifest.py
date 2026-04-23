@@ -124,8 +124,6 @@ def compute_manifest(module: TIRModule) -> Dict[str, Any]:
         "enums": enums,
     }
 
-    canonical = json.dumps(api, sort_keys=True)
-
     return {
         "module": module.name,
         "version": "0.0.0",

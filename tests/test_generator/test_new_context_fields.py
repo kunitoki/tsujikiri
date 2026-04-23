@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import io
 
-import pytest
-
 from tsujikiri.generator import Generator
 from tsujikiri.ir import IRCodeInjection
 from tsujikiri.tir import (
@@ -61,7 +59,7 @@ class TestParameterEmitFilter:
             parameters=[param_kept, param_removed],
         )
         cls = _simple_class(methods=[method])
-        mod = TIRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
+        _ = TIRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
 
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_class_ctx(cls)
@@ -77,7 +75,7 @@ class TestParameterEmitFilter:
             parameters=[TIRParameter("a", "int"), TIRParameter("b", "float")],
         )
         cls = _simple_class(methods=[method])
-        mod = TIRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
+        _ = TIRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
 
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_class_ctx(cls)
@@ -978,8 +976,8 @@ class TestDocStringLuaLS:
         mod = TIRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
         out = _generate(mod, luals_output_config)
         # Only the standard header comment should appear
-        lines = [l for l in out.splitlines() if l.startswith("---")]
-        assert all("@" in l or l == "---" for l in lines)
+        lines = [ln for ln in out.splitlines() if ln.startswith("---")]
+        assert all("@" in ln or ln == "---" for ln in lines)
 
 
 class TestApiVersionGating:

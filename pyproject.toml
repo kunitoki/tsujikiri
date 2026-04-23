@@ -48,6 +48,7 @@ dev = [
   "zig-bin>=0.15.2",
   "mypy>=1.10",
   "types-PyYAML>=6.0",
+  "ruff>=0.15.11",
 ]
 
 [tool.setuptools]
