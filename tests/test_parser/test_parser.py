@@ -777,27 +777,25 @@ class TestTypeFromTokens:
 
     # ------------------------------------------------------------------
     # std::vector — affected by the bug ('int' without fix).
-    # Template bracket tokens are joined with spaces (valid C++).
+    # Template bracket tokens are normalized to canonical spacing.
     # ------------------------------------------------------------------
 
     def test_vec_int(self, type_tokens_module: object) -> None:
-        # tokens include '<', 'int', '>'; joined: 'std::vector < int >'
-        assert self._fn_types(type_tokens_module, "f_vec_int") == ["std::vector < int >"]
+        assert self._fn_types(type_tokens_module, "f_vec_int") == ["std::vector<int>"]
 
     def test_vec_string(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "f_vec_string") == ["std::vector < std::string >"]
+        assert self._fn_types(type_tokens_module, "f_vec_string") == ["std::vector<std::string>"]
 
     def test_vec_int_cref(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "f_vec_int_cref") == ["const std::vector < int > &"]
+        assert self._fn_types(type_tokens_module, "f_vec_int_cref") == ["const std::vector<int> &"]
 
     # ------------------------------------------------------------------
     # std::map — affected by the bug
     # ------------------------------------------------------------------
 
     def test_map_string_int(self, type_tokens_module: object) -> None:
-        # comma token has spaces on both sides from join
         assert self._fn_types(type_tokens_module, "f_map_string_int") == [
-            "std::map < std::string , int >"
+            "std::map<std::string, int>"
         ]
 
     # ------------------------------------------------------------------
@@ -806,7 +804,7 @@ class TestTypeFromTokens:
 
     def test_optional_string(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "f_opt_string") == [
-            "std::optional < std::string >"
+            "std::optional<std::string>"
         ]
 
     # ------------------------------------------------------------------
@@ -815,9 +813,9 @@ class TestTypeFromTokens:
     # ------------------------------------------------------------------
 
     def test_nested_vector_pair(self, type_tokens_module: object) -> None:
-        # tokens end with '>>' (single token): 'std::vector < std::pair < int , std::string >>'
+        # tokens end with '>>' (single token).
         assert self._fn_types(type_tokens_module, "f_nested") == [
-            "std::vector < std::pair < int , std::string >>"
+            "std::vector<std::pair<int, std::string>>"
         ]
 
     # ------------------------------------------------------------------
@@ -825,14 +823,13 @@ class TestTypeFromTokens:
     # ------------------------------------------------------------------
 
     def test_function_void_int(self, type_tokens_module: object) -> None:
-        # '(' and ')' are separate tokens, each with surrounding spaces after join
         assert self._fn_types(type_tokens_module, "f_fn_void_int") == [
-            "std::function < void ( int ) >"
+            "std::function<void (int)>"
         ]
 
     def test_function_int_two_doubles(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "f_fn_int_two_doubles") == [
-            "std::function < int ( double , double ) >"
+            "std::function<int (double, double)>"
         ]
 
     # ------------------------------------------------------------------
@@ -841,7 +838,7 @@ class TestTypeFromTokens:
 
     def test_shared_ptr_obj(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "f_shared_obj") == [
-            "std::shared_ptr < Obj >"
+            "std::shared_ptr<Obj>"
         ]
 
     # ------------------------------------------------------------------
@@ -858,7 +855,7 @@ class TestTypeFromTokens:
 
     def test_multi_param_vec_double_cref(self, type_tokens_module: object) -> None:
         types = self._fn_types(type_tokens_module, "f_multi")
-        assert types[2] == "const std::vector < double > &"
+        assert types[2] == "const std::vector<double> &"
 
     # ------------------------------------------------------------------
     # Widget constructors — regression for the original bug trigger.
@@ -877,7 +874,7 @@ class TestTypeFromTokens:
     def test_widget_ctor_std_move_vector_param(self, type_tokens_module: object) -> None:
         """std::vector<int> in a constructor with a std::move initialiser list."""
         types = self._ctor_types(type_tokens_module, "Widget", 2)
-        assert types[1] == "std::vector < int >"
+        assert types[1] == "std::vector<int>"
 
     def test_widget_ctor_cref_string_param(self, type_tokens_module: object) -> None:
         """const std::string & in a second constructor (also has initialiser list)."""
@@ -887,12 +884,12 @@ class TestTypeFromTokens:
     def test_widget_ctor_map_param(self, type_tokens_module: object) -> None:
         """std::map<std::string, int> in a constructor — heavily templated arg."""
         types = self._ctor_types(type_tokens_module, "Widget", 3)
-        assert types[1] == "std::map < std::string , int >"
+        assert types[1] == "std::map<std::string, int>"
 
     def test_widget_ctor_optional_param(self, type_tokens_module: object) -> None:
         """std::optional<double> in a constructor."""
         types = self._ctor_types(type_tokens_module, "Widget", 3)
-        assert types[2] == "std::optional < double >"
+        assert types[2] == "std::optional<double>"
 
     # ------------------------------------------------------------------
     # Direct _type_from_tokens unit tests on raw libclang cursors.
@@ -917,8 +914,6 @@ class TestTypeFromTokens:
             encoding="utf-8",
         )
         args = ["-x", "c++", "-std=c++17"]
-        if sys.platform == "darwin":
-            args += ["-isysroot", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"]
 
         index = ci.Index.create()
         tu = index.parse(str(hpp), args=args)
@@ -952,7 +947,7 @@ class TestTypeFromTokens:
 
         # _type_from_tokens must return the correct type regardless
         assert _type_from_tokens(s_cursor) == "std::string"
-        assert _type_from_tokens(v_cursor) == "std::vector < int >"
+        assert _type_from_tokens(v_cursor) == "std::vector<int>"
 
     def test_direct_no_name_falls_back_to_cursor_type(self, tmp_path: Path) -> None:
         """Unnamed parameters (no spelling) fall back to cursor.type.spelling."""
@@ -963,8 +958,6 @@ class TestTypeFromTokens:
         )
         import sys
         args = ["-x", "c++", "-std=c++17"]
-        if sys.platform == "darwin":
-            args += ["-isysroot", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"]
 
         index = ci.Index.create()
         tu = index.parse(str(hpp), args=args)
@@ -1051,36 +1044,35 @@ class TestTypeFromTokensNamespaces:
 
     # ------------------------------------------------------------------
     # Global-namespace-qualified std:: types (::std::...)
-    # The leading '::' token causes re.sub to strip surrounding spaces,
-    # producing 'const::std::string' (no space between const and ::).
+    # The leading '::' token is kept as a global qualifier while namespace
+    # separators are normalized without whitespace.
     # ------------------------------------------------------------------
 
     def test_g_string(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "g_string") == ["::std::string"]
 
     def test_g_string_cref(self, type_tokens_module: object) -> None:
-        # 'const :: std :: string &' → 'const::std::string &' (no space before ::)
-        assert self._fn_types(type_tokens_module, "g_string_cref") == ["const::std::string &"]
+        assert self._fn_types(type_tokens_module, "g_string_cref") == ["const ::std::string &"]
 
     def test_g_string_rref(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "g_string_rref") == ["::std::string &&"]
 
     def test_g_vec_int(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "g_vec_int") == ["::std::vector < int >"]
+        assert self._fn_types(type_tokens_module, "g_vec_int") == ["::std::vector<int>"]
 
     def test_g_optional_string(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "g_optional_string") == [
-            "::std::optional <::std::string >"
+            "::std::optional<::std::string>"
         ]
 
     def test_g_map_string_int(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "g_map_string_int") == [
-            "::std::map <::std::string , int >"
+            "::std::map<::std::string, int>"
         ]
 
     def test_g_function_void_string(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "g_function_void_string") == [
-            "::std::function < void (::std::string ) >"
+            "::std::function<void (::std::string)>"
         ]
 
     # ------------------------------------------------------------------
@@ -1122,18 +1114,17 @@ class TestTypeFromTokensNamespaces:
 
     def test_m_vec_nested(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "m_vec_nested") == [
-            "::std::vector < outer::inner::Nested >"
+            "::std::vector<outer::inner::Nested>"
         ]
 
     def test_m_map_nested_string(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "m_map_nested_string") == [
-            "::std::map < outer::inner::Nested ,::std::string >"
+            "::std::map<outer::inner::Nested, ::std::string>"
         ]
 
     def test_m_function_nested_unnamed(self, type_tokens_module: object) -> None:
-        # Unnamed parameter → no name token, falls back to cursor.type.spelling (canonical form).
         assert self._fn_types(type_tokens_module, "m_function_nested") == [
-            "::std::function < outer::inner::Nested (::std::string , outer::Mid ) >"
+            "::std::function<outer::inner::Nested (::std::string, outer::Mid)>"
         ]
 
 
@@ -1215,14 +1206,14 @@ class TestParamTypesFromFnTokens:
             "foo",
             ["foo", "(", "std", "::", "map", "<", "int", ",", "float", ">", ")"],
         )
-        assert _param_types_from_fn_tokens(c) == ["std::map < int , float >"]
+        assert _param_types_from_fn_tokens(c) == ["std::map<int, float>"]
 
     def test_nested_parens_tracked(self) -> None:
         c = _cursor_with_tokens(
             "foo",
             ["foo", "(", "std", "::", "function", "<", "void", "(", "int", ")", ">", ")"],
         )
-        assert _param_types_from_fn_tokens(c) == ["std::function < void ( int ) >"]
+        assert _param_types_from_fn_tokens(c) == ["std::function<void (int)>"]
 
     def test_consecutive_commas_skip_empty(self) -> None:
         c = _cursor_with_tokens("foo", ["foo", "(", "int", ",", ",", "float", ")"])

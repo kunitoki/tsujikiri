@@ -60,6 +60,31 @@ def _get_default_value(cursor) -> Optional[str]:
     return None
 
 
+def _normalize_type_spelling(spelling: str) -> str:
+    """Return a stable C++ type spelling independent of libclang token spacing."""
+    s = re.sub(r"\s+", " ", spelling).strip()
+    if not s:
+        return s
+
+    s = re.sub(r"\s*::\s*", "::", s)
+    # Preserve the space between qualifiers and a leading global qualifier:
+    # ``const ::std::string`` is valid, ``const::std::string`` is not.
+    s = re.sub(r"\b(const|volatile)::", r"\1 ::", s)
+
+    s = re.sub(r"\s*<\s*", "<", s)
+    s = re.sub(r"\s+>", ">", s)
+    s = re.sub(r"\s+>>", ">>", s)
+    s = re.sub(r"\s*,\s*", ", ", s)
+    s = re.sub(r"\(\s*", "(", s)
+    s = re.sub(r"\s+\)", ")", s)
+
+    s = re.sub(r"\s*&&", " __RREF__", s)
+    s = re.sub(r"\s*&", " &", s)
+    s = s.replace("__RREF__", "&&")
+    s = re.sub(r"\s*\*", " *", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def _type_from_tokens(cursor) -> str:
     """Extract parameter type spelling from source tokens.
 
@@ -70,14 +95,16 @@ def _type_from_tokens(cursor) -> str:
     name = cursor.spelling
     tokens = list(cursor.get_tokens())
     if not name or not tokens:
-        return cursor.type.spelling
+        return _normalize_type_spelling(cursor.type.spelling)
     for i, tok in enumerate(tokens):
         if tok.spelling == name:
             if i == 0:
-                return cursor.type.spelling
+                return _normalize_type_spelling(cursor.type.spelling)
             raw = " ".join(t.spelling for t in tokens[:i])
-            return re.sub(r"\s*::\s*", "::", raw).strip() or cursor.type.spelling
-    return cursor.type.spelling
+            return _normalize_type_spelling(raw) or _normalize_type_spelling(
+                cursor.type.spelling
+            )
+    return _normalize_type_spelling(cursor.type.spelling)
 
 
 def _param_types_from_fn_tokens(cursor) -> List[str]:
@@ -118,7 +145,7 @@ def _param_types_from_fn_tokens(cursor) -> List[str]:
             if depth_paren == 0 and depth_angle == 0:
                 if current:
                     raw = " ".join(current)
-                    normalized = re.sub(r"\s*::\s*", "::", raw).strip()
+                    normalized = _normalize_type_spelling(raw)
                     if normalized:
                         params.append(normalized)
                 break
@@ -126,7 +153,7 @@ def _param_types_from_fn_tokens(cursor) -> List[str]:
             current.append(s)
         elif s == "," and depth_paren == 0 and depth_angle == 0:
             raw = " ".join(current)
-            normalized = re.sub(r"\s*::\s*", "::", raw).strip()
+            normalized = _normalize_type_spelling(raw)
             if normalized:
                 params.append(normalized)
             current = []
