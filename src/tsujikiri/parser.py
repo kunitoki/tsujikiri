@@ -235,6 +235,15 @@ def _get_attributes(cursor) -> List[str]:
     before = lines[start_line - 1][:start_col - 1]
     attrs.extend(_collect_attr_blocks(before))
 
+    # clang 21+ may extend the cursor extent to include an attribute-only line
+    # before the declaration, making start_line the attribute line and start_col
+    # point past the "[[". In that case "before" misses the "[["; scan the full
+    # start line when it contains "[[" that "before" did not capture.
+    full_start = lines[start_line - 1]
+    if "[[" in full_start and "[[" not in before:
+        if not any(c in full_start for c in (";", "{", "}")):
+            attrs.extend(_collect_attr_blocks(full_start))
+
     # Text after the cursor end on the same line (trailing attr)
     after = lines[end_line - 1][end_col - 1:]
     attrs.extend(_collect_attr_blocks(after))
