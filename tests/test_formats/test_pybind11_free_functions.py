@@ -14,6 +14,7 @@ from tsujikiri.tir import TIRFunction, TIRModule, TIRParameter
 def pybind11_output_config():
     from tsujikiri.configurations import load_output_config
     from tsujikiri.formats import resolve_format_path
+
     return load_output_config(resolve_format_path("pybind11"))
 
 

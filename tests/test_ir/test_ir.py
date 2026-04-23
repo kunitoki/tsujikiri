@@ -49,6 +49,7 @@ from tsujikiri.tir import (
 # IR* pure data layer tests (clang-only fields)
 # ---------------------------------------------------------------------------
 
+
 class TestIRParameterPure:
     def test_basic(self):
         p = IRParameter(name="x", type_spelling="int")
@@ -86,7 +87,10 @@ class TestIRMethodPure:
 
     def test_with_params(self):
         m = IRMethod(
-            name="add", spelling="add", qualified_name="C::add", return_type="int",
+            name="add",
+            spelling="add",
+            qualified_name="C::add",
+            return_type="int",
             parameters=[IRParameter("a", "int"), IRParameter("b", "int")],
             is_overload=True,
         )
@@ -136,7 +140,8 @@ class TestIREnumPure:
 
     def test_with_values(self):
         e = IREnum(
-            name="Color", qualified_name="ns::Color",
+            name="Color",
+            qualified_name="ns::Color",
             values=[IREnumValue("Red", 0), IREnumValue("Green", 1)],
         )
         assert len(e.values) == 2
@@ -163,25 +168,28 @@ class TestIRClassPure:
         assert c.has_deleted_move_constructor is False
 
     def test_with_base(self):
-        c = IRClass(name="Circle", qualified_name="ns::Circle", namespace="ns",
-                    bases=[IRBase("Shape")])
+        c = IRClass(name="Circle", qualified_name="ns::Circle", namespace="ns", bases=[IRBase("Shape")])
         assert len(c.bases) == 1
         assert c.bases[0].qualified_name == "Shape"
 
     def test_base_access_specifiers(self):
-        c = IRClass(name="D", qualified_name="ns::D", namespace="ns", bases=[
-            IRBase("ns::A", "public"),
-            IRBase("ns::B", "protected"),
-            IRBase("ns::C", "private"),
-        ])
+        c = IRClass(
+            name="D",
+            qualified_name="ns::D",
+            namespace="ns",
+            bases=[
+                IRBase("ns::A", "public"),
+                IRBase("ns::B", "protected"),
+                IRBase("ns::C", "private"),
+            ],
+        )
         accesses = [b.access for b in c.bases]
         assert accesses == ["public", "protected", "private"]
 
 
 class TestIRFunctionPure:
     def test_defaults(self):
-        f = IRFunction(name="compute", qualified_name="ns::compute",
-                       namespace="ns", return_type="double")
+        f = IRFunction(name="compute", qualified_name="ns::compute", namespace="ns", return_type="double")
         assert f.name == "compute"
         assert f.return_type == "double"
         assert f.is_overload is False
@@ -224,10 +232,8 @@ class TestMergeModules:
         cls_b = IRClass(name="B", qualified_name="ns::B", namespace="ns")
         fn = IRFunction(name="f", qualified_name="ns::f", namespace="ns", return_type="void")
         en = IREnum(name="E", qualified_name="ns::E")
-        m1 = IRModule(name="mod", namespaces=["ns"], classes=[cls_a], enums=[en],
-                      class_by_name={"A": cls_a})
-        m2 = IRModule(name="mod", namespaces=["ns"], classes=[cls_b], functions=[fn],
-                      class_by_name={"B": cls_b})
+        m1 = IRModule(name="mod", namespaces=["ns"], classes=[cls_a], enums=[en], class_by_name={"A": cls_a})
+        m2 = IRModule(name="mod", namespaces=["ns"], classes=[cls_b], functions=[fn], class_by_name={"B": cls_b})
         merged = merge_modules([m1, m2])
         assert merged.name == "mod"
         assert len(merged.classes) == 2
@@ -250,6 +256,7 @@ class TestMergeModules:
 # ---------------------------------------------------------------------------
 # TIR* augmented layer tests
 # ---------------------------------------------------------------------------
+
 
 class TestTIRParameter:
     def test_basic(self):
@@ -324,13 +331,15 @@ class TestTIRMethod:
         assert m.binding_name == "getVal"
 
     def test_doc(self):
-        m = TIRMethod(name="foo", spelling="foo", qualified_name="C::foo", return_type="void",
-                      doc="Returns nothing")
+        m = TIRMethod(name="foo", spelling="foo", qualified_name="C::foo", return_type="void", doc="Returns nothing")
         assert m.doc == "Returns nothing"
 
     def test_with_params(self):
         m = TIRMethod(
-            name="add", spelling="add", qualified_name="C::add", return_type="int",
+            name="add",
+            spelling="add",
+            qualified_name="C::add",
+            return_type="int",
             parameters=[TIRParameter("a", "int"), TIRParameter("b", "int")],
             is_overload=True,
         )
@@ -451,7 +460,8 @@ class TestTIREnum:
 
     def test_with_values(self):
         e = TIREnum(
-            name="Color", qualified_name="ns::Color",
+            name="Color",
+            qualified_name="ns::Color",
             values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)],
         )
         assert len(e.values) == 2
@@ -501,8 +511,7 @@ class TestTIRClass:
 
 class TestTIRFunction:
     def test_defaults(self):
-        f = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="double")
+        f = TIRFunction(name="compute", qualified_name="ns::compute", namespace="ns", return_type="double")
         assert f.emit is True
         assert f.is_overload is False
         assert f.rename is None
@@ -515,20 +524,23 @@ class TestTIRFunction:
         assert f.origin is None
 
     def test_binding_name(self):
-        f = TIRFunction(name="computeArea", qualified_name="ns::computeArea",
-                        namespace="ns", return_type="float")
+        f = TIRFunction(name="computeArea", qualified_name="ns::computeArea", namespace="ns", return_type="float")
         assert f.binding_name == "computeArea"
         f.rename = "compute_area"
         assert f.binding_name == "compute_area"
 
     def test_binding_name_empty_rename_falls_back_to_name(self):
-        f = TIRFunction(name="computeArea", qualified_name="ns::computeArea",
-                        namespace="ns", return_type="float", rename="")
+        f = TIRFunction(
+            name="computeArea", qualified_name="ns::computeArea", namespace="ns", return_type="float", rename=""
+        )
         assert f.binding_name == "computeArea"
 
     def test_extended_fields(self):
         f = TIRFunction(
-            name="compute", qualified_name="ns::compute", namespace="ns", return_type="double",
+            name="compute",
+            qualified_name="ns::compute",
+            namespace="ns",
+            return_type="double",
             return_type_override="float",
             return_ownership="cpp",
             allow_thread=True,
@@ -569,6 +581,7 @@ class TestTIRUsingDeclaration:
 # ---------------------------------------------------------------------------
 # Upgrade function tests
 # ---------------------------------------------------------------------------
+
 
 class TestUpgradeParameter:
     def test_upgrades_ir_parameter(self):
@@ -640,20 +653,21 @@ class TestUpgradeMethod:
         assert tir.origin is ir
 
     def test_protected_method_suppressed(self):
-        ir = IRMethod(name="bar", spelling="bar", qualified_name="C::bar",
-                      return_type="void", access="protected")
+        ir = IRMethod(name="bar", spelling="bar", qualified_name="C::bar", return_type="void", access="protected")
         tir = upgrade_method(ir)
         assert tir.emit is False
 
     def test_public_method_emitted(self):
-        ir = IRMethod(name="foo", spelling="foo", qualified_name="C::foo",
-                      return_type="void", access="public")
+        ir = IRMethod(name="foo", spelling="foo", qualified_name="C::foo", return_type="void", access="public")
         tir = upgrade_method(ir)
         assert tir.emit is True
 
     def test_parameters_upgraded(self):
         ir = IRMethod(
-            name="add", spelling="add", qualified_name="C::add", return_type="int",
+            name="add",
+            spelling="add",
+            qualified_name="C::add",
+            return_type="int",
             parameters=[IRParameter("a", "int"), IRParameter("b", "int")],
         )
         tir = upgrade_method(ir)
@@ -662,7 +676,10 @@ class TestUpgradeMethod:
 
     def test_parameter_indices_set(self):
         ir = IRMethod(
-            name="add", spelling="add", qualified_name="C::add", return_type="int",
+            name="add",
+            spelling="add",
+            qualified_name="C::add",
+            return_type="int",
             parameters=[IRParameter("a", "int"), IRParameter("b", "int"), IRParameter("c", "int")],
         )
         tir = upgrade_method(ir)
@@ -670,7 +687,10 @@ class TestUpgradeMethod:
 
     def test_unnamed_parameters_forced_in_method(self):
         ir = IRMethod(
-            name="foo", spelling="foo", qualified_name="C::foo", return_type="void",
+            name="foo",
+            spelling="foo",
+            qualified_name="C::foo",
+            return_type="void",
             parameters=[IRParameter("", "int"), IRParameter("", "float")],
         )
         tir = upgrade_method(ir)
@@ -725,7 +745,8 @@ class TestUpgradeEnumValue:
 class TestUpgradeEnum:
     def test_upgrades_ir_enum(self):
         ir = IREnum(
-            name="Color", qualified_name="ns::Color",
+            name="Color",
+            qualified_name="ns::Color",
             values=[IREnumValue("Red", 0), IREnumValue("Green", 1)],
         )
         tir = upgrade_enum(ir)
@@ -740,6 +761,7 @@ class TestUpgradeEnum:
 class TestUpgradeUsingDeclaration:
     def test_upgrades_ir_using_declaration(self):
         from tsujikiri.ir import IRUsingDeclaration
+
         ir = IRUsingDeclaration(member_name="foo", base_qualified_name="ns::Base")
         tir = upgrade_using_declaration(ir)
         assert isinstance(tir, TIRUsingDeclaration)
@@ -751,7 +773,9 @@ class TestUpgradeUsingDeclaration:
 class TestUpgradeClass:
     def test_upgrades_ir_class(self):
         ir = IRClass(
-            name="MyClass", qualified_name="ns::MyClass", namespace="ns",
+            name="MyClass",
+            qualified_name="ns::MyClass",
+            namespace="ns",
             variable_name="myVar",
         )
         tir = upgrade_class(ir)
@@ -765,7 +789,9 @@ class TestUpgradeClass:
 
     def test_deleted_copy_sets_copyable_false(self):
         ir = IRClass(
-            name="Foo", qualified_name="ns::Foo", namespace="ns",
+            name="Foo",
+            qualified_name="ns::Foo",
+            namespace="ns",
             has_deleted_copy_constructor=True,
         )
         tir = upgrade_class(ir)
@@ -773,7 +799,9 @@ class TestUpgradeClass:
 
     def test_deleted_move_sets_movable_false(self):
         ir = IRClass(
-            name="Foo", qualified_name="ns::Foo", namespace="ns",
+            name="Foo",
+            qualified_name="ns::Foo",
+            namespace="ns",
             has_deleted_move_constructor=True,
         )
         tir = upgrade_class(ir)
@@ -781,7 +809,9 @@ class TestUpgradeClass:
 
     def test_both_deleted_sets_both_false(self):
         ir = IRClass(
-            name="Foo", qualified_name="ns::Foo", namespace="ns",
+            name="Foo",
+            qualified_name="ns::Foo",
+            namespace="ns",
             has_deleted_copy_constructor=True,
             has_deleted_move_constructor=True,
         )
@@ -792,7 +822,9 @@ class TestUpgradeClass:
     def test_nested_members_upgraded(self):
         inner = IRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
         ir = IRClass(
-            name="Outer", qualified_name="ns::Outer", namespace="ns",
+            name="Outer",
+            qualified_name="ns::Outer",
+            namespace="ns",
             methods=[IRMethod(name="f", spelling="f", qualified_name="Outer::f", return_type="void")],
             fields=[IRField(name="x", type_spelling="int")],
             constructors=[IRConstructor()],
@@ -814,8 +846,10 @@ class TestUpgradeClass:
 class TestUpgradeFunction:
     def test_upgrades_ir_function(self):
         ir = IRFunction(
-            name="compute", qualified_name="ns::compute",
-            namespace="ns", return_type="double",
+            name="compute",
+            qualified_name="ns::compute",
+            namespace="ns",
+            return_type="double",
             parameters=[IRParameter("x", "double")],
         )
         tir = upgrade_function(ir)
@@ -828,7 +862,10 @@ class TestUpgradeFunction:
 
     def test_parameter_indices_set(self):
         ir = IRFunction(
-            name="f", qualified_name="ns::f", namespace="ns", return_type="void",
+            name="f",
+            qualified_name="ns::f",
+            namespace="ns",
+            return_type="void",
             parameters=[IRParameter("a", "int"), IRParameter("b", "int"), IRParameter("c", "int")],
         )
         tir = upgrade_function(ir)
@@ -836,7 +873,10 @@ class TestUpgradeFunction:
 
     def test_unnamed_parameters_forced_in_function(self):
         ir = IRFunction(
-            name="f", qualified_name="ns::f", namespace="ns", return_type="void",
+            name="f",
+            qualified_name="ns::f",
+            namespace="ns",
+            return_type="void",
             parameters=[IRParameter("", "int"), IRParameter("", "float")],
         )
         tir = upgrade_function(ir)
@@ -857,8 +897,11 @@ class TestUpgradeModule:
         ir_fn = IRFunction(name="f", qualified_name="ns::f", namespace="ns", return_type="void")
         ir_en = IREnum(name="E", qualified_name="ns::E")
         ir = IRModule(
-            name="mod", namespaces=["ns"],
-            classes=[ir_cls], functions=[ir_fn], enums=[ir_en],
+            name="mod",
+            namespaces=["ns"],
+            classes=[ir_cls],
+            functions=[ir_fn],
+            enums=[ir_en],
             class_by_name={"A": ir_cls},
         )
         tir = upgrade_module(ir)
@@ -879,6 +922,7 @@ class TestMergeTIRModules:
 
     def test_merges_multiple_modules(self):
         from tsujikiri.ir import IRExceptionRegistration, IRCodeInjection
+
         cls_a = TIRClass(name="A", qualified_name="ns::A", namespace="ns")
         cls_b = TIRClass(name="B", qualified_name="ns::B", namespace="ns")
         fn = TIRFunction(name="f", qualified_name="ns::f", namespace="ns", return_type="void")

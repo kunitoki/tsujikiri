@@ -33,6 +33,7 @@ def _load_module(config_file: Path, module_name: str):
 # combined (original single-namespace, single-header)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def compilation_input_config():
     return load_input_config(HERE / "combined" / "combined.input.yml")
@@ -55,6 +56,7 @@ def compiled_module(compilation_input_config):
 # geo: multi-header, single namespace, Circle/Rectangle inherit from Shape
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def geo_module():
     return _load_module(HERE / "geo" / "geo.input.yml", "geo")
@@ -63,6 +65,7 @@ def geo_module():
 # ---------------------------------------------------------------------------
 # engine: multi-header, two namespaces (math + engine), cross-namespace types
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def engine_module():
@@ -87,6 +90,7 @@ def engine_pybind11_generation():
 # audio: single header, 3-level hierarchy (AudioNode → AudioEffect → Reverb/Delay)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def audio_module():
     return _load_module(HERE / "audio" / "audio.input.yml", "audio")
@@ -95,6 +99,7 @@ def audio_module():
 # ---------------------------------------------------------------------------
 # samplebinding: virtual methods, shared_ptr holder, keep_alive ownership
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def samplebinding_module():
@@ -105,6 +110,7 @@ def samplebinding_module():
 # typesystem: primitive_types mapping, custom_types unlocking, OSType/int64_t
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def typesystem_module():
     return _load_module(HERE / "typesystem" / "typesystem.input.yml", "typesystem")
@@ -113,6 +119,7 @@ def typesystem_module():
 # ---------------------------------------------------------------------------
 # transforms: full exercise of every transform stage
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def transforms_module():

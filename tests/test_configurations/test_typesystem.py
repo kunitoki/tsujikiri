@@ -36,10 +36,10 @@ class TestPrimitiveTypes:
             "source:\n  path: test.hpp\n"
             "typesystem:\n"
             "  primitive_types:\n"
-            "    - cpp_name: \"int64_t\"\n"
-            "      target_name: \"int\"\n"
-            "    - cpp_name: \"double\"\n"
-            "      target_name: \"float\"\n"
+            '    - cpp_name: "int64_t"\n'
+            '      target_name: "int"\n'
+            '    - cpp_name: "double"\n'
+            '      target_name: "float"\n'
         )
         config = load_input_config(cfg)
         assert len(config.typesystem.primitive_types) == 2
@@ -54,8 +54,8 @@ class TestTypedefTypes:
             "source:\n  path: test.hpp\n"
             "typesystem:\n"
             "  typedef_types:\n"
-            "    - cpp_name: \"MyString\"\n"
-            "      source: \"std::string\"\n"
+            '    - cpp_name: "MyString"\n'
+            '      source: "std::string"\n'
         )
         config = load_input_config(cfg)
         assert len(config.typesystem.typedef_types) == 1
@@ -69,8 +69,8 @@ class TestCustomTypes:
             "source:\n  path: test.hpp\n"
             "typesystem:\n"
             "  custom_types:\n"
-            "    - cpp_name: \"QObject\"\n"
-            "    - cpp_name: \"PyObject\"\n"
+            '    - cpp_name: "QObject"\n'
+            '    - cpp_name: "PyObject"\n'
         )
         config = load_input_config(cfg)
         assert len(config.typesystem.custom_types) == 2
@@ -85,10 +85,10 @@ class TestContainerTypes:
             "source:\n  path: test.hpp\n"
             "typesystem:\n"
             "  container_types:\n"
-            "    - cpp_name: \"std::vector\"\n"
-            "      kind: \"list\"\n"
-            "    - cpp_name: \"std::map\"\n"
-            "      kind: \"map\"\n"
+            '    - cpp_name: "std::vector"\n'
+            '      kind: "list"\n'
+            '    - cpp_name: "std::map"\n'
+            '      kind: "map"\n'
         )
         config = load_input_config(cfg)
         assert len(config.typesystem.container_types) == 2
@@ -103,11 +103,11 @@ class TestSmartPointerTypes:
             "source:\n  path: test.hpp\n"
             "typesystem:\n"
             "  smart_pointer_types:\n"
-            "    - cpp_name: \"std::shared_ptr\"\n"
-            "      kind: \"shared\"\n"
-            "      getter: \"get\"\n"
-            "    - cpp_name: \"std::unique_ptr\"\n"
-            "      kind: \"unique\"\n"
+            '    - cpp_name: "std::shared_ptr"\n'
+            '      kind: "shared"\n'
+            '      getter: "get"\n'
+            '    - cpp_name: "std::unique_ptr"\n'
+            '      kind: "unique"\n'
         )
         config = load_input_config(cfg)
         assert len(config.typesystem.smart_pointer_types) == 2
@@ -122,12 +122,7 @@ class TestSmartPointerTypes:
 class TestLoadTypesystems:
     def test_load_typesystems_entry_parsed(self, tmp_path: Path) -> None:
         cfg = tmp_path / "test.input.yml"
-        cfg.write_text(
-            "source:\n  path: test.hpp\n"
-            "typesystem:\n"
-            "  load_typesystems:\n"
-            "    - path: \"other.input.yml\"\n"
-        )
+        cfg.write_text('source:\n  path: test.hpp\ntypesystem:\n  load_typesystems:\n    - path: "other.input.yml"\n')
         config = load_input_config(cfg)
         assert len(config.typesystem.load_typesystems) == 1
         assert "other.input.yml" in config.typesystem.load_typesystems[0].path
@@ -138,18 +133,18 @@ class TestLoadTypesystems:
             "source:\n  path: base.hpp\n"
             "typesystem:\n"
             "  primitive_types:\n"
-            "    - cpp_name: \"int64_t\"\n"
-            "      target_name: \"int\"\n"
+            '    - cpp_name: "int64_t"\n'
+            '      target_name: "int"\n'
             "  custom_types:\n"
-            "    - cpp_name: \"QObject\"\n"
+            '    - cpp_name: "QObject"\n'
         )
         child = tmp_path / "child.input.yml"
         child.write_text(
             "source:\n  path: child.hpp\n"
             "typesystem:\n"
             "  primitive_types:\n"
-            "    - cpp_name: \"float\"\n"
-            "      target_name: \"float\"\n"
+            '    - cpp_name: "float"\n'
+            '      target_name: "float"\n'
             "  load_typesystems:\n"
             "    - path: base.input.yml\n"
         )
@@ -160,6 +155,7 @@ class TestLoadTypesystems:
         custom_names = [c.cpp_name for c in config.typesystem.custom_types]
         assert "QObject" in custom_names
 
+
 class TestDeclaredFunctions:
     def test_declared_functions_parsed(self, tmp_path: Path) -> None:
         cfg = tmp_path / "test.input.yml"
@@ -167,12 +163,12 @@ class TestDeclaredFunctions:
             "source:\n  path: test.hpp\n"
             "typesystem:\n"
             "  declared_functions:\n"
-            "    - name: \"myWrapper\"\n"
-            "      namespace: \"mylib\"\n"
-            "      return_type: \"void\"\n"
+            '    - name: "myWrapper"\n'
+            '      namespace: "mylib"\n'
+            '      return_type: "void"\n'
             "      parameters:\n"
-            "        - name: \"x\"\n"
-            "          type: \"int\"\n"
+            '        - name: "x"\n'
+            '          type: "int"\n'
         )
         config = load_input_config(cfg)
         assert len(config.typesystem.declared_functions) == 1
@@ -185,12 +181,7 @@ class TestDeclaredFunctions:
 
     def test_declared_functions_defaults(self, tmp_path: Path) -> None:
         cfg = tmp_path / "test.input.yml"
-        cfg.write_text(
-            "source:\n  path: test.hpp\n"
-            "typesystem:\n"
-            "  declared_functions:\n"
-            "    - name: \"bare\"\n"
-        )
+        cfg.write_text('source:\n  path: test.hpp\ntypesystem:\n  declared_functions:\n    - name: "bare"\n')
         config = load_input_config(cfg)
         fn = config.typesystem.declared_functions[0]
         assert fn.namespace == ""
@@ -206,16 +197,16 @@ class TestLoadTypesystemsComposition:
             "source:\n  path: base.hpp\n"
             "typesystem:\n"
             "  primitive_types:\n"
-            "    - cpp_name: \"int64_t\"\n"
-            "      target_name: \"int\"\n"
+            '    - cpp_name: "int64_t"\n'
+            '      target_name: "int"\n'
         )
         child = tmp_path / "child.input.yml"
         child.write_text(
             "source:\n  path: child.hpp\n"
             "typesystem:\n"
             "  primitive_types:\n"
-            "    - cpp_name: \"int64_t\"\n"
-            "      target_name: \"long\"\n"
+            '    - cpp_name: "int64_t"\n'
+            '      target_name: "long"\n'
             "  load_typesystems:\n"
             "    - path: base.input.yml\n"
         )
@@ -225,9 +216,7 @@ class TestLoadTypesystemsComposition:
 
 
 class TestLoadTypesystemNoTypesystemSection:
-    def test_load_typesystem_file_without_typesystem_key_is_silently_ignored(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_typesystem_file_without_typesystem_key_is_silently_ignored(self, tmp_path: Path) -> None:
         """configurations.py branch 480->475: loaded file has no 'typesystem' key → silently skipped."""
         base = tmp_path / "base.input.yml"
         base.write_text("source:\n  path: base.hpp\n")  # no typesystem section
@@ -236,8 +225,8 @@ class TestLoadTypesystemNoTypesystemSection:
             "source:\n  path: child.hpp\n"
             "typesystem:\n"
             "  primitive_types:\n"
-            "    - cpp_name: \"int\"\n"
-            "      target_name: \"int\"\n"
+            '    - cpp_name: "int"\n'
+            '      target_name: "int"\n'
             "  load_typesystems:\n"
             "    - path: base.input.yml\n"
         )
@@ -254,9 +243,9 @@ class TestConversionRules:
             "source:\n  path: test.hpp\n"
             "typesystem:\n"
             "  conversion_rules:\n"
-            "    - cpp_type: \"MyColor\"\n"
-            "      native_to_target: \"PyLong_FromLong(static_cast<long>(%%in))\"\n"
-            "      target_to_native: \"static_cast<MyColor>(PyLong_AsLong(%%in))\"\n"
+            '    - cpp_type: "MyColor"\n'
+            '      native_to_target: "PyLong_FromLong(static_cast<long>(%%in))"\n'
+            '      target_to_native: "static_cast<MyColor>(PyLong_AsLong(%%in))"\n'
         )
         config = load_input_config(cfg)
         assert len(config.typesystem.conversion_rules) == 1
@@ -277,12 +266,12 @@ class TestConversionRules:
             "source:\n  path: test.hpp\n"
             "typesystem:\n"
             "  conversion_rules:\n"
-            "    - cpp_type: \"MyColor\"\n"
-            "      native_to_target: \"convert_color(%%in)\"\n"
-            "      target_to_native: \"from_color(%%in)\"\n"
-            "    - cpp_type: \"MyRect\"\n"
-            "      native_to_target: \"convert_rect(%%in)\"\n"
-            "      target_to_native: \"from_rect(%%in)\"\n"
+            '    - cpp_type: "MyColor"\n'
+            '      native_to_target: "convert_color(%%in)"\n'
+            '      target_to_native: "from_color(%%in)"\n'
+            '    - cpp_type: "MyRect"\n'
+            '      native_to_target: "convert_rect(%%in)"\n'
+            '      target_to_native: "from_rect(%%in)"\n'
         )
         config = load_input_config(cfg)
         assert len(config.typesystem.conversion_rules) == 2

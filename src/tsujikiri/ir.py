@@ -14,7 +14,8 @@ from typing import Dict, List, Optional
 @dataclass
 class IRCodeInjection:
     """A snippet of code to be injected at a specific position in the output."""
-    position: str   # "beginning", "end", or "declaration" (inside class/trampoline body)
+
+    position: str  # "beginning", "end", or "declaration" (inside class/trampoline body)
     code: str
 
 
@@ -22,21 +23,21 @@ class IRCodeInjection:
 class IRParameter:
     name: str
     type_spelling: str
-    default_value: Optional[str] = None      # raw C++ default extracted by parser
+    default_value: Optional[str] = None  # raw C++ default extracted by parser
     attributes: List[str] = field(default_factory=list)  # raw [[...]] attribute contents
 
 
 @dataclass
 class IRBase:
     qualified_name: str
-    access: str = "public"   # "public", "protected", or "private"
+    access: str = "public"  # "public", "protected", or "private"
 
 
 @dataclass
 class IRMethod:
     name: str
-    spelling: str           # original C++ name (for &ClassName::spelling)
-    qualified_name: str     # ClassName::spelling
+    spelling: str  # original C++ name (for &ClassName::spelling)
+    qualified_name: str  # ClassName::spelling
     return_type: str
     parameters: List[IRParameter] = field(default_factory=list)
     is_static: bool = False
@@ -50,7 +51,7 @@ class IRMethod:
     operator_type: Optional[str] = None
     is_conversion_operator: bool = False
     conversion_target_type: Optional[str] = None
-    access: str = "public"    # "public", "protected", or "public_via_trampoline"
+    access: str = "public"  # "public", "protected", or "public_via_trampoline"
     source_file: Optional[str] = None
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
@@ -101,6 +102,7 @@ class IREnum:
 @dataclass
 class IRProperty:
     """A synthetic property binding backed by getter/setter methods."""
+
     name: str
     getter: str
     setter: Optional[str] = None
@@ -112,6 +114,7 @@ class IRProperty:
 @dataclass
 class IRUsingDeclaration:
     """A C++ using declaration that re-exports an inherited member (e.g. using Base::method)."""
+
     member_name: str
     base_qualified_name: str
     access: str = "public"
@@ -144,6 +147,7 @@ class IRClass:
 @dataclass
 class IRExceptionRegistration:
     """Registration of a C++ exception type as a target exception class."""
+
     cpp_exception_type: str
     target_exception_name: str
     base_target_exception: str = "Exception"
@@ -169,6 +173,7 @@ class IRFunction:
 @dataclass
 class IRModule:
     """Root IR object for a parsed translation unit (clang data only)."""
+
     name: str
     namespaces: List[str] = field(default_factory=list)
     classes: List[IRClass] = field(default_factory=list)

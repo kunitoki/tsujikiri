@@ -9,8 +9,7 @@ from tsujikiri.transforms import build_pipeline_from_config
 
 def _make_module_with_overloads() -> TIRModule:
     m1 = TIRMethod(name="foo", spelling="foo", qualified_name="Cls::foo", return_type="void")
-    m2 = TIRMethod(name="foo", spelling="foo", qualified_name="Cls::foo", return_type="int",
-                  is_overload=True)
+    m2 = TIRMethod(name="foo", spelling="foo", qualified_name="Cls::foo", return_type="int", is_overload=True)
     m1.is_overload = True
     cls = TIRClass(name="Cls", qualified_name="Cls", namespace="")
     cls.methods = [m1, m2]
@@ -22,18 +21,34 @@ def _make_module_with_overloads() -> TIRModule:
 class TestOverloadPriorityStage:
     def test_sets_priority_on_matching_overload(self) -> None:
         mod = _make_module_with_overloads()
-        specs = [TransformSpec(stage="overload_priority", kwargs={
-            "class": "Cls", "method": "foo", "signature": "int foo()", "priority": 0,
-        })]
+        specs = [
+            TransformSpec(
+                stage="overload_priority",
+                kwargs={
+                    "class": "Cls",
+                    "method": "foo",
+                    "signature": "int foo()",
+                    "priority": 0,
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(mod)
         m = next(m for m in mod.classes[0].methods if m.return_type == "int")
         assert m.overload_priority == 0
 
     def test_non_matching_overload_unchanged(self) -> None:
         mod = _make_module_with_overloads()
-        specs = [TransformSpec(stage="overload_priority", kwargs={
-            "class": "Cls", "method": "foo", "signature": "int foo()", "priority": 0,
-        })]
+        specs = [
+            TransformSpec(
+                stage="overload_priority",
+                kwargs={
+                    "class": "Cls",
+                    "method": "foo",
+                    "signature": "int foo()",
+                    "priority": 0,
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(mod)
         m = next(m for m in mod.classes[0].methods if m.return_type == "void")
         assert m.overload_priority is None
@@ -54,9 +69,16 @@ class TestExceptionPolicyStage:
         cls.methods = [m]
         mod = TIRModule(name="test")
         mod.classes = [cls]
-        specs = [TransformSpec(stage="exception_policy", kwargs={
-            "class": "Cls", "method": "bar", "policy": "pass_through",
-        })]
+        specs = [
+            TransformSpec(
+                stage="exception_policy",
+                kwargs={
+                    "class": "Cls",
+                    "method": "bar",
+                    "policy": "pass_through",
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(mod)
         assert mod.classes[0].methods[0].exception_policy == "pass_through"
 
@@ -64,9 +86,15 @@ class TestExceptionPolicyStage:
         fn = TIRFunction(name="risky", qualified_name="risky", namespace="", return_type="void")
         mod = TIRModule(name="test")
         mod.functions = [fn]
-        specs = [TransformSpec(stage="exception_policy", kwargs={
-            "function": "risky", "policy": "abort",
-        })]
+        specs = [
+            TransformSpec(
+                stage="exception_policy",
+                kwargs={
+                    "function": "risky",
+                    "policy": "abort",
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(mod)
         assert mod.functions[0].exception_policy == "abort"
 
@@ -79,9 +107,15 @@ class TestExceptionPolicyStage:
         cls2.methods = [m2]
         mod = TIRModule(name="test")
         mod.classes = [cls1, cls2]
-        specs = [TransformSpec(stage="exception_policy", kwargs={
-            "method": "*", "policy": "none",
-        })]
+        specs = [
+            TransformSpec(
+                stage="exception_policy",
+                kwargs={
+                    "method": "*",
+                    "policy": "none",
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(mod)
         assert cls1.methods[0].exception_policy == "none"
         assert cls2.methods[0].exception_policy == "none"
@@ -98,9 +132,15 @@ class TestExceptionPolicyStage:
 class TestUnmatchedStages:
     def test_unmatched_suppress_method_reported(self) -> None:
         mod = TIRModule(name="test")
-        specs = [TransformSpec(stage="suppress_method", kwargs={
-            "class": "NonExistentClass", "pattern": "foo",
-        })]
+        specs = [
+            TransformSpec(
+                stage="suppress_method",
+                kwargs={
+                    "class": "NonExistentClass",
+                    "pattern": "foo",
+                },
+            )
+        ]
         pipeline = build_pipeline_from_config(specs)
         pipeline.run(mod)
         unmatched = pipeline.unmatched_stages()
@@ -113,9 +153,15 @@ class TestUnmatchedStages:
         cls.methods = [m]
         mod = TIRModule(name="test")
         mod.classes = [cls]
-        specs = [TransformSpec(stage="suppress_method", kwargs={
-            "class": "Cls", "pattern": "foo",
-        })]
+        specs = [
+            TransformSpec(
+                stage="suppress_method",
+                kwargs={
+                    "class": "Cls",
+                    "pattern": "foo",
+                },
+            )
+        ]
         pipeline = build_pipeline_from_config(specs)
         pipeline.run(mod)
         unmatched = pipeline.unmatched_stages()
@@ -153,29 +199,43 @@ class TestOverloadPriorityBranches:
 
     def test_non_matching_class_skipped(self) -> None:
         """Line 515: class_name filter doesn't match → continue taken."""
-        m = TIRMethod(name="foo", spelling="foo", qualified_name="Cls::foo",
-                     return_type="void", is_overload=True)
+        m = TIRMethod(name="foo", spelling="foo", qualified_name="Cls::foo", return_type="void", is_overload=True)
         cls = TIRClass(name="Cls", qualified_name="Cls", namespace="")
         cls.methods = [m]
         mod = TIRModule(name="test")
         mod.classes = [cls]
-        specs = [TransformSpec(stage="overload_priority", kwargs={
-            "class": "OtherClass", "method": "foo", "signature": "void foo()", "priority": 0,
-        })]
+        specs = [
+            TransformSpec(
+                stage="overload_priority",
+                kwargs={
+                    "class": "OtherClass",
+                    "method": "foo",
+                    "signature": "void foo()",
+                    "priority": 0,
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(mod)
         assert m.overload_priority is None
 
     def test_non_matching_method_name_skipped(self) -> None:
         """Line 518: method name doesn't match → continue taken."""
-        m = TIRMethod(name="foo", spelling="foo", qualified_name="Cls::foo",
-                     return_type="void", is_overload=True)
+        m = TIRMethod(name="foo", spelling="foo", qualified_name="Cls::foo", return_type="void", is_overload=True)
         cls = TIRClass(name="Cls", qualified_name="Cls", namespace="")
         cls.methods = [m]
         mod = TIRModule(name="test")
         mod.classes = [cls]
-        specs = [TransformSpec(stage="overload_priority", kwargs={
-            "class": "Cls", "method": "bar", "signature": "void bar()", "priority": 1,
-        })]
+        specs = [
+            TransformSpec(
+                stage="overload_priority",
+                kwargs={
+                    "class": "Cls",
+                    "method": "bar",
+                    "signature": "void bar()",
+                    "priority": 1,
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(mod)
         assert m.overload_priority is None
 
@@ -186,37 +246,50 @@ class TestExceptionPolicyBranches:
     def test_invalid_policy_raises(self) -> None:
         """Line 541: invalid policy value raises ValueError."""
         import pytest
+
         with pytest.raises(ValueError, match="exception_policy must be one of"):
             from tsujikiri.transforms import ExceptionPolicyStage
+
             ExceptionPolicyStage(policy="invalid_policy")
 
     def test_non_matching_class_skipped(self) -> None:
         """Line 550: class name filter doesn't match → continue taken."""
-        m = TIRMethod(name="work", spelling="work", qualified_name="Cls::work",
-                     return_type="void")
+        m = TIRMethod(name="work", spelling="work", qualified_name="Cls::work", return_type="void")
         cls = TIRClass(name="Cls", qualified_name="Cls", namespace="")
         cls.methods = [m]
         mod = TIRModule(name="test")
         mod.classes = [cls]
-        specs = [TransformSpec(stage="exception_policy", kwargs={
-            "class": "OtherClass", "method": "work", "policy": "abort",
-        })]
+        specs = [
+            TransformSpec(
+                stage="exception_policy",
+                kwargs={
+                    "class": "OtherClass",
+                    "method": "work",
+                    "policy": "abort",
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(mod)
         assert m.exception_policy is None
 
     def test_non_matching_method_loop_continues(self) -> None:
         """Branch 552->551: method name doesn't match → loop continues to next method."""
-        m1 = TIRMethod(name="doWork", spelling="doWork", qualified_name="Cls::doWork",
-                      return_type="void")
-        m2 = TIRMethod(name="otherWork", spelling="otherWork", qualified_name="Cls::otherWork",
-                      return_type="void")
+        m1 = TIRMethod(name="doWork", spelling="doWork", qualified_name="Cls::doWork", return_type="void")
+        m2 = TIRMethod(name="otherWork", spelling="otherWork", qualified_name="Cls::otherWork", return_type="void")
         cls = TIRClass(name="Cls", qualified_name="Cls", namespace="")
         cls.methods = [m1, m2]
         mod = TIRModule(name="test")
         mod.classes = [cls]
-        specs = [TransformSpec(stage="exception_policy", kwargs={
-            "class": "Cls", "method": "doWork", "policy": "pass_through",
-        })]
+        specs = [
+            TransformSpec(
+                stage="exception_policy",
+                kwargs={
+                    "class": "Cls",
+                    "method": "doWork",
+                    "policy": "pass_through",
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(mod)
         assert m1.exception_policy == "pass_through"
         assert m2.exception_policy is None  # m2 didn't match → loop continued past it
@@ -227,9 +300,15 @@ class TestExceptionPolicyBranches:
         fn2 = TIRFunction(name="beta", qualified_name="beta", namespace="", return_type="void")
         mod = TIRModule(name="test")
         mod.functions = [fn1, fn2]
-        specs = [TransformSpec(stage="exception_policy", kwargs={
-            "function": "alpha", "policy": "none",
-        })]
+        specs = [
+            TransformSpec(
+                stage="exception_policy",
+                kwargs={
+                    "function": "alpha",
+                    "policy": "none",
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(mod)
         assert fn1.exception_policy == "none"
         assert fn2.exception_policy is None  # beta didn't match → loop continued past it

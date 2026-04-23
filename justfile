@@ -27,12 +27,12 @@ stubs: sync
 
 # Run code formatters (ruff).
 format: sync
-    uv run ruff format src/tsujikiri/*.py* tests/**/*.py
+    uv run ruff format src/tsujikiri/*.py tests/**/*.py
 
 # Run mypy type checking.
 check: sync format
     uv run mypy
-    uv run ruff check src tests
+    uv run ruff check src/tsujikiri/*.py tests/**/*.py
 
 # Build wheel and source distribution.
 wheel: sync stubs format check

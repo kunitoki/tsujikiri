@@ -26,10 +26,12 @@ from tsujikiri.tir import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def pybind11_output_config():
     from tsujikiri.configurations import load_output_config
     from tsujikiri.formats import resolve_format_path
+
     return load_output_config(resolve_format_path("pybind11"))
 
 
@@ -63,6 +65,7 @@ def _simple_class(
 # Module-level prologue
 # ---------------------------------------------------------------------------
 
+
 class TestPrologue:
     def test_pybind11_module_macro(self, pybind11_output_config):
         mod = TIRModule(name="mymod")
@@ -91,32 +94,33 @@ class TestPrologue:
 # Enum binding
 # ---------------------------------------------------------------------------
 
+
 class TestEnumBinding:
     def test_enum_class(self, pybind11_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color",
-                      values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)])
+        enum = TIREnum(
+            name="Color", qualified_name="ns::Color", values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)]
+        )
         mod = TIRModule(name="m", enums=[enum])
         out = _gen(mod, pybind11_output_config)
         assert 'py::enum_<ns::Color>(m, "Color")' in out
 
     def test_enum_values(self, pybind11_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color",
-                      values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)])
+        enum = TIREnum(
+            name="Color", qualified_name="ns::Color", values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)]
+        )
         mod = TIRModule(name="m", enums=[enum])
         out = _gen(mod, pybind11_output_config)
         assert '.value("Red", ns::Color::Red)' in out
         assert '.value("Green", ns::Color::Green)' in out
 
     def test_export_values(self, pybind11_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color",
-                      values=[TIREnumValue("Red", 0)])
+        enum = TIREnum(name="Color", qualified_name="ns::Color", values=[TIREnumValue("Red", 0)])
         mod = TIRModule(name="m", enums=[enum])
         out = _gen(mod, pybind11_output_config)
         assert ".export_values();" in out
 
     def test_enum_doc(self, pybind11_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color", doc="Color options",
-                      values=[TIREnumValue("Red", 0)])
+        enum = TIREnum(name="Color", qualified_name="ns::Color", doc="Color options", values=[TIREnumValue("Red", 0)])
         mod = TIRModule(name="m", enums=[enum])
         out = _gen(mod, pybind11_output_config)
         assert '"Color options"' in out
@@ -131,8 +135,7 @@ class TestEnumBinding:
     def test_suppressed_enum_value_excluded(self, pybind11_output_config):
         val = TIREnumValue("Reserved", 99)
         val.emit = False
-        enum = TIREnum(name="Color", qualified_name="ns::Color",
-                      values=[TIREnumValue("Red", 0), val])
+        enum = TIREnum(name="Color", qualified_name="ns::Color", values=[TIREnumValue("Red", 0), val])
         mod = TIRModule(name="m", enums=[enum])
         out = _gen(mod, pybind11_output_config)
         assert "Reserved" not in out
@@ -149,49 +152,61 @@ class TestEnumBinding:
 # Free function binding
 # ---------------------------------------------------------------------------
 
+
 class TestFunctionBinding:
     def test_simple_function(self, pybind11_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="double")
+        fn = TIRFunction(name="compute", qualified_name="ns::compute", namespace="ns", return_type="double")
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pybind11_output_config)
         assert 'm.def("compute", &ns::compute)' in out
 
     def test_function_with_arg(self, pybind11_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="double",
-                        parameters=[TIRParameter("x", "double")])
+        fn = TIRFunction(
+            name="compute",
+            qualified_name="ns::compute",
+            namespace="ns",
+            return_type="double",
+            parameters=[TIRParameter("x", "double")],
+        )
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pybind11_output_config)
         assert 'py::arg("x")' in out
 
     def test_function_with_default(self, pybind11_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="double",
-                        parameters=[TIRParameter("x", "double", default_value="1.0")])
+        fn = TIRFunction(
+            name="compute",
+            qualified_name="ns::compute",
+            namespace="ns",
+            return_type="double",
+            parameters=[TIRParameter("x", "double", default_value="1.0")],
+        )
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pybind11_output_config)
         assert 'py::arg("x") = 1.0' in out
 
     def test_function_doc(self, pybind11_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="double", doc="Computes")
+        fn = TIRFunction(
+            name="compute", qualified_name="ns::compute", namespace="ns", return_type="double", doc="Computes"
+        )
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pybind11_output_config)
         assert '"Computes"' in out
 
     def test_function_wrapper_code(self, pybind11_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="double",
-                        wrapper_code="+[]() { return 42.0; }")
+        fn = TIRFunction(
+            name="compute",
+            qualified_name="ns::compute",
+            namespace="ns",
+            return_type="double",
+            wrapper_code="+[]() { return 42.0; }",
+        )
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pybind11_output_config)
         assert "+[]() { return 42.0; }" in out
         assert "&ns::compute" not in out
 
     def test_camel_to_snake_function_name(self, pybind11_output_config):
-        fn = TIRFunction(name="computeArea", qualified_name="ns::computeArea",
-                        namespace="ns", return_type="double")
+        fn = TIRFunction(name="computeArea", qualified_name="ns::computeArea", namespace="ns", return_type="double")
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pybind11_output_config)
         assert '"compute_area"' in out
@@ -200,6 +215,7 @@ class TestFunctionBinding:
 # ---------------------------------------------------------------------------
 # Class binding
 # ---------------------------------------------------------------------------
+
 
 class TestClassBinding:
     def test_simple_class(self, pybind11_output_config):
@@ -249,26 +265,31 @@ class TestClassBinding:
         assert "py::init" not in out
 
     def test_method(self, pybind11_output_config):
-        method = TIRMethod(name="getValue", spelling="getValue",
-                          qualified_name="ns::Foo::getValue", return_type="int", is_const=True)
+        method = TIRMethod(
+            name="getValue", spelling="getValue", qualified_name="ns::Foo::getValue", return_type="int", is_const=True
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert '.def("get_value", &ns::Foo::getValue)' in out
 
     def test_method_doc(self, pybind11_output_config):
-        method = TIRMethod(name="getValue", spelling="getValue",
-                          qualified_name="ns::Foo::getValue", return_type="int",
-                          doc="Gets the value")
+        method = TIRMethod(
+            name="getValue",
+            spelling="getValue",
+            qualified_name="ns::Foo::getValue",
+            return_type="int",
+            doc="Gets the value",
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert '"Gets the value"' in out
 
     def test_static_method(self, pybind11_output_config):
-        method = TIRMethod(name="create", spelling="create",
-                          qualified_name="ns::Foo::create", return_type="ns::Foo*",
-                          is_static=True)
+        method = TIRMethod(
+            name="create", spelling="create", qualified_name="ns::Foo::create", return_type="ns::Foo*", is_static=True
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
@@ -297,18 +318,22 @@ class TestClassBinding:
 
     def test_method_with_default_arg(self, pybind11_output_config):
         p = TIRParameter("x", "int", default_value="0")
-        method = TIRMethod(name="compute", spelling="compute",
-                          qualified_name="ns::Foo::compute", return_type="int",
-                          parameters=[p])
+        method = TIRMethod(
+            name="compute", spelling="compute", qualified_name="ns::Foo::compute", return_type="int", parameters=[p]
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert 'py::arg("x") = 0' in out
 
     def test_wrapper_code_method(self, pybind11_output_config):
-        method = TIRMethod(name="doThing", spelling="doThing",
-                          qualified_name="ns::Foo::doThing", return_type="void",
-                          wrapper_code="+[](Foo& self) { self.doThing(); }")
+        method = TIRMethod(
+            name="doThing",
+            spelling="doThing",
+            qualified_name="ns::Foo::doThing",
+            return_type="void",
+            wrapper_code="+[](Foo& self) { self.doThing(); }",
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
@@ -319,9 +344,11 @@ class TestClassBinding:
 # Format discovery
 # ---------------------------------------------------------------------------
 
+
 class TestPybind11FormatDiscovery:
     def test_pybind11_in_list_formats(self):
         from tsujikiri.formats import list_builtin_formats
+
         fmts = list_builtin_formats()
         assert "pybind11" in fmts
 
@@ -336,6 +363,7 @@ class TestPybind11FormatDiscovery:
 # Trampoline class generation
 # ---------------------------------------------------------------------------
 
+
 class TestTrampolineGeneration:
     def test_no_trampoline_for_nonvirtual_class(self, pybind11_output_config):
         cls = _simple_class()
@@ -345,9 +373,9 @@ class TestTrampolineGeneration:
         assert "PYBIND11_OVERRIDE" not in out
 
     def test_trampoline_class_generated_for_virtual_method(self, pybind11_output_config):
-        method = TIRMethod(name="compute", spelling="compute",
-                          qualified_name="ns::Foo::compute", return_type="int",
-                          is_virtual=True)
+        method = TIRMethod(
+            name="compute", spelling="compute", qualified_name="ns::Foo::compute", return_type="int", is_virtual=True
+        )
         cls = _simple_class(methods=[method])
         cls.has_virtual_methods = True
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
@@ -357,9 +385,14 @@ class TestTrampolineGeneration:
         assert 'PYBIND11_OVERRIDE_NAME(int, ns::Foo, "compute", compute);' in out
 
     def test_trampoline_uses_override_pure_for_pure_virtual(self, pybind11_output_config):
-        method = TIRMethod(name="compute", spelling="compute",
-                          qualified_name="ns::Foo::compute", return_type="int",
-                          is_virtual=True, is_pure_virtual=True)
+        method = TIRMethod(
+            name="compute",
+            spelling="compute",
+            qualified_name="ns::Foo::compute",
+            return_type="int",
+            is_virtual=True,
+            is_pure_virtual=True,
+        )
         cls = _simple_class(methods=[method])
         cls.has_virtual_methods = True
         cls.is_abstract = True
@@ -368,9 +401,14 @@ class TestTrampolineGeneration:
         assert 'PYBIND11_OVERRIDE_PURE_NAME(int, ns::Foo, "compute", compute);' in out
 
     def test_trampoline_const_method_has_const_qualifier(self, pybind11_output_config):
-        method = TIRMethod(name="name", spelling="name",
-                          qualified_name="ns::Foo::name", return_type="std::string",
-                          is_virtual=True, is_const=True)
+        method = TIRMethod(
+            name="name",
+            spelling="name",
+            qualified_name="ns::Foo::name",
+            return_type="std::string",
+            is_virtual=True,
+            is_const=True,
+        )
         cls = _simple_class(methods=[method])
         cls.has_virtual_methods = True
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
@@ -380,9 +418,14 @@ class TestTrampolineGeneration:
 
     def test_trampoline_method_with_params(self, pybind11_output_config):
         p = TIRParameter("x", "double")
-        method = TIRMethod(name="scale", spelling="scale",
-                          qualified_name="ns::Foo::scale", return_type="void",
-                          is_virtual=True, parameters=[p])
+        method = TIRMethod(
+            name="scale",
+            spelling="scale",
+            qualified_name="ns::Foo::scale",
+            return_type="void",
+            is_virtual=True,
+            parameters=[p],
+        )
         cls = _simple_class(methods=[method])
         cls.has_virtual_methods = True
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
@@ -391,9 +434,9 @@ class TestTrampolineGeneration:
         assert 'PYBIND11_OVERRIDE_NAME(void, ns::Foo, "scale", scale, x);' in out
 
     def test_class_declaration_includes_trampoline(self, pybind11_output_config):
-        method = TIRMethod(name="compute", spelling="compute",
-                          qualified_name="ns::Foo::compute", return_type="int",
-                          is_virtual=True)
+        method = TIRMethod(
+            name="compute", spelling="compute", qualified_name="ns::Foo::compute", return_type="int", is_virtual=True
+        )
         cls = _simple_class(methods=[method])
         cls.has_virtual_methods = True
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
@@ -401,9 +444,9 @@ class TestTrampolineGeneration:
         assert "py::class_<ns::Foo, PyFoo>" in out
 
     def test_trampoline_before_base_in_declaration(self, pybind11_output_config):
-        method = TIRMethod(name="compute", spelling="compute",
-                          qualified_name="ns::Foo::compute", return_type="int",
-                          is_virtual=True)
+        method = TIRMethod(
+            name="compute", spelling="compute", qualified_name="ns::Foo::compute", return_type="int", is_virtual=True
+        )
         cls = _simple_class(methods=[method], bases=[TIRBase("ns::Base", "public")])
         cls.has_virtual_methods = True
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
@@ -412,15 +455,17 @@ class TestTrampolineGeneration:
 
     def test_custom_trampoline_prefix_from_generation_config(self, pybind11_output_config):
         from tsujikiri.configurations import GenerationConfig
-        method = TIRMethod(name="compute", spelling="compute",
-                          qualified_name="ns::Foo::compute", return_type="int",
-                          is_virtual=True)
+
+        method = TIRMethod(
+            name="compute", spelling="compute", qualified_name="ns::Foo::compute", return_type="int", is_virtual=True
+        )
         cls = _simple_class(methods=[method])
         cls.has_virtual_methods = True
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         gen_cfg = GenerationConfig(trampoline_prefix="Wrap")
         buf = io.StringIO()
         from tsujikiri.generator import Generator
+
         Generator(pybind11_output_config, generation=gen_cfg).generate(mod, buf)
         out = buf.getvalue()
         assert "class WrapFoo : public ns::Foo" in out
@@ -430,6 +475,7 @@ class TestTrampolineGeneration:
 # ---------------------------------------------------------------------------
 # Holder type in class declaration
 # ---------------------------------------------------------------------------
+
 
 class TestHolderType:
     def test_holder_type_in_class_declaration(self, pybind11_output_config):
@@ -447,9 +493,9 @@ class TestHolderType:
         assert "py::class_<ns::Foo, std::shared_ptr<ns::Foo>, ns::Base>" in out
 
     def test_holder_type_with_trampoline_and_base(self, pybind11_output_config):
-        method = TIRMethod(name="compute", spelling="compute",
-                          qualified_name="ns::Foo::compute", return_type="int",
-                          is_virtual=True)
+        method = TIRMethod(
+            name="compute", spelling="compute", qualified_name="ns::Foo::compute", return_type="int", is_virtual=True
+        )
         cls = _simple_class(methods=[method], bases=[TIRBase("ns::Base", "public")])
         cls.has_virtual_methods = True
         cls.holder_type = "std::shared_ptr"
@@ -468,29 +514,34 @@ class TestHolderType:
 # Return value policies
 # ---------------------------------------------------------------------------
 
+
 class TestReturnValuePolicy:
     def test_no_rvp_when_ownership_none(self, pybind11_output_config):
-        method = TIRMethod(name="get", spelling="get",
-                          qualified_name="ns::Foo::get", return_type="ns::Bar*",
-                          return_ownership="none")
+        method = TIRMethod(
+            name="get", spelling="get", qualified_name="ns::Foo::get", return_type="ns::Bar*", return_ownership="none"
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert "return_value_policy" not in out
 
     def test_rvp_reference_internal_when_cpp(self, pybind11_output_config):
-        method = TIRMethod(name="get", spelling="get",
-                          qualified_name="ns::Foo::get", return_type="ns::Bar*",
-                          return_ownership="cpp")
+        method = TIRMethod(
+            name="get", spelling="get", qualified_name="ns::Foo::get", return_type="ns::Bar*", return_ownership="cpp"
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert "py::return_value_policy::reference_internal" in out
 
     def test_rvp_take_ownership_when_script(self, pybind11_output_config):
-        method = TIRMethod(name="create", spelling="create",
-                          qualified_name="ns::Foo::create", return_type="ns::Bar*",
-                          return_ownership="script")
+        method = TIRMethod(
+            name="create",
+            spelling="create",
+            qualified_name="ns::Foo::create",
+            return_type="ns::Bar*",
+            return_ownership="script",
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
@@ -501,12 +552,13 @@ class TestReturnValuePolicy:
 # keep_alive policy
 # ---------------------------------------------------------------------------
 
+
 class TestKeepAlive:
     def test_keep_alive_for_cpp_owned_param(self, pybind11_output_config):
         p = TIRParameter("item", "ns::Item*", ownership="cpp")
-        method = TIRMethod(name="add", spelling="add",
-                          qualified_name="ns::Foo::add", return_type="void",
-                          parameters=[p])
+        method = TIRMethod(
+            name="add", spelling="add", qualified_name="ns::Foo::add", return_type="void", parameters=[p]
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
@@ -515,9 +567,9 @@ class TestKeepAlive:
     def test_keep_alive_second_param_uses_index_3(self, pybind11_output_config):
         p1 = TIRParameter("a", "int", ownership="none")
         p2 = TIRParameter("item", "ns::Item*", ownership="cpp")
-        method = TIRMethod(name="add", spelling="add",
-                          qualified_name="ns::Foo::add", return_type="void",
-                          parameters=[p1, p2])
+        method = TIRMethod(
+            name="add", spelling="add", qualified_name="ns::Foo::add", return_type="void", parameters=[p1, p2]
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
@@ -525,35 +577,43 @@ class TestKeepAlive:
 
     def test_no_keep_alive_for_none_ownership(self, pybind11_output_config):
         p = TIRParameter("item", "ns::Item*", ownership="none")
-        method = TIRMethod(name="add", spelling="add",
-                          qualified_name="ns::Foo::add", return_type="void",
-                          parameters=[p])
+        method = TIRMethod(
+            name="add", spelling="add", qualified_name="ns::Foo::add", return_type="void", parameters=[p]
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert "keep_alive" not in out
 
     def test_return_keep_alive_emits_keep_alive_0_1(self, pybind11_output_config):
-        method = TIRMethod(name="model", spelling="model",
-                          qualified_name="ns::Foo::model", return_type="ns::Model*",
-                          return_keep_alive=True)
+        method = TIRMethod(
+            name="model",
+            spelling="model",
+            qualified_name="ns::Foo::model",
+            return_type="ns::Model*",
+            return_keep_alive=True,
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert "py::keep_alive<0, 1>()" in out
 
     def test_no_return_keep_alive_by_default(self, pybind11_output_config):
-        method = TIRMethod(name="model", spelling="model",
-                          qualified_name="ns::Foo::model", return_type="ns::Model*")
+        method = TIRMethod(name="model", spelling="model", qualified_name="ns::Foo::model", return_type="ns::Model*")
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert "py::keep_alive<0, 1>()" not in out
 
     def test_return_keep_alive_combined_with_return_ownership(self, pybind11_output_config):
-        method = TIRMethod(name="model", spelling="model",
-                          qualified_name="ns::Foo::model", return_type="ns::Model*",
-                          return_ownership="script", return_keep_alive=True)
+        method = TIRMethod(
+            name="model",
+            spelling="model",
+            qualified_name="ns::Foo::model",
+            return_type="ns::Model*",
+            return_ownership="script",
+            return_keep_alive=True,
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
@@ -565,29 +625,39 @@ class TestKeepAlive:
 # allow_thread / GIL release
 # ---------------------------------------------------------------------------
 
+
 class TestAllowThread:
     def test_allow_thread_emits_call_guard(self, pybind11_output_config):
-        method = TIRMethod(name="compute", spelling="compute",
-                          qualified_name="ns::Foo::compute", return_type="void",
-                          allow_thread=True)
+        method = TIRMethod(
+            name="compute", spelling="compute", qualified_name="ns::Foo::compute", return_type="void", allow_thread=True
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert "py::call_guard<py::gil_scoped_release>()" in out
 
     def test_no_call_guard_when_allow_thread_false(self, pybind11_output_config):
-        method = TIRMethod(name="compute", spelling="compute",
-                          qualified_name="ns::Foo::compute", return_type="void",
-                          allow_thread=False)
+        method = TIRMethod(
+            name="compute",
+            spelling="compute",
+            qualified_name="ns::Foo::compute",
+            return_type="void",
+            allow_thread=False,
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert "call_guard" not in out
 
     def test_allow_thread_combined_with_return_ownership(self, pybind11_output_config):
-        method = TIRMethod(name="fetch", spelling="fetch",
-                          qualified_name="ns::Foo::fetch", return_type="ns::Bar*",
-                          return_ownership="cpp", allow_thread=True)
+        method = TIRMethod(
+            name="fetch",
+            spelling="fetch",
+            qualified_name="ns::Foo::fetch",
+            return_type="ns::Bar*",
+            return_ownership="cpp",
+            allow_thread=True,
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
@@ -599,10 +669,12 @@ class TestAllowThread:
 # Synthetic property bindings
 # ---------------------------------------------------------------------------
 
+
 class TestPropertyBinding:
     def test_readwrite_property_emits_def_property(self, pybind11_output_config):
-        prop = IRProperty(name="arrivalMessage", getter="getArrivalMessage",
-                          setter="setArrivalMessage", type_spelling="std::string")
+        prop = IRProperty(
+            name="arrivalMessage", getter="getArrivalMessage", setter="setArrivalMessage", type_spelling="std::string"
+        )
         cls = _simple_class()
         cls.properties.append(prop)
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
@@ -622,8 +694,7 @@ class TestPropertyBinding:
         assert "def_property(" not in out.replace("def_property_readonly(", "")
 
     def test_property_doc_string(self, pybind11_output_config):
-        prop = IRProperty(name="value", getter="getValue", setter="setValue",
-                          type_spelling="int", doc="The value.")
+        prop = IRProperty(name="value", getter="getValue", setter="setValue", type_spelling="int", doc="The value.")
         cls = _simple_class()
         cls.properties.append(prop)
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
@@ -641,11 +712,17 @@ class TestPropertyBinding:
 # Operator bindings
 # ---------------------------------------------------------------------------
 
+
 class TestOperatorBinding:
     def test_operator_plus_binds_to_add(self, pybind11_output_config):
-        method = TIRMethod(name="operator+", spelling="operator+",
-                          qualified_name="ns::Foo::operator+", return_type="ns::Foo",
-                          is_operator=True, operator_type="operator+")
+        method = TIRMethod(
+            name="operator+",
+            spelling="operator+",
+            qualified_name="ns::Foo::operator+",
+            return_type="ns::Foo",
+            is_operator=True,
+            operator_type="operator+",
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
@@ -653,19 +730,29 @@ class TestOperatorBinding:
 
     def test_operator_eq_binds_to_eq(self, pybind11_output_config):
         p = TIRParameter("other", "const ns::Foo &")
-        method = TIRMethod(name="operator==", spelling="operator==",
-                          qualified_name="ns::Foo::operator==", return_type="bool",
-                          is_operator=True, operator_type="operator==",
-                          parameters=[p])
+        method = TIRMethod(
+            name="operator==",
+            spelling="operator==",
+            qualified_name="ns::Foo::operator==",
+            return_type="bool",
+            is_operator=True,
+            operator_type="operator==",
+            parameters=[p],
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
         assert '.def("__eq__"' in out
 
     def test_operator_stream_binds_to_repr_lambda(self, pybind11_output_config):
-        method = TIRMethod(name="operator<<", spelling="operator<<",
-                          qualified_name="ns::Foo::operator<<", return_type="std::ostream &",
-                          is_operator=True, operator_type="operator<<")
+        method = TIRMethod(
+            name="operator<<",
+            spelling="operator<<",
+            qualified_name="ns::Foo::operator<<",
+            return_type="std::ostream &",
+            is_operator=True,
+            operator_type="operator<<",
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)
@@ -675,9 +762,14 @@ class TestOperatorBinding:
 
     def test_unmapped_operator_uses_camel_to_snake_name(self, pybind11_output_config):
         # operator<< is mapped to __repr__, so use an unmapped one to test fallback
-        method = TIRMethod(name="operator>>", spelling="operator>>",
-                          qualified_name="ns::Foo::operator>>", return_type="ns::Foo",
-                          is_operator=True, operator_type="operator>>")
+        method = TIRMethod(
+            name="operator>>",
+            spelling="operator>>",
+            qualified_name="ns::Foo::operator>>",
+            return_type="ns::Foo",
+            is_operator=True,
+            operator_type="operator>>",
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pybind11_output_config)

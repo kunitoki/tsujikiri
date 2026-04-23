@@ -27,27 +27,36 @@ from tsujikiri.transforms import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _simple_module() -> TIRModule:
     methods = [
         TIRMethod(
-            name="getValue", spelling="getValue",
-            qualified_name="Cls::getValue", return_type="int",
+            name="getValue",
+            spelling="getValue",
+            qualified_name="Cls::getValue",
+            return_type="int",
             parameters=[],
         ),
         TIRMethod(
-            name="process", spelling="process",
-            qualified_name="Cls::process", return_type="void",
+            name="process",
+            spelling="process",
+            qualified_name="Cls::process",
+            return_type="void",
             parameters=[TIRParameter("x", "int")],
         ),
         TIRMethod(
-            name="process", spelling="process",
-            qualified_name="Cls::process", return_type="void",
+            name="process",
+            spelling="process",
+            qualified_name="Cls::process",
+            return_type="void",
             parameters=[TIRParameter("x", "float")],
             is_overload=True,
         ),
         TIRMethod(
-            name="staticHelper", spelling="staticHelper",
-            qualified_name="Cls::staticHelper", return_type="int",
+            name="staticHelper",
+            spelling="staticHelper",
+            qualified_name="Cls::staticHelper",
+            return_type="int",
             parameters=[TIRParameter("a", "int"), TIRParameter("b", "float")],
             is_static=True,
         ),
@@ -61,7 +70,9 @@ def _simple_module() -> TIRModule:
         TIRField(name="max_", type_spelling="float", is_const=True),
     ]
     cls = TIRClass(
-        name="Cls", qualified_name="ns::Cls", namespace="ns",
+        name="Cls",
+        qualified_name="ns::Cls",
+        namespace="ns",
         methods=list(methods),
         constructors=list(ctors),
         fields=list(fields),
@@ -84,6 +95,7 @@ def _get_field(mod: TIRModule, name: str, cls: str = "Cls") -> TIRField:
 # ---------------------------------------------------------------------------
 # ModifyMethodStage
 # ---------------------------------------------------------------------------
+
 
 class TestModifyMethodStage:
     def test_rename(self):
@@ -118,9 +130,7 @@ class TestModifyMethodStage:
 
     def test_wrapper_code(self):
         mod = _simple_module()
-        ModifyMethodStage(**{
-            "class": "Cls", "method": "getValue", "wrapper_code": "+[]() { return 42; }"
-        }).apply(mod)
+        ModifyMethodStage(**{"class": "Cls", "method": "getValue", "wrapper_code": "+[]() { return 42; }"}).apply(mod)
         assert _get_method(mod, "getValue").wrapper_code == "+[]() { return 42; }"
 
     def test_wildcard_method(self):
@@ -130,8 +140,12 @@ class TestModifyMethodStage:
             assert m.allow_thread is True
 
     def test_does_not_affect_other_class(self):
-        other = TIRClass(name="Other", qualified_name="ns::Other", namespace="ns",
-                        methods=[TIRMethod("foo", "foo", "ns::Other::foo", "void")])
+        other = TIRClass(
+            name="Other",
+            qualified_name="ns::Other",
+            namespace="ns",
+            methods=[TIRMethod("foo", "foo", "ns::Other::foo", "void")],
+        )
         mod = _simple_module()
         mod.classes.append(other)
         ModifyMethodStage(**{"class": "Cls", "method": "getValue", "rename": "get"}).apply(mod)
@@ -139,9 +153,7 @@ class TestModifyMethodStage:
 
     def test_regex_method_pattern(self):
         mod = _simple_module()
-        ModifyMethodStage(**{
-            "class": "Cls", "method": "get.*", "method_is_regex": True, "rename": "getter"
-        }).apply(mod)
+        ModifyMethodStage(**{"class": "Cls", "method": "get.*", "method_is_regex": True, "rename": "getter"}).apply(mod)
         assert _get_method(mod, "getValue").rename == "getter"
         assert _get_method(mod, "process").rename is None
 
@@ -149,6 +161,7 @@ class TestModifyMethodStage:
 # ---------------------------------------------------------------------------
 # ModifyArgumentStage
 # ---------------------------------------------------------------------------
+
 
 class TestModifyArgumentStage:
     def test_rename_by_name(self):
@@ -201,7 +214,9 @@ class TestModifyArgumentStage:
 
     def test_name_not_found_is_noop(self):
         mod = _simple_module()
-        ModifyArgumentStage(**{"class": "Cls", "method": "process", "argument": "nonexistent", "rename": "y"}).apply(mod)
+        ModifyArgumentStage(**{"class": "Cls", "method": "process", "argument": "nonexistent", "rename": "y"}).apply(
+            mod
+        )
         process_methods = [m for m in _get_cls(mod).methods if m.name == "process"]
         for m in process_methods:
             assert m.parameters[0].rename is None
@@ -210,6 +225,7 @@ class TestModifyArgumentStage:
 # ---------------------------------------------------------------------------
 # ModifyFieldStage
 # ---------------------------------------------------------------------------
+
 
 class TestModifyFieldStage:
     def test_rename(self):
@@ -242,6 +258,7 @@ class TestModifyFieldStage:
 # ---------------------------------------------------------------------------
 # ModifyConstructorStage
 # ---------------------------------------------------------------------------
+
 
 class TestModifyConstructorStage:
     def test_remove_default_ctor(self):
@@ -282,6 +299,7 @@ class TestModifyConstructorStage:
 # RemoveOverloadStage
 # ---------------------------------------------------------------------------
 
+
 class TestRemoveOverloadStage:
     def test_removes_only_matching_overload(self):
         mod = _simple_module()
@@ -308,6 +326,7 @@ class TestRemoveOverloadStage:
 # InjectCodeStage
 # ---------------------------------------------------------------------------
 
+
 class TestInjectCodeStage:
     def test_inject_module_beginning(self):
         mod = _simple_module()
@@ -323,7 +342,9 @@ class TestInjectCodeStage:
 
     def test_inject_class_beginning(self):
         mod = _simple_module()
-        InjectCodeStage(**{"target": "class", "class": "Cls", "position": "beginning", "code": "// cls start"}).apply(mod)
+        InjectCodeStage(**{"target": "class", "class": "Cls", "position": "beginning", "code": "// cls start"}).apply(
+            mod
+        )
         cls = _get_cls(mod)
         assert len(cls.code_injections) == 1
         assert cls.code_injections[0].position == "beginning"
@@ -337,40 +358,41 @@ class TestInjectCodeStage:
 
     def test_inject_method(self):
         mod = _simple_module()
-        InjectCodeStage(**{
-            "target": "method", "class": "Cls", "method": "getValue",
-            "position": "end", "code": "// after getValue"
-        }).apply(mod)
+        InjectCodeStage(
+            **{"target": "method", "class": "Cls", "method": "getValue", "position": "end", "code": "// after getValue"}
+        ).apply(mod)
         m = _get_method(mod, "getValue")
         assert len(m.code_injections) == 1
         assert m.code_injections[0].code == "// after getValue"
 
     def test_inject_method_wildcard(self):
         mod = _simple_module()
-        InjectCodeStage(**{
-            "target": "method", "class": "Cls", "method": "*",
-            "position": "beginning", "code": "// all methods"
-        }).apply(mod)
+        InjectCodeStage(
+            **{"target": "method", "class": "Cls", "method": "*", "position": "beginning", "code": "// all methods"}
+        ).apply(mod)
         for m in _get_cls(mod).methods:
             assert any(inj.code == "// all methods" for inj in m.code_injections)
 
     def test_inject_constructor_no_signature(self):
         mod = _simple_module()
-        InjectCodeStage(**{
-            "target": "constructor", "class": "Cls",
-            "position": "beginning", "code": "// all ctors"
-        }).apply(mod)
+        InjectCodeStage(
+            **{"target": "constructor", "class": "Cls", "position": "beginning", "code": "// all ctors"}
+        ).apply(mod)
         cls = _get_cls(mod)
         for ctor in cls.constructors:
             assert any(inj.code == "// all ctors" for inj in ctor.code_injections)
 
     def test_inject_constructor_with_signature(self):
         mod = _simple_module()
-        InjectCodeStage(**{
-            "target": "constructor", "class": "Cls",
-            "signature": "int",
-            "position": "end", "code": "// int ctor only"
-        }).apply(mod)
+        InjectCodeStage(
+            **{
+                "target": "constructor",
+                "class": "Cls",
+                "signature": "int",
+                "position": "end",
+                "code": "// int ctor only",
+            }
+        ).apply(mod)
         cls = _get_cls(mod)
         int_ctor = next(c for c in cls.constructors if c.parameters and c.parameters[0].type_spelling == "int")
         default_ctor = next(c for c in cls.constructors if not c.parameters)
@@ -394,6 +416,7 @@ class TestInjectCodeStage:
 # ---------------------------------------------------------------------------
 # SetTypeHintStage
 # ---------------------------------------------------------------------------
+
 
 class TestSetTypeHintStage:
     def test_copyable_false(self):
@@ -428,7 +451,7 @@ class TestSetTypeHintStage:
         mod = _simple_module()
         SetTypeHintStage(**{"class": "Cls", "copyable": False}).apply(mod)
         cls = _get_cls(mod)
-        assert cls.movable is None          # unchanged default
+        assert cls.movable is None  # unchanged default
         assert cls.force_abstract is False  # unchanged default
 
     def test_no_match_is_noop(self):
@@ -441,16 +464,19 @@ class TestSetTypeHintStage:
 # InjectPropertyStage
 # ---------------------------------------------------------------------------
 
+
 class TestInjectPropertyStage:
     def test_inject_readwrite_property(self):
         mod = _simple_module()
-        InjectPropertyStage(**{
-            "class": "Cls",
-            "name": "arrivalMessage",
-            "getter": "getArrivalMessage",
-            "setter": "setArrivalMessage",
-            "type": "std::string",
-        }).apply(mod)
+        InjectPropertyStage(
+            **{
+                "class": "Cls",
+                "name": "arrivalMessage",
+                "getter": "getArrivalMessage",
+                "setter": "setArrivalMessage",
+                "type": "std::string",
+            }
+        ).apply(mod)
         cls = _get_cls(mod)
         assert len(cls.properties) == 1
         prop = cls.properties[0]
@@ -462,22 +488,26 @@ class TestInjectPropertyStage:
 
     def test_inject_readonly_property(self):
         mod = _simple_module()
-        InjectPropertyStage(**{
-            "class": "Cls",
-            "name": "label",
-            "getter": "getLabel",
-        }).apply(mod)
+        InjectPropertyStage(
+            **{
+                "class": "Cls",
+                "name": "label",
+                "getter": "getLabel",
+            }
+        ).apply(mod)
         prop = _get_cls(mod).properties[0]
         assert prop.setter is None
         assert prop.getter == "getLabel"
 
     def test_inject_property_no_match_is_noop(self):
         mod = _simple_module()
-        InjectPropertyStage(**{
-            "class": "Other",
-            "name": "x",
-            "getter": "getX",
-        }).apply(mod)
+        InjectPropertyStage(
+            **{
+                "class": "Other",
+                "name": "x",
+                "getter": "getX",
+            }
+        ).apply(mod)
         assert len(_get_cls(mod).properties) == 0
 
     def test_inject_multiple_properties(self):

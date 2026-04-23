@@ -157,8 +157,7 @@ class TestOutputConfigLoading:
         """_parse_filter_pattern handles plain string entries (not dicts)."""
         yml = tmp_path / "plain.input.yml"
         yml.write_text(
-            "source:\n  path: 'dummy.hpp'\n"
-            "filters:\n  classes:\n    blacklist:\n      - 'MyClass'\n",
+            "source:\n  path: 'dummy.hpp'\nfilters:\n  classes:\n    blacklist:\n      - 'MyClass'\n",
             encoding="utf-8",
         )
         cfg = load_input_config(yml)
@@ -331,10 +330,7 @@ class TestFormatOverrideTemplateExtendsFile:
         tpl_file.write_text('{% extends "luabridge3.tpl" %}', encoding="utf-8")
         inp = tmp_path / "x.input.yml"
         inp.write_text(
-            "source:\n  path: x.h\n"
-            "format_overrides:\n"
-            "  luabridge3:\n"
-            "    template_extends_file: override.tpl\n",
+            "source:\n  path: x.h\nformat_overrides:\n  luabridge3:\n    template_extends_file: override.tpl\n",
             encoding="utf-8",
         )
         cfg = load_input_config(inp)
@@ -346,10 +342,7 @@ class TestFormatOverrideTemplateExtendsFile:
         tpl_file.write_text("// ABSOLUTE", encoding="utf-8")
         inp = tmp_path / "y.input.yml"
         inp.write_text(
-            f"source:\n  path: x.h\n"
-            f"format_overrides:\n"
-            f"  luabridge3:\n"
-            f"    template_extends_file: {tpl_file}\n",
+            f"source:\n  path: x.h\nformat_overrides:\n  luabridge3:\n    template_extends_file: {tpl_file}\n",
             encoding="utf-8",
         )
         cfg = load_input_config(inp)
@@ -376,10 +369,7 @@ class TestFormatOverrideTemplateExtendsFile:
         tpl_file.write_text("x", encoding="utf-8")
         inp = tmp_path / "s.input.yml"
         inp.write_text(
-            "source:\n  path: x.h\n"
-            "format_overrides:\n"
-            "  luabridge3:\n"
-            "    template_extends_file: stored.tpl\n",
+            "source:\n  path: x.h\nformat_overrides:\n  luabridge3:\n    template_extends_file: stored.tpl\n",
             encoding="utf-8",
         )
         cfg = load_input_config(inp)
@@ -535,8 +525,7 @@ class TestFormatOverridePretty:
     def test_pretty_options_parsed(self, tmp_path: Path) -> None:
         yml = tmp_path / "x.input.yml"
         yml.write_text(
-            "source:\n  path: x.h\n"
-            "format_overrides:\n  luabridge3:\n    pretty_options:\n      - '--style=Google'\n",
+            "source:\n  path: x.h\nformat_overrides:\n  luabridge3:\n    pretty_options:\n      - '--style=Google'\n",
             encoding="utf-8",
         )
         cfg = load_input_config(yml)

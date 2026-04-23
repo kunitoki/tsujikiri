@@ -1,5 +1,20 @@
 from dataclasses import dataclass, field
-from tsujikiri.ir import IRBase as IRBase, IRClass as IRClass, IRCodeInjection as IRCodeInjection, IRConstructor as IRConstructor, IREnum as IREnum, IREnumValue as IREnumValue, IRExceptionRegistration as IRExceptionRegistration, IRField as IRField, IRFunction as IRFunction, IRMethod as IRMethod, IRModule as IRModule, IRParameter as IRParameter, IRProperty as IRProperty, IRUsingDeclaration as IRUsingDeclaration
+from tsujikiri.ir import (
+    IRBase as IRBase,
+    IRClass as IRClass,
+    IRCodeInjection as IRCodeInjection,
+    IRConstructor as IRConstructor,
+    IREnum as IREnum,
+    IREnumValue as IREnumValue,
+    IRExceptionRegistration as IRExceptionRegistration,
+    IRField as IRField,
+    IRFunction as IRFunction,
+    IRMethod as IRMethod,
+    IRModule as IRModule,
+    IRParameter as IRParameter,
+    IRProperty as IRProperty,
+    IRUsingDeclaration as IRUsingDeclaration,
+)
 
 @dataclass
 class TIRParameter(IRParameter):

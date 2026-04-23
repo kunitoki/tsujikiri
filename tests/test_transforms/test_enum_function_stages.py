@@ -32,22 +32,28 @@ from tsujikiri.transforms import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_module() -> TIRModule:
     """Module with two top-level enums, a class with a nested enum, and two free functions."""
     color = TIREnum(
-        name="Color", qualified_name="ns::Color",
+        name="Color",
+        qualified_name="ns::Color",
         values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1), TIREnumValue("Blue", 2)],
     )
     state = TIREnum(
-        name="State", qualified_name="ns::State",
+        name="State",
+        qualified_name="ns::State",
         values=[TIREnumValue("On", 1), TIREnumValue("Off", 0)],
     )
     nested_enum = TIREnum(
-        name="Flag", qualified_name="ns::Cls::Flag",
+        name="Flag",
+        qualified_name="ns::Cls::Flag",
         values=[TIREnumValue("A", 0), TIREnumValue("B", 1)],
     )
     cls = TIRClass(
-        name="Cls", qualified_name="ns::Cls", namespace="ns",
+        name="Cls",
+        qualified_name="ns::Cls",
+        namespace="ns",
         enums=[nested_enum],
         bases=[
             TIRBase("ns::Base", "public"),
@@ -55,10 +61,14 @@ def _make_module() -> TIRModule:
         ],
         constructors=[TIRConstructor(parameters=[TIRParameter("x", "int")])],
     )
-    fn1 = TIRFunction(name="compute", qualified_name="ns::compute", namespace="ns", return_type="double",
-                     parameters=[TIRParameter("x", "double")])
-    fn2 = TIRFunction(name="internal_helper", qualified_name="ns::internal_helper",
-                     namespace="ns", return_type="void")
+    fn1 = TIRFunction(
+        name="compute",
+        qualified_name="ns::compute",
+        namespace="ns",
+        return_type="double",
+        parameters=[TIRParameter("x", "double")],
+    )
+    fn2 = TIRFunction(name="internal_helper", qualified_name="ns::internal_helper", namespace="ns", return_type="void")
     return TIRModule(
         name="m",
         classes=[cls],
@@ -83,6 +93,7 @@ def _cls(mod: TIRModule, name: str = "Cls") -> TIRClass:
 # ---------------------------------------------------------------------------
 # _find_enums helper
 # ---------------------------------------------------------------------------
+
 
 class TestFindEnums:
     def test_top_level_enum(self):
@@ -112,15 +123,20 @@ class TestFindEnums:
     def test_deeply_nested_inner_class_enum(self):
         """_find_enums recurses into inner_classes of a class."""
         inner_enum = TIREnum(
-            name="Inner", qualified_name="ns::Outer::Inner::Inner",
+            name="Inner",
+            qualified_name="ns::Outer::Inner::Inner",
             values=[TIREnumValue("X", 0)],
         )
         inner_cls = TIRClass(
-            name="Inner", qualified_name="ns::Outer::Inner", namespace="ns",
+            name="Inner",
+            qualified_name="ns::Outer::Inner",
+            namespace="ns",
             enums=[inner_enum],
         )
         outer_cls = TIRClass(
-            name="Outer", qualified_name="ns::Outer", namespace="ns",
+            name="Outer",
+            qualified_name="ns::Outer",
+            namespace="ns",
             inner_classes=[inner_cls],
         )
         mod = TIRModule(name="m", classes=[outer_cls])
@@ -132,6 +148,7 @@ class TestFindEnums:
 # ---------------------------------------------------------------------------
 # RenameEnumStage
 # ---------------------------------------------------------------------------
+
 
 class TestRenameEnumStage:
     def test_renames_top_level(self):
@@ -160,6 +177,7 @@ class TestRenameEnumStage:
 # ---------------------------------------------------------------------------
 # RenameEnumValueStage
 # ---------------------------------------------------------------------------
+
 
 class TestRenameEnumValueStage:
     def test_renames_value(self):
@@ -191,6 +209,7 @@ class TestRenameEnumValueStage:
 # SuppressEnumStage
 # ---------------------------------------------------------------------------
 
+
 class TestSuppressEnumStage:
     def test_suppresses_enum(self):
         mod = _make_module()
@@ -212,6 +231,7 @@ class TestSuppressEnumStage:
 # ---------------------------------------------------------------------------
 # SuppressEnumValueStage
 # ---------------------------------------------------------------------------
+
 
 class TestSuppressEnumValueStage:
     def test_suppresses_value(self):
@@ -237,6 +257,7 @@ class TestSuppressEnumValueStage:
 # ModifyEnumStage
 # ---------------------------------------------------------------------------
 
+
 class TestModifyEnumStage:
     def test_rename(self):
         mod = _make_module()
@@ -259,6 +280,7 @@ class TestModifyEnumStage:
 # RenameFunctionStage
 # ---------------------------------------------------------------------------
 
+
 class TestRenameFunctionStage:
     def test_renames(self):
         mod = _make_module()
@@ -280,6 +302,7 @@ class TestRenameFunctionStage:
 # SuppressFunctionStage
 # ---------------------------------------------------------------------------
 
+
 class TestSuppressFunctionStage:
     def test_suppresses(self):
         mod = _make_module()
@@ -300,6 +323,7 @@ class TestSuppressFunctionStage:
 # ---------------------------------------------------------------------------
 # ModifyFunctionStage
 # ---------------------------------------------------------------------------
+
 
 class TestModifyFunctionStage:
     def test_rename(self):
@@ -362,13 +386,16 @@ class TestModifyFunctionStage:
 # InjectConstructorStage
 # ---------------------------------------------------------------------------
 
+
 class TestInjectConstructorStage:
     def test_injects_ctor(self):
         mod = _make_module()
-        InjectConstructorStage(**{
-            "class": "Cls",
-            "parameters": [{"name": "a", "type": "float"}],
-        }).apply(mod)
+        InjectConstructorStage(
+            **{
+                "class": "Cls",
+                "parameters": [{"name": "a", "type": "float"}],
+            }
+        ).apply(mod)
         cls = _cls(mod)
         assert len(cls.constructors) == 2
         injected = cls.constructors[-1]
@@ -393,15 +420,18 @@ class TestInjectConstructorStage:
 # InjectFunctionStage
 # ---------------------------------------------------------------------------
 
+
 class TestInjectFunctionStage:
     def test_injects_function(self):
         mod = _make_module()
-        InjectFunctionStage(**{
-            "name": "create",
-            "namespace": "ns",
-            "return_type": "int",
-            "parameters": [{"name": "v", "type": "int"}],
-        }).apply(mod)
+        InjectFunctionStage(
+            **{
+                "name": "create",
+                "namespace": "ns",
+                "return_type": "int",
+                "parameters": [{"name": "v", "type": "int"}],
+            }
+        ).apply(mod)
         injected = next(f for f in mod.functions if f.name == "create")
         assert injected.return_type == "int"
         assert injected.qualified_name == "ns::create"
@@ -418,6 +448,7 @@ class TestInjectFunctionStage:
 # ---------------------------------------------------------------------------
 # SuppressBaseStage
 # ---------------------------------------------------------------------------
+
 
 class TestSuppressBaseStage:
     def test_suppresses_named_base(self):

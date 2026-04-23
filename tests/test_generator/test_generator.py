@@ -24,6 +24,7 @@ def _generate(module: TIRModule, output_config) -> str:
 # Prologue / epilogue
 # ---------------------------------------------------------------------------
 
+
 class TestPrologueEpilogue:
     def test_luabridge3_prologue(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
@@ -39,6 +40,7 @@ class TestPrologueEpilogue:
 # Class begin / derived begin
 # ---------------------------------------------------------------------------
 
+
 class TestClassTemplates:
     def test_base_class_uses_class_begin(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
@@ -46,23 +48,29 @@ class TestClassTemplates:
         assert '.beginClass<mylib::MyClass>("MyClass")' in out
 
     def test_derived_class_uses_derived_begin(self, luabridge3_output_config):
-        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
-                       variable_name="classBase")
-        derived = TIRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
-                          bases=[TIRBase("ns::Base")], variable_name="classDerived")
-        mod = TIRModule(name="m", classes=[base, derived],
-                       class_by_name={"Base": base, "Derived": derived})
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns", variable_name="classBase")
+        derived = TIRClass(
+            name="Derived",
+            qualified_name="ns::Derived",
+            namespace="ns",
+            bases=[TIRBase("ns::Base")],
+            variable_name="classDerived",
+        )
+        mod = TIRModule(name="m", classes=[base, derived], class_by_name={"Base": base, "Derived": derived})
         out = _generate(mod, luabridge3_output_config)
         assert '.deriveClass<ns::Derived, ns::Base>("Derived")' in out
 
     def test_topo_sort_emits_base_before_derived(self, luabridge3_output_config):
-        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
-                       variable_name="classBase")
-        derived = TIRClass(name="Derived", qualified_name="ns::Derived", namespace="ns",
-                          bases=[TIRBase("ns::Base")], variable_name="classDerived")
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns", variable_name="classBase")
+        derived = TIRClass(
+            name="Derived",
+            qualified_name="ns::Derived",
+            namespace="ns",
+            bases=[TIRBase("ns::Base")],
+            variable_name="classDerived",
+        )
         # Deliberately put derived first in list; topo sort should fix ordering
-        mod = TIRModule(name="m", classes=[derived, base],
-                       class_by_name={"Base": base, "Derived": derived})
+        mod = TIRModule(name="m", classes=[derived, base], class_by_name={"Base": base, "Derived": derived})
         gen = Generator(luabridge3_output_config)
         sorted_names = [c.name for c in gen._topo_sort(mod.classes, mod.class_by_name)]
         assert sorted_names == ["Base", "Derived"]
@@ -71,6 +79,7 @@ class TestClassTemplates:
 # ---------------------------------------------------------------------------
 # Method templates
 # ---------------------------------------------------------------------------
+
 
 class TestMethodTemplates:
     def test_regular_method(self, make_ir_module, luabridge3_output_config):
@@ -97,6 +106,7 @@ class TestMethodTemplates:
 # Constructor templates
 # ---------------------------------------------------------------------------
 
+
 class TestConstructorTemplates:
     def test_constructors(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
@@ -114,6 +124,7 @@ class TestConstructorTemplates:
 # Field templates
 # ---------------------------------------------------------------------------
 
+
 class TestFieldTemplates:
     def test_readwrite_field(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
@@ -130,6 +141,7 @@ class TestFieldTemplates:
 # Enum templates
 # ---------------------------------------------------------------------------
 
+
 class TestEnumTemplates:
     def test_luabridge3_enum_namespace(self, make_ir_module, luabridge3_output_config):
         out = _generate(make_ir_module(), luabridge3_output_config)
@@ -138,7 +150,7 @@ class TestEnumTemplates:
 
     def test_suppressed_enum_value_skipped(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
-        mod.enums[0].values[0].emit = False   # suppress Red
+        mod.enums[0].values[0].emit = False  # suppress Red
         out = _generate(mod, luabridge3_output_config)
         assert '"Red"' not in out
         assert '"Green"' in out
@@ -147,6 +159,7 @@ class TestEnumTemplates:
 # ---------------------------------------------------------------------------
 # Function templates
 # ---------------------------------------------------------------------------
+
 
 class TestFunctionTemplates:
     def test_free_function(self, make_ir_module, luabridge3_output_config):
@@ -158,12 +171,15 @@ class TestFunctionTemplates:
 # Unsupported types
 # ---------------------------------------------------------------------------
 
+
 class TestUnsupportedTypes:
     def test_unsupported_return_type_excluded(self, make_ir_module, luabridge3_output_config):
         from tsujikiri.tir import TIRMethod
+
         mod = make_ir_module()
         bad_method = TIRMethod(
-            name="bad", spelling="bad",
+            name="bad",
+            spelling="bad",
             qualified_name="mylib::MyClass::bad",
             return_type="CFStringRef",
         )
@@ -176,11 +192,13 @@ class TestUnsupportedTypes:
 # Generation config
 # ---------------------------------------------------------------------------
 
+
 class TestGenerationConfig:
     def test_extra_unsupported_types_not_present(self, make_ir_module, luabridge3_output_config):
         mod = make_ir_module()
         bad = TIRMethod(
-            name="doThing", spelling="doThing",
+            name="doThing",
+            spelling="doThing",
             qualified_name="mylib::MyClass::doThing",
             return_type="MyOpaqueType",
         )
@@ -195,6 +213,7 @@ class TestGenerationConfig:
 
     def test_include_rendered_in_prologue(self, make_ir_module, luabridge3_output_config):
         from tsujikiri.configurations import GenerationConfig
+
         gen_cfg = GenerationConfig(includes=["<myheader.h>"])
         buf = io.StringIO()
         Generator(luabridge3_output_config, generation=gen_cfg).generate(make_ir_module(), buf)
@@ -203,6 +222,7 @@ class TestGenerationConfig:
 
     def test_generation_prefix_written(self, make_ir_module, luabridge3_output_config):
         from tsujikiri.configurations import GenerationConfig
+
         gen_cfg = GenerationConfig(prefix="// MY PREFIX\n")
         buf = io.StringIO()
         Generator(luabridge3_output_config, generation=gen_cfg).generate(make_ir_module(), buf)
@@ -210,6 +230,7 @@ class TestGenerationConfig:
 
     def test_generation_postfix_written(self, make_ir_module, luabridge3_output_config):
         from tsujikiri.configurations import GenerationConfig
+
         gen_cfg = GenerationConfig(postfix="// MY POSTFIX\n")
         buf = io.StringIO()
         Generator(luabridge3_output_config, generation=gen_cfg).generate(make_ir_module(), buf)
@@ -220,11 +241,12 @@ class TestGenerationConfig:
 # Type mappings
 # ---------------------------------------------------------------------------
 
+
 class TestTypeMappings:
     def test_luals_return_types_mapped(self, make_ir_module, luals_output_config):
         out = _generate(make_ir_module(), luals_output_config)
         # C++ types must be converted to Lua types; check whole-word by including newline
-        assert "---@return number\n" in out   # double → number
+        assert "---@return number\n" in out  # double → number
         assert "---@return integer\n" in out  # int → integer
         assert "---@return double\n" not in out
         assert "---@return int\n" not in out  # "integer" ends differently
@@ -239,26 +261,32 @@ class TestTypeMappings:
     def test_luals_field_types_mapped(self, make_ir_module, luals_output_config):
         out = _generate(make_ir_module(), luals_output_config)
         assert "---@field value_ integer\n" in out  # int field → integer via ---@field
-        assert "---@type int\n" not in out           # no bare "int" type annotation
+        assert "---@type int\n" not in out  # no bare "int" type annotation
 
 
 # ---------------------------------------------------------------------------
 # Renamed entities
 # ---------------------------------------------------------------------------
 
+
 class TestRenaming:
     def test_renamed_class_uses_new_name_in_template(self, luabridge3_output_config):
-        cls = TIRClass(name="Ugly", qualified_name="ns::Ugly", namespace="ns",
-                      variable_name="classUgly", rename="Pretty")
+        cls = TIRClass(
+            name="Ugly", qualified_name="ns::Ugly", namespace="ns", variable_name="classUgly", rename="Pretty"
+        )
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Ugly": cls})
         out = _generate(mod, luabridge3_output_config)
         assert '"Pretty"' in out
 
     def test_renamed_method_uses_new_name(self, luabridge3_output_config):
-        m = TIRMethod(name="getValueLong", spelling="getValueLong",
-                     qualified_name="Cls::getValueLong", return_type="int", rename="get")
-        cls = TIRClass(name="Cls", qualified_name="ns::Cls", namespace="ns",
-                      variable_name="classCls", methods=[m])
+        m = TIRMethod(
+            name="getValueLong",
+            spelling="getValueLong",
+            qualified_name="Cls::getValueLong",
+            return_type="int",
+            rename="get",
+        )
+        cls = TIRClass(name="Cls", qualified_name="ns::Cls", namespace="ns", variable_name="classCls", methods=[m])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Cls": cls})
         out = _generate(mod, luabridge3_output_config)
         assert '.addFunction("get"' in out
@@ -269,22 +297,27 @@ class TestRenaming:
 # Inner classes
 # ---------------------------------------------------------------------------
 
+
 class TestInnerClasses:
     def test_inner_class_emitted(self, luabridge3_output_config):
-        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns",
-                        variable_name="classOuterInner")
-        outer = TIRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
-                        variable_name="classOuter", inner_classes=[inner])
+        inner = TIRClass(
+            name="Inner", qualified_name="ns::Outer::Inner", namespace="ns", variable_name="classOuterInner"
+        )
+        outer = TIRClass(
+            name="Outer", qualified_name="ns::Outer", namespace="ns", variable_name="classOuter", inner_classes=[inner]
+        )
         mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
         out = _generate(mod, luabridge3_output_config)
         assert "Inner" in out
 
     def test_suppressed_inner_class_skipped(self, luabridge3_output_config):
-        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns",
-                        variable_name="classOuterInner")
+        inner = TIRClass(
+            name="Inner", qualified_name="ns::Outer::Inner", namespace="ns", variable_name="classOuterInner"
+        )
         inner.emit = False
-        outer = TIRClass(name="Outer", qualified_name="ns::Outer", namespace="ns",
-                        variable_name="classOuter", inner_classes=[inner])
+        outer = TIRClass(
+            name="Outer", qualified_name="ns::Outer", namespace="ns", variable_name="classOuter", inner_classes=[inner]
+        )
         mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})
         out = _generate(mod, luabridge3_output_config)
         assert "Inner" not in out
@@ -294,14 +327,18 @@ class TestInnerClasses:
 # Const/non-const overload cast
 # ---------------------------------------------------------------------------
 
+
 class TestConstNonConstOverload:
     def test_const_nonconst_overload_uses_cast(self, luabridge3_output_config):
-        m_const = TIRMethod(name="get", spelling="get", qualified_name="C::get",
-                           return_type="int", is_const=True, is_overload=True)
-        m_nonconst = TIRMethod(name="get", spelling="get", qualified_name="C::get",
-                              return_type="int", is_const=False, is_overload=True)
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC", methods=[m_const, m_nonconst])
+        m_const = TIRMethod(
+            name="get", spelling="get", qualified_name="C::get", return_type="int", is_const=True, is_overload=True
+        )
+        m_nonconst = TIRMethod(
+            name="get", spelling="get", qualified_name="C::get", return_type="int", is_const=False, is_overload=True
+        )
+        cls = TIRClass(
+            name="C", qualified_name="ns::C", namespace="ns", variable_name="classC", methods=[m_const, m_nonconst]
+        )
         mod = TIRModule(name="m", classes=[cls], class_by_name={"C": cls})
         out = _generate(mod, luabridge3_output_config)
         assert "C::get" in out
@@ -311,12 +348,12 @@ class TestConstNonConstOverload:
 # Suppressed fields and unsupported field types
 # ---------------------------------------------------------------------------
 
+
 class TestFieldEdgeCases:
     def test_suppressed_field_skipped_in_emit(self, luabridge3_output_config):
         f = TIRField(name="secret_", type_spelling="int")
         f.emit = False
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC", fields=[f])
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns", variable_name="classC", fields=[f])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"C": cls})
         out = _generate(mod, luabridge3_output_config)
         assert "secret_" not in out
@@ -329,8 +366,7 @@ class TestFieldEdgeCases:
 
     def test_unsupported_field_type_excluded(self, luabridge3_output_config):
         f = TIRField(name="data_", type_spelling="CFStringRef")
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC", fields=[f])
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns", variable_name="classC", fields=[f])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"C": cls})
         out = _generate(mod, luabridge3_output_config)
         assert "data_" not in out
@@ -340,10 +376,10 @@ class TestFieldEdgeCases:
 # Function with unsupported return type
 # ---------------------------------------------------------------------------
 
+
 class TestFunctionUnsupportedType:
     def test_unsupported_function_return_excluded(self, luabridge3_output_config):
-        fn = TIRFunction(name="badFn", qualified_name="ns::badFn",
-                        namespace="ns", return_type="CFStringRef")
+        fn = TIRFunction(name="badFn", qualified_name="ns::badFn", namespace="ns", return_type="CFStringRef")
         mod = TIRModule(name="m", functions=[fn])
         out = _generate(mod, luabridge3_output_config)
         assert "badFn" not in out
@@ -353,14 +389,16 @@ class TestFunctionUnsupportedType:
 # Topo-sort with cycle (leftover append path)
 # ---------------------------------------------------------------------------
 
+
 class TestTopoSortCycle:
     def test_cycle_classes_still_emitted(self, luabridge3_output_config):
-        cls_a = TIRClass(name="A", qualified_name="ns::A", namespace="ns",
-                        variable_name="classA", bases=[TIRBase("ns::B")])
-        cls_b = TIRClass(name="B", qualified_name="ns::B", namespace="ns",
-                        variable_name="classB", bases=[TIRBase("ns::A")])
-        mod = TIRModule(name="m", classes=[cls_a, cls_b],
-                       class_by_name={"A": cls_a, "B": cls_b})
+        cls_a = TIRClass(
+            name="A", qualified_name="ns::A", namespace="ns", variable_name="classA", bases=[TIRBase("ns::B")]
+        )
+        cls_b = TIRClass(
+            name="B", qualified_name="ns::B", namespace="ns", variable_name="classB", bases=[TIRBase("ns::A")]
+        )
+        mod = TIRModule(name="m", classes=[cls_a, cls_b], class_by_name={"A": cls_a, "B": cls_b})
         gen = Generator(luabridge3_output_config)
         sorted_classes = gen._topo_sort(mod.classes, mod.class_by_name)
         assert len(sorted_classes) == 2
@@ -370,12 +408,10 @@ class TestTopoSortCycle:
 # Template inheritance (template_extends)
 # ---------------------------------------------------------------------------
 
+
 class TestTemplateExtends:
     def test_extends_overrides_prologue(self, make_ir_module, luabridge3_output_config):
-        child = (
-            '{% extends "luabridge3.tpl" %}'
-            '{% block prologue %}// CUSTOM PROLOGUE\n{% endblock %}'
-        )
+        child = '{% extends "luabridge3.tpl" %}{% block prologue %}// CUSTOM PROLOGUE\n{% endblock %}'
         buf = io.StringIO()
         Generator(luabridge3_output_config, template_extends=child).generate(make_ir_module(), buf)
         out = buf.getvalue()
@@ -383,10 +419,7 @@ class TestTemplateExtends:
         assert "getGlobalNamespace" not in out
 
     def test_extends_overrides_class_block(self, make_ir_module, luabridge3_output_config):
-        child = (
-            '{% extends "luabridge3.tpl" %}'
-            '{% block class scoped %}.myClass("{{ cls.name }}")\n{% endblock %}'
-        )
+        child = '{% extends "luabridge3.tpl" %}{% block class scoped %}.myClass("{{ cls.name }}")\n{% endblock %}'
         buf = io.StringIO()
         Generator(luabridge3_output_config, template_extends=child).generate(make_ir_module(), buf)
         out = buf.getvalue()
@@ -398,17 +431,16 @@ class TestTemplateExtends:
 # Format-level template inheritance (extends field in OutputConfig)
 # ---------------------------------------------------------------------------
 
+
 class TestFormatLevelInheritance:
     def test_format_template_extends_builtin(self, make_ir_module):
         """A format whose template uses {% extends %} renders via Jinja2 inheritance."""
         from tsujikiri.configurations import OutputConfig
+
         cfg = OutputConfig(
             format_name="myformat",
             extends="luabridge3",
-            template=(
-                '{% extends "luabridge3.tpl" %}'
-                '{% block prologue %}// CUSTOM PROLOGUE\n{% endblock %}'
-            ),
+            template=('{% extends "luabridge3.tpl" %}{% block prologue %}// CUSTOM PROLOGUE\n{% endblock %}'),
         )
         buf = io.StringIO()
         Generator(cfg).generate(make_ir_module(), buf)
@@ -419,13 +451,11 @@ class TestFormatLevelInheritance:
     def test_format_template_super_call_includes_parent(self, make_ir_module):
         """{{ super() }} in a format-level block includes parent block content."""
         from tsujikiri.configurations import OutputConfig
+
         cfg = OutputConfig(
             format_name="myformat",
             extends="luabridge3",
-            template=(
-                '{% extends "luabridge3.tpl" %}'
-                '{% block prologue %}// PREPEND\n{{ super() }}{% endblock %}'
-            ),
+            template=('{% extends "luabridge3.tpl" %}{% block prologue %}// PREPEND\n{{ super() }}{% endblock %}'),
         )
         buf = io.StringIO()
         Generator(cfg).generate(make_ir_module(), buf)
@@ -446,11 +476,10 @@ class TestFormatLevelInheritance:
         (tmp_path / "custombase.output.yml").write_text(fmt_content, encoding="utf-8")
 
         from tsujikiri.configurations import OutputConfig
+
         cfg = OutputConfig(
             format_name="myformat",
-            template=(
-                '{% extends "custombase.tpl" %}'
-            ),
+            template=('{% extends "custombase.tpl" %}'),
         )
         buf = io.StringIO()
         Generator(cfg, extra_dirs=[tmp_path]).generate(make_ir_module(), buf)
@@ -486,19 +515,16 @@ class TestFormatLevelInheritance:
         """Chain: builtin luabridge3 → mid (extra_dir) → top (current format)."""
         mid_tpl_file = tmp_path / "mid.output.tpl"
         mid_tpl_file.write_text(
-            '{% extends "luabridge3.tpl" %}'
-            '{% block prologue %}// MID\n{% endblock %}',
+            '{% extends "luabridge3.tpl" %}{% block prologue %}// MID\n{% endblock %}',
             encoding="utf-8",
         )
         (tmp_path / "mid.output.yml").write_text(
             "format_name: mid\nlanguage: lua\ntemplate_file: mid.output.tpl\n",
             encoding="utf-8",
         )
-        top_tpl = (
-            '{% extends "mid.tpl" %}'
-            '{% block prologue %}// TOP\n{% endblock %}'
-        )
+        top_tpl = '{% extends "mid.tpl" %}{% block prologue %}// TOP\n{% endblock %}'
         from tsujikiri.configurations import OutputConfig
+
         top_cfg = OutputConfig(format_name="top", language="lua", template=top_tpl)
         buf = io.StringIO()
         Generator(top_cfg, extra_dirs=[tmp_path]).generate(make_ir_module(), buf)
@@ -509,8 +535,7 @@ class TestFormatLevelInheritance:
         """Full chain: builtin → mid → top → __override__ via template_extends."""
         mid_tpl_file = tmp_path / "mid.output.tpl"
         mid_tpl_file.write_text(
-            '{% extends "luabridge3.tpl" %}'
-            '{% block prologue %}// MID\n{% endblock %}',
+            '{% extends "luabridge3.tpl" %}{% block prologue %}// MID\n{% endblock %}',
             encoding="utf-8",
         )
         (tmp_path / "mid.output.yml").write_text(
@@ -519,8 +544,7 @@ class TestFormatLevelInheritance:
         )
         top_tpl_file = tmp_path / "top.output.tpl"
         top_tpl_file.write_text(
-            '{% extends "mid.tpl" %}'
-            '{% block prologue %}// TOP\n{% endblock %}',
+            '{% extends "mid.tpl" %}{% block prologue %}// TOP\n{% endblock %}',
             encoding="utf-8",
         )
         (tmp_path / "top.output.yml").write_text(
@@ -529,11 +553,9 @@ class TestFormatLevelInheritance:
         )
         top_tpl = top_tpl_file.read_text(encoding="utf-8")
         from tsujikiri.configurations import OutputConfig
+
         top_cfg = OutputConfig(format_name="top", language="lua", template=top_tpl)
-        override = (
-            '{% extends "top.tpl" %}'
-            '{% block prologue %}// OVERRIDE\n{% endblock %}'
-        )
+        override = '{% extends "top.tpl" %}{% block prologue %}// OVERRIDE\n{% endblock %}'
         buf = io.StringIO()
         Generator(top_cfg, extra_dirs=[tmp_path], template_extends=override).generate(make_ir_module(), buf)
         assert "// OVERRIDE" in buf.getvalue()
@@ -545,11 +567,9 @@ class TestFormatLevelInheritance:
             "format_name: passthrough\nextends: luabridge3\n",
             encoding="utf-8",
         )
-        override = (
-            '{% extends "passthrough.tpl" %}'
-            '{% block prologue %}// PT\n{% endblock %}'
-        )
+        override = '{% extends "passthrough.tpl" %}{% block prologue %}// PT\n{% endblock %}'
         from tsujikiri.configurations import OutputConfig
+
         pt_cfg = OutputConfig(format_name="passthrough", template="")
         buf = io.StringIO()
         Generator(pt_cfg, extra_dirs=[tmp_path], template_extends=override).generate(make_ir_module(), buf)
@@ -559,6 +579,7 @@ class TestFormatLevelInheritance:
 # ---------------------------------------------------------------------------
 # ItemFirstEnvironment.getattr fallback paths
 # ---------------------------------------------------------------------------
+
 
 class TestItemFirstEnvironment:
     def test_getattr_falls_back_to_python_attr(self):
@@ -581,6 +602,7 @@ class TestItemFirstEnvironment:
 # Broken format file silently ignored (lines 94-95)
 # ---------------------------------------------------------------------------
 
+
 class TestBrokenFormatFile:
     def test_load_output_config_exception_silently_ignored(self, make_ir_module, luabridge3_output_config):
         buf = io.StringIO()
@@ -593,13 +615,17 @@ class TestBrokenFormatFile:
 # IR metadata in context (virtual, noexcept, explicit, abstract)
 # ---------------------------------------------------------------------------
 
+
 class TestIRMetadataInContext:
     """Verify that virtual/noexcept/explicit/abstract metadata reaches the template context."""
 
     def _ctx_class(self, ir_class):
         from tsujikiri.configurations import OutputConfig
+
         cfg = OutputConfig(
-            format_name="test", format_version="1", description="",
+            format_name="test",
+            format_version="1",
+            description="",
             template="{% for cls in classes %}{{ cls.name }}{% endfor %}",
         )
         gen = Generator(cfg)
@@ -607,71 +633,80 @@ class TestIRMetadataInContext:
         return gen._build_class_ctx(ir_class)
 
     def test_method_is_virtual_in_context(self):
-        m = TIRMethod(name="fn", spelling="fn", qualified_name="C::fn",
-                     return_type="void", is_virtual=True)
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC", methods=[m], has_virtual_methods=True)
+        m = TIRMethod(name="fn", spelling="fn", qualified_name="C::fn", return_type="void", is_virtual=True)
+        cls = TIRClass(
+            name="C",
+            qualified_name="ns::C",
+            namespace="ns",
+            variable_name="classC",
+            methods=[m],
+            has_virtual_methods=True,
+        )
         ctx = self._ctx_class(cls)
         assert ctx["has_virtual_methods"] is True
         assert ctx["method_groups"][0]["methods"][0]["is_virtual"] is True
 
     def test_method_is_pure_virtual_in_context(self):
-        m = TIRMethod(name="fn", spelling="fn", qualified_name="C::fn",
-                     return_type="void", is_virtual=True, is_pure_virtual=True)
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC", methods=[m],
-                      has_virtual_methods=True, is_abstract=True)
+        m = TIRMethod(
+            name="fn", spelling="fn", qualified_name="C::fn", return_type="void", is_virtual=True, is_pure_virtual=True
+        )
+        cls = TIRClass(
+            name="C",
+            qualified_name="ns::C",
+            namespace="ns",
+            variable_name="classC",
+            methods=[m],
+            has_virtual_methods=True,
+            is_abstract=True,
+        )
         ctx = self._ctx_class(cls)
         assert ctx["is_abstract"] is True
         assert ctx["method_groups"][0]["methods"][0]["is_pure_virtual"] is True
 
     def test_method_is_noexcept_in_context(self):
-        m = TIRMethod(name="fn", spelling="fn", qualified_name="C::fn",
-                     return_type="void", is_noexcept=True)
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC", methods=[m])
+        m = TIRMethod(name="fn", spelling="fn", qualified_name="C::fn", return_type="void", is_noexcept=True)
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns", variable_name="classC", methods=[m])
         ctx = self._ctx_class(cls)
         assert ctx["method_groups"][0]["methods"][0]["is_noexcept"] is True
 
     def test_method_not_noexcept_by_default(self):
         m = TIRMethod(name="fn", spelling="fn", qualified_name="C::fn", return_type="void")
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC", methods=[m])
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns", variable_name="classC", methods=[m])
         ctx = self._ctx_class(cls)
         assert ctx["method_groups"][0]["methods"][0]["is_noexcept"] is False
 
     def test_constructor_is_noexcept_in_context(self):
         ctor = TIRConstructor(parameters=[], is_noexcept=True)
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC", constructors=[ctor])
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns", variable_name="classC", constructors=[ctor])
         ctx = self._ctx_class(cls)
         assert ctx["constructor_group"]["constructors"][0]["is_noexcept"] is True
 
     def test_constructor_is_explicit_in_context(self):
         ctor = TIRConstructor(parameters=[TIRParameter("x", "int")], is_explicit=True)
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC", constructors=[ctor])
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns", variable_name="classC", constructors=[ctor])
         ctx = self._ctx_class(cls)
         assert ctx["constructor_group"]["constructors"][0]["is_explicit"] is True
 
     def test_constructor_not_explicit_by_default(self):
         ctor = TIRConstructor(parameters=[])
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC", constructors=[ctor])
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns", variable_name="classC", constructors=[ctor])
         ctx = self._ctx_class(cls)
         assert ctx["constructor_group"]["constructors"][0]["is_explicit"] is False
 
     def test_class_not_abstract_by_default(self):
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC")
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns", variable_name="classC")
         ctx = self._ctx_class(cls)
         assert ctx["is_abstract"] is False
         assert ctx["has_virtual_methods"] is False
 
     def test_bases_in_context(self):
-        cls = TIRClass(name="D", qualified_name="ns::D", namespace="ns",
-                      variable_name="classD",
-                      bases=[TIRBase("ns::A", "public"), TIRBase("ns::B", "protected")])
+        cls = TIRClass(
+            name="D",
+            qualified_name="ns::D",
+            namespace="ns",
+            variable_name="classD",
+            bases=[TIRBase("ns::A", "public"), TIRBase("ns::B", "protected")],
+        )
         ctx = self._ctx_class(cls)
         assert ctx["bases"] == [
             {"qualified_name": "ns::A", "access": "public", "emit": True},
@@ -680,9 +715,13 @@ class TestIRMetadataInContext:
         assert ctx["base_name"] == "ns::A"
 
     def test_public_bases_in_context(self):
-        cls = TIRClass(name="D", qualified_name="ns::D", namespace="ns",
-                      variable_name="classD",
-                      bases=[TIRBase("ns::A", "public"), TIRBase("ns::B", "protected")])
+        cls = TIRClass(
+            name="D",
+            qualified_name="ns::D",
+            namespace="ns",
+            variable_name="classD",
+            bases=[TIRBase("ns::A", "public"), TIRBase("ns::B", "protected")],
+        )
         ctx = self._ctx_class(cls)
         assert ctx["public_bases"] == [
             {"qualified_name": "ns::A", "short_name": "A"},
@@ -691,25 +730,26 @@ class TestIRMetadataInContext:
     def test_suppressed_base_excluded_from_public_bases(self):
         base = TIRBase("ns::A", "public")
         base.emit = False
-        cls = TIRClass(name="D", qualified_name="ns::D", namespace="ns",
-                      variable_name="classD", bases=[base])
+        cls = TIRClass(name="D", qualified_name="ns::D", namespace="ns", variable_name="classD", bases=[base])
         ctx = self._ctx_class(cls)
         assert ctx["public_bases"] == []
         assert ctx["base_name"] == ""
 
     def test_no_bases_context(self):
-        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                      variable_name="classC")
+        cls = TIRClass(name="C", qualified_name="ns::C", namespace="ns", variable_name="classC")
         ctx = self._ctx_class(cls)
         assert ctx["bases"] == []
         assert ctx["base_name"] == ""
 
     def test_function_is_noexcept_in_context(self):
         from tsujikiri.configurations import OutputConfig
-        fn = TIRFunction(name="foo", qualified_name="ns::foo",
-                        namespace="ns", return_type="void", is_noexcept=True)
+
+        fn = TIRFunction(name="foo", qualified_name="ns::foo", namespace="ns", return_type="void", is_noexcept=True)
         cfg = OutputConfig(
-            format_name="test", format_version="1", description="", template="",
+            format_name="test",
+            format_version="1",
+            description="",
+            template="",
         )
         gen = Generator(cfg)
         groups = gen._build_function_group_ctxs([fn])
@@ -717,10 +757,13 @@ class TestIRMetadataInContext:
 
     def test_function_not_noexcept_by_default(self):
         from tsujikiri.configurations import OutputConfig
-        fn = TIRFunction(name="foo", qualified_name="ns::foo",
-                        namespace="ns", return_type="void")
+
+        fn = TIRFunction(name="foo", qualified_name="ns::foo", namespace="ns", return_type="void")
         cfg = OutputConfig(
-            format_name="test", format_version="1", description="", template="",
+            format_name="test",
+            format_version="1",
+            description="",
+            template="",
         )
         gen = Generator(cfg)
         groups = gen._build_function_group_ctxs([fn])
@@ -730,6 +773,7 @@ class TestIRMetadataInContext:
 # ---------------------------------------------------------------------------
 # Branch coverage: format file with no template in the scan loop (line 91->88)
 # ---------------------------------------------------------------------------
+
 
 class TestFormatScanNoTemplate:
     def test_format_scan_skips_config_without_template(self, make_ir_module, luabridge3_output_config, tmp_path):
@@ -751,6 +795,7 @@ class TestFormatScanNoTemplate:
 # Branch coverage: generator with no cfg.template but template_extends (line 97->102)
 # ---------------------------------------------------------------------------
 
+
 class TestNoCfgTemplateWithExtends:
     def test_generate_with_extends_and_no_cfg_template(self, make_ir_module):
         """cfg.template is empty; template_extends provides the full template via inheritance."""
@@ -768,10 +813,14 @@ class TestNoCfgTemplateWithExtends:
 # custom_data template context
 # ---------------------------------------------------------------------------
 
+
 class TestCustomData:
     def _cfg(self, template: str) -> OutputConfig:
         return OutputConfig(
-            format_name="test", format_version="1", description="", template=template,
+            format_name="test",
+            format_version="1",
+            description="",
+            template=template,
         )
 
     def _mod(self) -> TIRModule:
@@ -840,12 +889,15 @@ class TestCustomData:
         )
         cfg = self._cfg(template)
         buf = io.StringIO()
-        Generator(cfg, custom_data={
-            "xyz": 1,
-            "abc": ["a", "myValue", "c"],
-            "something_else": True,
-            "something_new": 42.1337,
-        }).generate(self._mod(), buf)
+        Generator(
+            cfg,
+            custom_data={
+                "xyz": 1,
+                "abc": ["a", "myValue", "c"],
+                "something_else": True,
+                "something_new": 42.1337,
+            },
+        ).generate(self._mod(), buf)
         out = buf.getvalue()
         assert out.startswith("1,")
         assert "my_value" in out
@@ -856,6 +908,7 @@ class TestCustomData:
 # ---------------------------------------------------------------------------
 # Branch coverage: suppressed class in _build_ir_context loop (line 137->136)
 # ---------------------------------------------------------------------------
+
 
 class TestSuppressedClassInContext:
     def test_emit_false_class_excluded_from_flat_classes(self, make_ir_module, luabridge3_output_config):
@@ -875,16 +928,17 @@ class TestSuppressedClassInContext:
 # Branch coverage: topo-sort diamond dependency (line 422->420)
 # ---------------------------------------------------------------------------
 
+
 class TestTopoSortDiamond:
     def test_diamond_dependency_base_first(self, luabridge3_output_config):
         """A -> B and A -> C: processing B decrements in_degree[A] to 1 (not 0),
         covering the False branch of ``if in_degree[dep_qname] == 0``."""
-        base_b = TIRClass(name="B", qualified_name="ns::B", namespace="ns",
-                         variable_name="classB")
-        base_c = TIRClass(name="C", qualified_name="ns::C", namespace="ns",
-                         variable_name="classC")
+        base_b = TIRClass(name="B", qualified_name="ns::B", namespace="ns", variable_name="classB")
+        base_c = TIRClass(name="C", qualified_name="ns::C", namespace="ns", variable_name="classC")
         child_a = TIRClass(
-            name="A", qualified_name="ns::A", namespace="ns",
+            name="A",
+            qualified_name="ns::A",
+            namespace="ns",
             variable_name="classA",
             bases=[TIRBase("ns::B"), TIRBase("ns::C")],
         )
@@ -904,20 +958,19 @@ class TestTopoSortDiamond:
 # Typesystem-aware type mapping and unsupported-type logic
 # ---------------------------------------------------------------------------
 
+
 class TestTypesystemGenerator:
     def test_typesystem_primitive_mapping_fallback(self, luabridge3_output_config: OutputConfig) -> None:
         from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
-        ts = TypesystemConfig(
-            primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", target_name="int")]
-        )
+
+        ts = TypesystemConfig(primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", target_name="int")])
         gen = Generator(luabridge3_output_config, typesystem=ts)
         assert gen._map_type("int64_t") == "int"
 
     def test_output_config_type_mapping_wins_over_typesystem(self) -> None:
         from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
-        ts = TypesystemConfig(
-            primitive_types=[PrimitiveTypeEntry(cpp_name="MyType", target_name="from_typesystem")]
-        )
+
+        ts = TypesystemConfig(primitive_types=[PrimitiveTypeEntry(cpp_name="MyType", target_name="from_typesystem")])
         cfg = OutputConfig(
             format_name="test",
             type_mappings={"MyType": "from_output_config"},
@@ -928,17 +981,15 @@ class TestTypesystemGenerator:
 
     def test_typesystem_typedef_mapping_fallback(self, luabridge3_output_config: OutputConfig) -> None:
         from tsujikiri.configurations import TypesystemConfig, TypedefTypeEntry
-        ts = TypesystemConfig(
-            typedef_types=[TypedefTypeEntry(cpp_name="MyString", source="std::string")]
-        )
+
+        ts = TypesystemConfig(typedef_types=[TypedefTypeEntry(cpp_name="MyString", source="std::string")])
         gen = Generator(luabridge3_output_config, typesystem=ts)
         assert gen._map_type("MyString") == "std::string"
 
     def test_custom_type_overrides_unsupported(self) -> None:
         from tsujikiri.configurations import TypesystemConfig, CustomTypeEntry
-        ts = TypesystemConfig(
-            custom_types=[CustomTypeEntry(cpp_name="QObject")]
-        )
+
+        ts = TypesystemConfig(custom_types=[CustomTypeEntry(cpp_name="QObject")])
         cfg = OutputConfig(
             format_name="test",
             unsupported_types=["QObject"],
@@ -953,6 +1004,7 @@ class TestTypesystemGenerator:
 
     def test_conversion_rules_in_template_context(self) -> None:
         from tsujikiri.configurations import TypesystemConfig, ConversionRuleEntry
+
         ts = TypesystemConfig(
             conversion_rules=[
                 ConversionRuleEntry(
@@ -985,6 +1037,7 @@ class TestTypesystemGenerator:
 # ---------------------------------------------------------------------------
 # _type_lookup_candidates
 # ---------------------------------------------------------------------------
+
 
 class TestTypeLookupCandidates:
     def test_exact_type_returns_single_candidate(self) -> None:
@@ -1020,6 +1073,7 @@ class TestTypeLookupCandidates:
 # ---------------------------------------------------------------------------
 # _map_type — specificity-based fallback
 # ---------------------------------------------------------------------------
+
 
 class TestMapTypeSpecificityFallback:
     def test_base_type_mapping_covers_const_ref(self) -> None:

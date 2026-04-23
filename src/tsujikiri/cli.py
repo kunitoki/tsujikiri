@@ -35,13 +35,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="辻斬り — Generic C++ Binding Generator",
     )
     p.add_argument(
-        "--input", "-i",
+        "--input",
+        "-i",
         required=False,
         metavar="FILE",
         help="Input config YAML (e.g. myproject.input.yml)",
     )
     p.add_argument(
-        "--target", "-t",
+        "--target",
+        "-t",
         nargs=2,
         metavar=("FORMAT", "FILE"),
         action="append",
@@ -52,7 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--formats-dir", "-f",
+        "--formats-dir",
+        "-f",
         action="append",
         default=[],
         metavar="DIR",
@@ -69,7 +72,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Parse and filter but do not generate output; print a summary instead",
     )
     p.add_argument(
-        "--manifest-file", "-m",
+        "--manifest-file",
+        "-m",
         default=None,
         metavar="FILE",
         help="Write API manifest JSON to FILE; if FILE already exists, compare with new manifest",
@@ -103,7 +107,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate the input config YAML (regex patterns, transform stage names) and exit",
     )
     p.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Enable verbose output during parsing (currently only applies to Clang diagnostics)",
     )
@@ -129,6 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _ir_to_dict(module: TIRModule) -> dict:
     """Serialize TIRModule to a JSON-compatible dict."""
+
     def _convert(obj: Any) -> Any:
         if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
             return {
@@ -171,11 +177,7 @@ def _resolve_pretty(
             return True, opts
         return False, []
     if fmt_override is not None and fmt_override.pretty is not None:
-        opts = (
-            fmt_override.pretty_options
-            if fmt_override.pretty_options is not None
-            else input_config.pretty_options
-        )
+        opts = fmt_override.pretty_options if fmt_override.pretty_options is not None else input_config.pretty_options
         return fmt_override.pretty, (opts if fmt_override.pretty else [])
     return input_config.pretty, input_config.pretty_options
 
@@ -217,13 +219,10 @@ def _validate_config_action(args: argparse.Namespace, extra_dirs: List[Path]) ->
 
     for spec in all_transform_specs:
         if spec.stage not in _REGISTRY:
-            errors.append(
-                f"Unknown transform stage '{spec.stage}'. "
-                f"Available: {sorted(_REGISTRY.keys())}"
-            )
+            errors.append(f"Unknown transform stage '{spec.stage}'. Available: {sorted(_REGISTRY.keys())}")
 
     # Validate target formats (if any specified)
-    for fmt, _outfile in (args.target or []):
+    for fmt, _outfile in args.target or []:
         try:
             resolve_format_path(fmt, extra_dirs=extra_dirs)
         except FileNotFoundError as exc:
@@ -277,7 +276,10 @@ def _process_sources(
             emitted_classes = [c.name for c in module.classes if c.emit]
             emitted_fns = [f.name for f in module.functions if f.emit]
             emitted_enums = [e.name for e in module.enums if e.emit]
-            print(f"[filter] emitted: classes={emitted_classes} functions={emitted_fns} enums={emitted_enums}", file=sys.stderr)
+            print(
+                f"[filter] emitted: classes={emitted_classes} functions={emitted_fns} enums={emitted_enums}",
+                file=sys.stderr,
+            )
 
         AttributeProcessor(input_config.attributes).apply(module)
 
@@ -343,26 +345,29 @@ def main() -> None:
     first_output_config = apply_format_inheritance(load_output_config(first_fmt_path), extra_dirs=extra_dirs)
 
     merged, all_includes = _process_sources(
-        input_config, source_entries, first_output_config, module_name, trace_stream,
+        input_config,
+        source_entries,
+        first_output_config,
+        module_name,
+        trace_stream,
         verbose=args.verbose,
     )
 
     # --- Inject declared functions from typesystem ---
     for fn_decl in input_config.typesystem.declared_functions:
-        params = [
-            TIRParameter(name=p["name"], type_spelling=p.get("type", ""))
-            for p in fn_decl.parameters
-        ]
+        params = [TIRParameter(name=p["name"], type_spelling=p.get("type", "")) for p in fn_decl.parameters]
         qualified = f"{fn_decl.namespace}::{fn_decl.name}" if fn_decl.namespace else fn_decl.name
-        merged.functions.append(TIRFunction(  # type: ignore[arg-type]
-            name=fn_decl.name,
-            qualified_name=qualified,
-            namespace=fn_decl.namespace,
-            return_type=fn_decl.return_type,
-            parameters=params,
-            wrapper_code=fn_decl.wrapper_code,
-            doc=fn_decl.doc,
-        ))
+        merged.functions.append(
+            TIRFunction(  # type: ignore[arg-type]
+                name=fn_decl.name,
+                qualified_name=qualified,
+                namespace=fn_decl.namespace,
+                return_type=fn_decl.return_type,
+                parameters=params,
+                wrapper_code=fn_decl.wrapper_code,
+                doc=fn_decl.doc,
+            )
+        )
 
     # --- Manifest: compute, compare, and optionally embed version ---
     manifest = compute_manifest(merged)
@@ -427,7 +432,11 @@ def main() -> None:
             fmt_path = resolve_format_path(fmt, extra_dirs=extra_dirs)
             output_config = apply_format_inheritance(load_output_config(fmt_path), extra_dirs=extra_dirs)
             target_merged, target_includes = _process_sources(
-                input_config, source_entries, output_config, module_name, trace_stream,
+                input_config,
+                source_entries,
+                output_config,
+                module_name,
+                trace_stream,
                 verbose=args.verbose,
             )
 
@@ -450,7 +459,10 @@ def main() -> None:
         target_api_version = args.api_version or (manifest["version"] if (args.embed_version or ev) else "")
 
         effective_generation = GenerationConfig(
-            includes=effective_gen_includes, prefix=prefix, postfix=postfix, embed_version=ev,
+            includes=effective_gen_includes,
+            prefix=prefix,
+            postfix=postfix,
+            embed_version=ev,
         )
 
         gen = Generator(
@@ -467,9 +479,7 @@ def main() -> None:
         gen.generate(target_merged, buf, api_version=target_api_version)
         content = buf.getvalue()
 
-        do_pretty, pretty_opts = _resolve_pretty(
-            output_config.format_name, fmt_override, input_config, args.pretty
-        )
+        do_pretty, pretty_opts = _resolve_pretty(output_config.format_name, fmt_override, input_config, args.pretty)
         if do_pretty:
             content = pretty(content, output_config.language, pretty_opts)
 

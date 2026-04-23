@@ -27,6 +27,7 @@ import pytest
 def lua_cfg():
     from tsujikiri.configurations import load_output_config
     from tsujikiri.formats import resolve_format_path
+
     return load_output_config(resolve_format_path("luabridge3"))
 
 
@@ -57,6 +58,7 @@ def _simple_class(
 # ---------------------------------------------------------------------------
 # Holder type — addConstructorFrom
 # ---------------------------------------------------------------------------
+
 
 class TestHolderType:
     def test_no_holder_uses_add_constructor(self, lua_cfg):
@@ -98,12 +100,19 @@ class TestHolderType:
 # Operator metamethods
 # ---------------------------------------------------------------------------
 
+
 class TestOperatorMetamethods:
     def test_operator_plus_binds_to_add_metamethod(self, lua_cfg):
         p = TIRParameter("other", "const ns::Foo &")
-        method = TIRMethod(name="operator+", spelling="operator+",
-                          qualified_name="ns::Foo::operator+", return_type="ns::Foo",
-                          is_operator=True, operator_type="operator+", parameters=[p])
+        method = TIRMethod(
+            name="operator+",
+            spelling="operator+",
+            qualified_name="ns::Foo::operator+",
+            return_type="ns::Foo",
+            is_operator=True,
+            operator_type="operator+",
+            parameters=[p],
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
@@ -112,9 +121,15 @@ class TestOperatorMetamethods:
 
     def test_operator_eq_binds_to_eq_metamethod(self, lua_cfg):
         p = TIRParameter("other", "const ns::Foo &")
-        method = TIRMethod(name="operator==", spelling="operator==",
-                          qualified_name="ns::Foo::operator==", return_type="bool",
-                          is_operator=True, operator_type="operator==", parameters=[p])
+        method = TIRMethod(
+            name="operator==",
+            spelling="operator==",
+            qualified_name="ns::Foo::operator==",
+            return_type="bool",
+            is_operator=True,
+            operator_type="operator==",
+            parameters=[p],
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
@@ -122,9 +137,15 @@ class TestOperatorMetamethods:
         assert "&ns::Foo::operator==" in out
 
     def test_operator_minus_unary_binds_to_unm(self, lua_cfg):
-        method = TIRMethod(name="operator-", spelling="operator-",
-                          qualified_name="ns::Foo::operator-", return_type="ns::Foo",
-                          is_operator=True, operator_type="operator-unary", parameters=[])
+        method = TIRMethod(
+            name="operator-",
+            spelling="operator-",
+            qualified_name="ns::Foo::operator-",
+            return_type="ns::Foo",
+            is_operator=True,
+            operator_type="operator-unary",
+            parameters=[],
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
@@ -133,9 +154,15 @@ class TestOperatorMetamethods:
 
     def test_operator_bitwise_and_binds_to_band(self, lua_cfg):
         p = TIRParameter("other", "const ns::Foo &")
-        method = TIRMethod(name="operator&", spelling="operator&",
-                          qualified_name="ns::Foo::operator&", return_type="ns::Foo",
-                          is_operator=True, operator_type="operator&", parameters=[p])
+        method = TIRMethod(
+            name="operator&",
+            spelling="operator&",
+            qualified_name="ns::Foo::operator&",
+            return_type="ns::Foo",
+            is_operator=True,
+            operator_type="operator&",
+            parameters=[p],
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
@@ -144,9 +171,15 @@ class TestOperatorMetamethods:
 
     def test_operator_bitwise_or_binds_to_bor(self, lua_cfg):
         p = TIRParameter("other", "const ns::Foo &")
-        method = TIRMethod(name="operator|", spelling="operator|",
-                          qualified_name="ns::Foo::operator|", return_type="ns::Foo",
-                          is_operator=True, operator_type="operator|", parameters=[p])
+        method = TIRMethod(
+            name="operator|",
+            spelling="operator|",
+            qualified_name="ns::Foo::operator|",
+            return_type="ns::Foo",
+            is_operator=True,
+            operator_type="operator|",
+            parameters=[p],
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
@@ -155,9 +188,15 @@ class TestOperatorMetamethods:
 
     def test_operator_bitwise_xor_binds_to_bxor(self, lua_cfg):
         p = TIRParameter("other", "const ns::Foo &")
-        method = TIRMethod(name="operator^", spelling="operator^",
-                          qualified_name="ns::Foo::operator^", return_type="ns::Foo",
-                          is_operator=True, operator_type="operator^", parameters=[p])
+        method = TIRMethod(
+            name="operator^",
+            spelling="operator^",
+            qualified_name="ns::Foo::operator^",
+            return_type="ns::Foo",
+            is_operator=True,
+            operator_type="operator^",
+            parameters=[p],
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
@@ -165,9 +204,15 @@ class TestOperatorMetamethods:
         assert "&ns::Foo::operator^" in out
 
     def test_operator_bitwise_not_binds_to_bnot(self, lua_cfg):
-        method = TIRMethod(name="operator~", spelling="operator~",
-                          qualified_name="ns::Foo::operator~", return_type="ns::Foo",
-                          is_operator=True, operator_type="operator~", parameters=[])
+        method = TIRMethod(
+            name="operator~",
+            spelling="operator~",
+            qualified_name="ns::Foo::operator~",
+            return_type="ns::Foo",
+            is_operator=True,
+            operator_type="operator~",
+            parameters=[],
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
@@ -175,9 +220,14 @@ class TestOperatorMetamethods:
         assert "&ns::Foo::operator~" in out
 
     def test_operator_left_shift_binds_to_shl(self, lua_cfg):
-        method = TIRMethod(name="operator<<", spelling="operator<<",
-                          qualified_name="ns::Foo::operator<<", return_type="ns::Foo",
-                          is_operator=True, operator_type="operator<<")
+        method = TIRMethod(
+            name="operator<<",
+            spelling="operator<<",
+            qualified_name="ns::Foo::operator<<",
+            return_type="ns::Foo",
+            is_operator=True,
+            operator_type="operator<<",
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
@@ -186,9 +236,15 @@ class TestOperatorMetamethods:
 
     def test_operator_right_shift_binds_to_shr(self, lua_cfg):
         p = TIRParameter("n", "int")
-        method = TIRMethod(name="operator>>", spelling="operator>>",
-                          qualified_name="ns::Foo::operator>>", return_type="ns::Foo",
-                          is_operator=True, operator_type="operator>>", parameters=[p])
+        method = TIRMethod(
+            name="operator>>",
+            spelling="operator>>",
+            qualified_name="ns::Foo::operator>>",
+            return_type="ns::Foo",
+            is_operator=True,
+            operator_type="operator>>",
+            parameters=[p],
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
@@ -196,8 +252,7 @@ class TestOperatorMetamethods:
         assert "&ns::Foo::operator>>" in out
 
     def test_regular_method_not_metamethod(self, lua_cfg):
-        method = TIRMethod(name="getValue", spelling="getValue",
-                          qualified_name="ns::Foo::getValue", return_type="int")
+        method = TIRMethod(name="getValue", spelling="getValue", qualified_name="ns::Foo::getValue", return_type="int")
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, lua_cfg)
@@ -209,10 +264,12 @@ class TestOperatorMetamethods:
 # Synthetic property bindings
 # ---------------------------------------------------------------------------
 
+
 class TestPropertyBinding:
     def test_readwrite_property_emits_add_property_with_setter(self, lua_cfg):
-        prop = IRProperty(name="arrivalMessage", getter="getArrivalMessage",
-                          setter="setArrivalMessage", type_spelling="std::string")
+        prop = IRProperty(
+            name="arrivalMessage", getter="getArrivalMessage", setter="setArrivalMessage", type_spelling="std::string"
+        )
         cls = _simple_class()
         cls.properties.append(prop)
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
@@ -241,6 +298,7 @@ class TestPropertyBinding:
 # ---------------------------------------------------------------------------
 # Free-function wrapper_code support
 # ---------------------------------------------------------------------------
+
 
 class TestFreeFunctionWrapperCode:
     def test_non_overloaded_wrapper_code_emitted(self, lua_cfg) -> None:

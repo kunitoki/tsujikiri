@@ -72,6 +72,7 @@ class TestResolveFormatPath:
 # apply_format_inheritance
 # ---------------------------------------------------------------------------
 
+
 def _write_fmt(directory: Path, name: str, content: str) -> Path:
     f = directory / f"{name}.output.yml"
     f.write_text(content, encoding="utf-8")
@@ -82,6 +83,7 @@ class TestApplyFormatInheritance:
     def test_no_extends_returns_config_unchanged(self, tmp_path):
         _write_fmt(tmp_path, "plain", "format_name: plain\ntype_mappings:\n  'int': 'integer'\n")
         from tsujikiri.configurations import load_output_config
+
         cfg = load_output_config(tmp_path / "plain.output.yml")
         result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
         assert result.type_mappings == {"int": "integer"}
@@ -91,6 +93,7 @@ class TestApplyFormatInheritance:
         _write_fmt(tmp_path, "base", "format_name: base\ntype_mappings:\n  'int': 'integer'\n  'float': 'number'\n")
         _write_fmt(tmp_path, "child", "format_name: child\nextends: base\ntype_mappings:\n  'float': 'real'\n")
         from tsujikiri.configurations import load_output_config
+
         cfg = load_output_config(tmp_path / "child.output.yml")
         result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
         # child wins on 'float', inherits 'int' from base
@@ -101,6 +104,7 @@ class TestApplyFormatInheritance:
         _write_fmt(tmp_path, "base", "format_name: base\noperator_mappings:\n  'operator+': '__add'\n")
         _write_fmt(tmp_path, "child", "format_name: child\nextends: base\noperator_mappings:\n  'operator-': '__sub'\n")
         from tsujikiri.configurations import load_output_config
+
         cfg = load_output_config(tmp_path / "child.output.yml")
         result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
         assert result.operator_mappings["operator+"] == "__add"
@@ -110,6 +114,7 @@ class TestApplyFormatInheritance:
         _write_fmt(tmp_path, "base", "format_name: base\nunsupported_types:\n  - CFStringRef\n")
         _write_fmt(tmp_path, "child", "format_name: child\nextends: base\nunsupported_types:\n  - MyOpaque\n")
         from tsujikiri.configurations import load_output_config
+
         cfg = load_output_config(tmp_path / "child.output.yml")
         result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
         assert "MyOpaque" in result.unsupported_types
@@ -119,6 +124,7 @@ class TestApplyFormatInheritance:
         _write_fmt(tmp_path, "base", "format_name: base\nunsupported_types:\n  - BaseType\n")
         _write_fmt(tmp_path, "child", "format_name: child\nextends: base\nunsupported_types:\n  - ChildType\n")
         from tsujikiri.configurations import load_output_config
+
         cfg = load_output_config(tmp_path / "child.output.yml")
         result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
         assert result.unsupported_types.index("ChildType") < result.unsupported_types.index("BaseType")
@@ -127,6 +133,7 @@ class TestApplyFormatInheritance:
         _write_fmt(tmp_path, "base", "format_name: base\nunsupported_types:\n  - Shared\n")
         _write_fmt(tmp_path, "child", "format_name: child\nextends: base\nunsupported_types:\n  - Shared\n")
         from tsujikiri.configurations import load_output_config
+
         cfg = load_output_config(tmp_path / "child.output.yml")
         result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
         assert result.unsupported_types.count("Shared") == 1
@@ -135,6 +142,7 @@ class TestApplyFormatInheritance:
         _write_fmt(tmp_path, "base", "format_name: base\nlanguage: cpp\n")
         _write_fmt(tmp_path, "child", "format_name: child\nextends: base\n")
         from tsujikiri.configurations import load_output_config
+
         cfg = load_output_config(tmp_path / "child.output.yml")
         result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
         assert result.language == "cpp"
@@ -143,6 +151,7 @@ class TestApplyFormatInheritance:
         _write_fmt(tmp_path, "base", "format_name: base\nlanguage: cpp\n")
         _write_fmt(tmp_path, "child", "format_name: child\nextends: base\nlanguage: lua\n")
         from tsujikiri.configurations import load_output_config
+
         cfg = load_output_config(tmp_path / "child.output.yml")
         result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
         assert result.language == "lua"
@@ -152,6 +161,7 @@ class TestApplyFormatInheritance:
         _write_fmt(tmp_path, "b", "format_name: b\nextends: a\ntype_mappings:\n  'float': 'number'\n")
         _write_fmt(tmp_path, "c", "format_name: c\nextends: b\ntype_mappings:\n  'bool': 'boolean'\n")
         from tsujikiri.configurations import load_output_config
+
         cfg = load_output_config(tmp_path / "c.output.yml")
         result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
         assert result.type_mappings["int"] == "integer"
@@ -162,6 +172,7 @@ class TestApplyFormatInheritance:
         _write_fmt(tmp_path, "x", "format_name: x\nextends: y\n")
         _write_fmt(tmp_path, "y", "format_name: y\nextends: x\n")
         from tsujikiri.configurations import load_output_config
+
         cfg = load_output_config(tmp_path / "x.output.yml")
         with pytest.raises(ValueError, match="Circular format inheritance"):
             apply_format_inheritance(cfg, extra_dirs=[tmp_path])
@@ -169,6 +180,7 @@ class TestApplyFormatInheritance:
     def test_extends_builtin_luabridge3(self):
         """A child format can extend the built-in luabridge3 format."""
         from tsujikiri.configurations import OutputConfig
+
         cfg = OutputConfig(
             format_name="mychild",
             extends="luabridge3",
