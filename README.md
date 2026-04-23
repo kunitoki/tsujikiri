@@ -226,7 +226,7 @@ tsujikiri -i project.input.yml --target myformat out/bindings.cpp -f ./my_format
 ## CLI Reference
 
 ```
-usage: tsujikiri [-h] [--input FILE] [--target FORMAT FILE] [--classname CLASS] [--formats-dir DIR] [--list-formats] [--dry-run] [--manifest-file FILE]
+usage: tsujikiri [-h] [--input FILE] [--target FORMAT FILE] [--formats-dir DIR] [--list-formats] [--dry-run] [--manifest-file FILE]
                  [--check-compat] [--embed-version] [--trace-transforms] [--dump-ir [FILE]] [--validate-config] [--verbose] [--api-version VERSION]
 
 辻斬り — Generic C++ Binding Generator
@@ -237,8 +237,6 @@ options:
                         Input config YAML (e.g. myproject.input.yml)
   --target FORMAT FILE, -t FORMAT FILE
                         Output target: FORMAT is a built-in name (luabridge3) or path to .output.yml; FILE is the output path ('-' for stdout). Repeatable.
-  --classname CLASS, -c CLASS
-                        Generate bindings for a single class only
   --formats-dir DIR, -f DIR
                         Additional directory to search for .output.yml format files (repeatable)
   --list-formats        Print available built-in output formats and exit

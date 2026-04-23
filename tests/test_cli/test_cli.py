@@ -66,11 +66,6 @@ class TestBuildParser:
         ])
         assert args.target == [["luabridge3", "out.cpp"], ["luals", "out.lua"]]
 
-    def test_classname_flag(self):
-        p = build_parser()
-        args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-", "--classname", "Foo"])
-        assert args.classname == "Foo"
-
     def test_dry_run_flag(self):
         p = build_parser()
         args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-", "--dry-run"])
@@ -176,14 +171,6 @@ class TestGeneration:
         assert "getGlobalNamespace" in cpp_file.read_text(encoding="utf-8")
         assert "Widget" in lua_file.read_text(encoding="utf-8")
 
-    def test_classname_filter(self, simple_input_yml):
-        stdout, _ = _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", "-",
-            "--classname", "Widget",
-        )
-        assert "Widget" in stdout
-
     def test_custom_output_format_by_path(self, simple_input_yml, tmp_path):
         fmt = tmp_path / "noop.output.yml"
         fmt.write_text(
@@ -247,20 +234,6 @@ class TestFormatOverrides:
         stdout, _ = _run("--input", str(fmt_generation_input_yml), "--target", "luabridge3", "-")
         assert "// FMT PREFIX" in stdout
         assert "// FMT POSTFIX" in stdout
-
-
-# ---------------------------------------------------------------------------
-# --classname not matching (suppresses non-matching classes)
-# ---------------------------------------------------------------------------
-
-class TestClassnameNoMatch:
-    def test_classname_no_match_suppresses_class(self, simple_input_yml):
-        stdout, _ = _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", "-",
-            "--classname", "NonExistent",
-        )
-        assert ".beginClass" not in stdout
 
 
 # ---------------------------------------------------------------------------
@@ -916,13 +889,3 @@ class TestVerbose:
             "--verbose",
         )
         assert "[filter] emitted:" in stderr
-
-    def test_verbose_suppressed_line_printed_when_classname_filter(self, simple_input_yml: Path) -> None:
-        """--verbose + --classname=NonExistent suppresses Widget → suppressed line printed (lines 243-244)."""
-        _, stderr = _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", "-",
-            "--verbose",
-            "--classname", "NonExistent",
-        )
-        assert "[filter] suppressed:" in stderr

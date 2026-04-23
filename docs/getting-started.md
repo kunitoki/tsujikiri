@@ -228,7 +228,6 @@ tsujikiri [OPTIONS]
 |------|-------|----------|-------------|
 | `--input` | `-i` | `FILE` | Input config YAML (required) |
 | `--target` | `-t` | `FORMAT FILE` | Built-in format name or path to `.output.yml`, plus output file path (`-` for stdout). Repeatable. |
-| `--classname` | `-c` | `CLASS` | Generate bindings for a single class only (additive to config filters) |
 | `--formats-dir` | `-f` | `DIR` | Additional directory to search for `.output.yml` files (repeatable) |
 | `--list-formats` | | | Print available formats and exit |
 | `--dry-run` | | | Parse and filter only; print IR summary without generating code |
