@@ -961,14 +961,14 @@ class TestTopoSortDiamond:
 
 class TestTypesystemGenerator:
     def test_typesystem_primitive_mapping_fallback(self, luabridge3_output_config: OutputConfig) -> None:
-        from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
+        from tsujikiri.typesystem import TypesystemConfig, PrimitiveTypeEntry
 
         ts = TypesystemConfig(primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", target_name="int")])
         gen = Generator(luabridge3_output_config, typesystem=ts)
         assert gen._map_type("int64_t") == "int"
 
     def test_output_config_type_mapping_wins_over_typesystem(self) -> None:
-        from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
+        from tsujikiri.typesystem import TypesystemConfig, PrimitiveTypeEntry
 
         ts = TypesystemConfig(primitive_types=[PrimitiveTypeEntry(cpp_name="MyType", target_name="from_typesystem")])
         cfg = OutputConfig(
@@ -980,14 +980,14 @@ class TestTypesystemGenerator:
         assert gen._map_type("MyType") == "from_output_config"
 
     def test_typesystem_typedef_mapping_fallback(self, luabridge3_output_config: OutputConfig) -> None:
-        from tsujikiri.configurations import TypesystemConfig, TypedefTypeEntry
+        from tsujikiri.typesystem import TypesystemConfig, TypedefTypeEntry
 
         ts = TypesystemConfig(typedef_types=[TypedefTypeEntry(cpp_name="MyString", target_name="std::string")])
         gen = Generator(luabridge3_output_config, typesystem=ts)
         assert gen._map_type("MyString") == "std::string"
 
     def test_custom_type_overrides_unsupported(self) -> None:
-        from tsujikiri.configurations import TypesystemConfig, CustomTypeEntry
+        from tsujikiri.typesystem import TypesystemConfig, CustomTypeEntry
 
         ts = TypesystemConfig(custom_types=[CustomTypeEntry(cpp_name="QObject")])
         cfg = OutputConfig(
@@ -1003,7 +1003,7 @@ class TestTypesystemGenerator:
         assert gen._map_type("unknown_type") == "unknown_type"
 
     def test_conversion_rules_in_template_context(self) -> None:
-        from tsujikiri.configurations import TypesystemConfig, ConversionRuleEntry
+        from tsujikiri.typesystem import TypesystemConfig, ConversionRuleEntry
 
         ts = TypesystemConfig(
             conversion_rules=[

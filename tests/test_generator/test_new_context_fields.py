@@ -1107,7 +1107,7 @@ class TestTypesystemTypeMappingBranches:
 
     def test_primitive_type_loop_continues_past_non_match(self) -> None:
         """Branch 550->549: primitive_types has entries but first doesn't match — loop continues."""
-        from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
+        from tsujikiri.typesystem import TypesystemConfig, PrimitiveTypeEntry
         from tsujikiri.configurations import OutputConfig
 
         ts = TypesystemConfig(
@@ -1123,7 +1123,7 @@ class TestTypesystemTypeMappingBranches:
 
     def test_typedef_type_loop_continues_past_non_match(self) -> None:
         """Branch 553->552: typedef_types has entries but first doesn't match — loop continues."""
-        from tsujikiri.configurations import TypesystemConfig, TypedefTypeEntry
+        from tsujikiri.typesystem import TypesystemConfig, TypedefTypeEntry
         from tsujikiri.configurations import OutputConfig
 
         ts = TypesystemConfig(
@@ -1139,7 +1139,7 @@ class TestTypesystemTypeMappingBranches:
 
     def test_custom_type_loop_continues_past_non_match(self) -> None:
         """Branch 565->564: custom_types has entries but first doesn't match — loop continues."""
-        from tsujikiri.configurations import TypesystemConfig, CustomTypeEntry
+        from tsujikiri.typesystem import TypesystemConfig, CustomTypeEntry
         from tsujikiri.configurations import OutputConfig
 
         ts = TypesystemConfig(

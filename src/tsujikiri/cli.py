@@ -18,8 +18,8 @@ from tsujikiri.configurations import (
     InputConfig,
     load_input_config,
     load_output_config,
-    merge_typesystems,
 )
+from tsujikiri.typesystem import merge_typesystems
 from tsujikiri.filters import FilterEngine
 from tsujikiri.pretty_printers import pretty
 from tsujikiri.formats import apply_format_inheritance, resolve_format_path, list_builtin_formats

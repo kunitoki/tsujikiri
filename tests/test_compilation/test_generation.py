@@ -10,7 +10,8 @@ import copy
 import io
 from pathlib import Path
 
-from tsujikiri.configurations import CustomTypeEntry, PrimitiveTypeEntry, TransformSpec, TypesystemConfig
+from tsujikiri.configurations import TransformSpec
+from tsujikiri.typesystem import CustomTypeEntry, PrimitiveTypeEntry, TypesystemConfig
 from tsujikiri.generator import Generator
 from tsujikiri.transforms import build_pipeline_from_config
 

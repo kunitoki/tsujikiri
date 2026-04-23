@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tsujikiri.configurations import (
+from tsujikiri.configurations import FormatOverrideConfig, load_input_config
+from tsujikiri.typesystem import (
     ContainerTypeEntry,
     ConversionRuleEntry,
     CustomTypeEntry,
-    FormatOverrideConfig,
     PrimitiveTypeEntry,
     TypedefTypeEntry,
     TypesystemConfig,
-    load_input_config,
 )
 
 
@@ -319,7 +318,7 @@ class TestConversionRules:
 
 class TestMergeTypesystems:
     def test_priority_entries_come_first(self) -> None:
-        from tsujikiri.configurations import merge_typesystems
+        from tsujikiri.typesystem import merge_typesystems
 
         priority = TypesystemConfig(primitive_types=[PrimitiveTypeEntry("A", "a")])
         base = TypesystemConfig(primitive_types=[PrimitiveTypeEntry("B", "b")])
@@ -327,7 +326,7 @@ class TestMergeTypesystems:
         assert [e.cpp_name for e in merged.primitive_types] == ["A", "B"]
 
     def test_priority_wins_first_match_on_same_cpp_name(self) -> None:
-        from tsujikiri.configurations import merge_typesystems
+        from tsujikiri.typesystem import merge_typesystems
 
         priority = TypesystemConfig(primitive_types=[PrimitiveTypeEntry("X", "priority")])
         base = TypesystemConfig(primitive_types=[PrimitiveTypeEntry("X", "base")])
@@ -335,7 +334,7 @@ class TestMergeTypesystems:
         assert merged.primitive_types[0].target_name == "priority"
 
     def test_empty_priority_returns_base_entries(self) -> None:
-        from tsujikiri.configurations import merge_typesystems
+        from tsujikiri.typesystem import merge_typesystems
 
         priority = TypesystemConfig()
         base = TypesystemConfig(primitive_types=[PrimitiveTypeEntry("B", "b")])
@@ -343,7 +342,7 @@ class TestMergeTypesystems:
         assert merged.primitive_types[0].cpp_name == "B"
 
     def test_all_fields_merged(self) -> None:
-        from tsujikiri.configurations import (
+        from tsujikiri.typesystem import (
             ContainerTypeEntry,
             ConversionRuleEntry,
             CustomTypeEntry,

@@ -24,7 +24,8 @@ from typing import Any, Dict, List, Optional
 
 import jinja2
 
-from tsujikiri.configurations import GenerationConfig, OutputConfig, TypesystemConfig, load_output_config
+from tsujikiri.configurations import GenerationConfig, OutputConfig, load_output_config
+from tsujikiri.typesystem import TypesystemConfig
 from tsujikiri.formats import _FORMATS_DIR
 from tsujikiri.generator_filters import camel_to_snake, snake_to_camel, code_at, param_name, param_pairs
 from tsujikiri.tir import (

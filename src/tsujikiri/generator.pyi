@@ -2,9 +2,10 @@ import io
 import jinja2
 from _typeshed import Incomplete
 from pathlib import Path
-from tsujikiri.configurations import GenerationConfig as GenerationConfig, OutputConfig as OutputConfig, TypesystemConfig as TypesystemConfig, load_output_config as load_output_config
+from tsujikiri.configurations import GenerationConfig as GenerationConfig, OutputConfig as OutputConfig, load_output_config as load_output_config
 from tsujikiri.generator_filters import camel_to_snake as camel_to_snake, code_at as code_at, param_name as param_name, param_pairs as param_pairs, snake_to_camel as snake_to_camel
 from tsujikiri.tir import TIRClass as TIRClass, TIREnum as TIREnum, TIRFunction as TIRFunction, TIRMethod as TIRMethod, TIRModule as TIRModule
+from tsujikiri.typesystem import TypesystemConfig as TypesystemConfig
 from typing import Any
 
 class ItemFirstEnvironment(jinja2.Environment):
