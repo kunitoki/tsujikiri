@@ -2,17 +2,20 @@ default:
     @just --list
 
 # Create/update a local virtual environment from pyproject metadata including dev dependencies.
-sync:
-    uv sync --extra dev
-    uv run src/tsujikiri/helpers/generate_clang_base_enumeration_member_types.py
-
-# Build wheel and source distribution.
-wheel: sync
-    uv build
+sync extras="clang22":
+    uv sync --extra dev --extra {{extras}}
 
 # Run test suite.
-test *args: sync
+test extras="clang22" *args:
+    @just sync {{extras}}
     uv run pytest -n auto {{args}}
+
+# Run test suite.
+tests *args:
+    @just test clang19 {{args}}
+    @just test clang20 {{args}}
+    @just test clang21 {{args}}
+    @just test clang22 {{args}}
 
 # Regenerate inline stubs (src/tsujikiri/**/*.pyi) via stubgen.
 stubs: sync
@@ -25,6 +28,10 @@ typecheck: sync
 # Run tests with coverage report.
 coverage *args: sync
     uv run pytest -n auto --cov=tsujikiri --cov-branch --cov-report=term-missing {{args}}
+
+# Build wheel and source distribution.
+wheel: sync typecheck stubs
+    uv build
 
 # Publish a release (build + PyPI publish handled by .github/workflows/release.yml on tag push)
 publish version: typecheck stubs
