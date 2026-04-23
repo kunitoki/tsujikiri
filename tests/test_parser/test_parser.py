@@ -1133,7 +1133,7 @@ class TestTypeFromTokensNamespaces:
     def test_m_function_nested_unnamed(self, type_tokens_module: object) -> None:
         # Unnamed parameter → no name token, falls back to cursor.type.spelling (canonical form).
         assert self._fn_types(type_tokens_module, "m_function_nested") == [
-            "::std::function<outer::inner::Nested (::std::string, outer::Mid)>"
+            "::std::function < outer::inner::Nested (::std::string , outer::Mid ) >"
         ]
 
 

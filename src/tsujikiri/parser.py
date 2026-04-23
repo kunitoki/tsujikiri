@@ -683,52 +683,14 @@ def parse_translation_unit(
         args = ["-x", "c++"] + args
 
     # Ensure sysroot and C++ stdlib headers on darwin.
-    if sys.platform == "darwin":
-        clang_native = Path(clang.__file__).parent / "native"
-        bundled_libcxx = clang_native / "libcxx"
-        bundled_resource = clang_native / "resource" / "include"
-        if bundled_libcxx.is_dir() and bundled_resource.is_dir():
-            if "-nostdinc++" not in args:
-                args.append("-nostdinc++")
-            if not any("libcxx" in a for a in args):
-                args += [f"-isystem{bundled_libcxx}", f"-isystem{bundled_resource}"]
-        else:
-            if "-resource-dir" not in args:
-                try:
-                    resource_dir = subprocess.check_output(
-                        ["xcrun", "clang", "-print-resource-dir"], text=True, stderr=subprocess.DEVNULL
-                    ).strip()
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    resource_dir = ""
-                if resource_dir and Path(resource_dir).is_dir():
-                    args += ["-resource-dir", resource_dir]
-
-        if "-isysroot" not in args:
-            try:
-                sysroot = subprocess.check_output(
-                    ["xcrun", "--show-sdk-path"], text=True, stderr=subprocess.DEVNULL
-                ).strip()
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                sysroot = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
-            args += ["-isysroot", sysroot]
-
-    elif sys.platform.startswith("linux"):
-        # On Linux, libclang pip package ships without builtin headers; point it at the
-        # system clang resource dir so stddef.h/stdarg.h etc. are found.
-        if "-resource-dir" not in args:
-            resource_dir = ""
-            for clang_bin in ["clang-18", "clang-17", "clang-16", "clang"]:
-                try:
-                    candidate = subprocess.check_output(
-                        [clang_bin, "-print-resource-dir"], text=True, stderr=subprocess.DEVNULL
-                    ).strip()
-                    if candidate and Path(candidate).is_dir():
-                        resource_dir = candidate
-                        break
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    continue
-            if resource_dir:
-                args += ["-resource-dir", resource_dir]
+    clang_native = Path(clang.__file__).parent / "native"
+    bundled_libcxx = clang_native / "libcxx"
+    bundled_resource = clang_native / "resource" / "include"
+    if bundled_libcxx.is_dir() and bundled_resource.is_dir():
+        if "-nostdinc++" not in args:
+            args.append("-nostdinc++")
+        if not any("libcxx" in a for a in args):
+            args += [f"-isystem{bundled_libcxx}", f"-isystem{bundled_resource}"]
 
     if verbose:
         print(f"[parse] {source_path}: args={args}", file=sys.stderr)
