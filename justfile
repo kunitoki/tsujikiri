@@ -30,12 +30,12 @@ format: sync
     uv run ruff format src/tsujikiri/*.py* tests/**/*.py
 
 # Run mypy type checking.
-check: sync
+check: sync format
     uv run mypy
     uv run ruff check src tests
 
 # Build wheel and source distribution.
-wheel: sync stubs check
+wheel: sync stubs format check
     uv build
 
 # Publish a release (build + PyPI publish handled by .github/workflows/release.yml on tag push)
