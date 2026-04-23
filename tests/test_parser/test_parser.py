@@ -22,8 +22,10 @@ from tsujikiri.parser import (
     _get_default_value,
     _get_deprecation_message,
     _is_scoped_enum,
+    _param_types_from_fn_tokens,
     _parse_class,
     _parse_enum,
+    _parse_parameters,
     _read_source_lines,
     _source_file,
     _type_from_tokens,
@@ -578,6 +580,88 @@ class TestIsysrootNotDuplicated:
             module = parse_translation_unit(src, ["ns"], "sysroot_empty_test")
         assert module is not None
 
+    def test_darwin_nostdinc_already_present_skips_append(self, tmp_path: Path) -> None:
+        """Branch 682→684: -nostdinc++ already in args — not appended again."""
+        hpp = tmp_path / "nostdinc.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-nostdinc++", "-isysroot", "/"])
+
+        def _force_bundled_exist(self: Path) -> bool:
+            return True
+
+        with patch("sys.platform", "darwin"), \
+             patch.object(Path, "is_dir", _force_bundled_exist):
+            module = parse_translation_unit(src, ["ns"], "nostdinc_present_test")
+        assert module is not None
+
+    def test_darwin_libcxx_already_in_args_skips_isystem(self, tmp_path: Path) -> None:
+        """Branch 684→697: libcxx already in args — -isystem<libcxx> not appended again."""
+        hpp = tmp_path / "libcxx_present.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(
+            path=str(hpp),
+            parse_args=["-std=c++17", "-isystem/usr/local/libcxx", "-isysroot", "/"],
+        )
+
+        def _force_bundled_exist(self: Path) -> bool:
+            return True
+
+        with patch("sys.platform", "darwin"), \
+             patch.object(Path, "is_dir", _force_bundled_exist):
+            module = parse_translation_unit(src, ["ns"], "libcxx_present_test")
+        assert module is not None
+
+    def test_darwin_bundled_dirs_missing_xcrun_resource_dir_fails(self, tmp_path: Path) -> None:
+        """Branch 687-693: bundled dirs absent, xcrun fails → resource_dir empty."""
+        hpp = tmp_path / "bundled_missing.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
+
+        def _bundled_absent(self: Path) -> bool:
+            s = str(self)
+            return "/native/libcxx" not in s and "/native/resource/include" not in s
+
+        with patch("sys.platform", "darwin"), \
+             patch.object(Path, "is_dir", _bundled_absent), \
+             patch("subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "xcrun")):
+            module = parse_translation_unit(src, ["ns"], "bundled_missing_xcrun_fail")
+        assert module is not None
+
+    def test_darwin_bundled_dirs_missing_xcrun_returns_valid_dir(self, tmp_path: Path) -> None:
+        """Branch 694-695: bundled dirs absent, xcrun succeeds → resource_dir appended."""
+        hpp = tmp_path / "bundled_missing2.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
+
+        def _bundled_absent(self: Path) -> bool:
+            s = str(self)
+            return "/native/libcxx" not in s and "/native/resource/include" not in s
+
+        with patch("sys.platform", "darwin"), \
+             patch.object(Path, "is_dir", _bundled_absent), \
+             patch("subprocess.check_output", return_value=str(tmp_path)):
+            module = parse_translation_unit(src, ["ns"], "bundled_missing_xcrun_ok")
+        assert module is not None
+
+    def test_darwin_bundled_dirs_missing_resource_dir_already_in_args(self, tmp_path: Path) -> None:
+        """Branch 687 False: bundled dirs absent but -resource-dir already in args — block skipped."""
+        hpp = tmp_path / "bundled_missing3.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(
+            path=str(hpp),
+            parse_args=["-std=c++17", "-resource-dir", str(tmp_path), "-isysroot", "/"],
+        )
+
+        def _bundled_absent(self: Path) -> bool:
+            s = str(self)
+            return "/native/libcxx" not in s and "/native/resource/include" not in s
+
+        with patch("sys.platform", "darwin"), \
+             patch.object(Path, "is_dir", _bundled_absent), \
+             patch("subprocess.check_output", side_effect=FileNotFoundError):
+            module = parse_translation_unit(src, ["ns"], "bundled_missing_res_preset")
+        assert module is not None
+
 
 # ---------------------------------------------------------------------------
 # _type_from_tokens — comprehensive real-libclang tests
@@ -1048,7 +1132,7 @@ class TestTypeFromTokensNamespaces:
         ]
 
     def test_m_function_nested_unnamed(self, type_tokens_module: object) -> None:
-        # Unnamed parameter → falls back to cursor.type.spelling (canonical libclang form)
+        # Unnamed parameter → no name token, falls back to cursor.type.spelling (canonical form).
         assert self._fn_types(type_tokens_module, "m_function_nested") == [
             "::std::function<outer::inner::Nested (::std::string, outer::Mid)>"
         ]
@@ -1087,6 +1171,99 @@ class TestCanonicalizeOperator:
         assert _canonicalize_operator("operator==", 1) == "operator=="
         assert _canonicalize_operator("operator<<", 1) == "operator<<"
         assert _canonicalize_operator("operator[]", 1) == "operator[]"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _param_types_from_fn_tokens (parser.py lines 90-136)
+# ---------------------------------------------------------------------------
+
+def _tok(spelling: str) -> MagicMock:
+    t: MagicMock = MagicMock()
+    t.spelling = spelling
+    return t
+
+
+def _cursor_with_tokens(name: str, spellings: list[str]) -> MagicMock:
+    c: MagicMock = MagicMock()
+    c.spelling = name
+    c.get_tokens.return_value = [_tok(s) for s in spellings]
+    return c
+
+
+class TestParamTypesFromFnTokens:
+    def test_two_primitive_params(self) -> None:
+        c = _cursor_with_tokens("foo", ["foo", "(", "int", ",", "float", ")"])
+        assert _param_types_from_fn_tokens(c) == ["int", "float"]
+
+    def test_no_params(self) -> None:
+        c = _cursor_with_tokens("foo", ["foo", "(", ")"])
+        assert _param_types_from_fn_tokens(c) == []
+
+    def test_name_not_in_tokens(self) -> None:
+        c = _cursor_with_tokens("foo", ["bar", "(", "int", ")"])
+        assert _param_types_from_fn_tokens(c) == []
+
+    def test_name_not_followed_by_paren(self) -> None:
+        c = _cursor_with_tokens("foo", ["foo", "int", "foo", "(", "float", ")"])
+        assert _param_types_from_fn_tokens(c) == ["float"]
+
+    def test_name_is_last_token(self) -> None:
+        c = _cursor_with_tokens("foo", ["foo"])
+        assert _param_types_from_fn_tokens(c) == []
+
+    def test_template_comma_not_split(self) -> None:
+        c = _cursor_with_tokens(
+            "foo",
+            ["foo", "(", "std", "::", "map", "<", "int", ",", "float", ">", ")"],
+        )
+        assert _param_types_from_fn_tokens(c) == ["std::map < int , float >"]
+
+    def test_nested_parens_tracked(self) -> None:
+        c = _cursor_with_tokens(
+            "foo",
+            ["foo", "(", "std", "::", "function", "<", "void", "(", "int", ")", ">", ")"],
+        )
+        assert _param_types_from_fn_tokens(c) == ["std::function < void ( int ) >"]
+
+    def test_consecutive_commas_skip_empty(self) -> None:
+        c = _cursor_with_tokens("foo", ["foo", "(", "int", ",", ",", "float", ")"])
+        assert _param_types_from_fn_tokens(c) == ["int", "float"]
+
+    def test_namespace_separator_normalized(self) -> None:
+        c = _cursor_with_tokens("foo", ["foo", "(", "std", "::", "string", ")"])
+        assert _param_types_from_fn_tokens(c) == ["std::string"]
+
+    def test_unclosed_param_list_returns_empty(self) -> None:
+        # No closing ) → for loop exhausts → return []  (branch 106->136)
+        c = _cursor_with_tokens("foo", ["foo", "(", "int"])
+        assert _param_types_from_fn_tokens(c) == []
+
+    def test_whitespace_only_token_normalized_empty(self) -> None:
+        # Token with pure whitespace spelling: normalized collapses to "" → not appended  (branch 122->124)
+        c = _cursor_with_tokens("foo", ["foo", "(", " ", ")"])
+        assert _param_types_from_fn_tokens(c) == []
+
+
+# ---------------------------------------------------------------------------
+# Unit test for _parse_parameters fallback path (parser.py line 158)
+# ---------------------------------------------------------------------------
+
+class TestParseParametersFallback:
+    def test_unnamed_zero_extent_param_uses_fallback_type(self) -> None:
+        mock_arg: MagicMock = MagicMock()
+        mock_arg.kind = ci.CursorKind.PARM_DECL
+        mock_arg.spelling = ""
+        mock_arg.get_tokens.return_value = []
+
+        mock_cursor: MagicMock = MagicMock()
+        mock_cursor.spelling = "myFunc"
+        mock_cursor.get_children.return_value = [mock_arg]
+        mock_cursor.get_tokens.return_value = [_tok("myFunc"), _tok("("), _tok("int"), _tok(")")]
+
+        params = _parse_parameters(mock_cursor)
+        assert len(params) == 1
+        assert params[0].type_spelling == "int"
+        assert params[0].name == ""
 
 
 # ---------------------------------------------------------------------------
