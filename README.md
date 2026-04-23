@@ -226,24 +226,33 @@ tsujikiri -i project.input.yml --target myformat out/bindings.cpp -f ./my_format
 ## CLI Reference
 
 ```
-tsujikiri [OPTIONS]
+usage: tsujikiri [-h] [--input FILE] [--target FORMAT FILE] [--classname CLASS] [--formats-dir DIR] [--list-formats] [--dry-run] [--manifest-file FILE]
+                 [--check-compat] [--embed-version] [--trace-transforms] [--dump-ir [FILE]] [--validate-config] [--verbose] [--api-version VERSION]
 
-Options:
-  -i, --input FILE            Input config YAML (required)
-  -t, --target FORMAT FILE    Output target: FORMAT is a built-in name or path to
-                              .output.yml; FILE is the output path ('-' for stdout).
-                              Repeatable for multiple simultaneous outputs.
-  -c, --classname CLASS       Generate bindings for a single class only
-  -f, --formats-dir DIR       Extra directory to search for .output.yml files (repeatable)
-      --list-formats          Print available formats and exit
-      --dry-run               Parse and filter only; print IR summary without generating
-  -m, --manifest-file FILE    Write API manifest JSON to FILE; compare if FILE exists
-      --check-compat          Exit 1 if manifest shows breaking API changes
-      --embed-version         Embed the API version hash in the generated code
-      --trace-transforms      Print transform stages and their targets to stderr
-      --dump-ir [FILE]        Dump the post-transform IR as JSON (default: stdout)
-      --validate-config       Validate input config (regex patterns, stage names) and exit
-  -h, --help                  Show this message and exit
+辻斬り — Generic C++ Binding Generator
+
+options:
+  -h, --help            show this help message and exit
+  --input FILE, -i FILE
+                        Input config YAML (e.g. myproject.input.yml)
+  --target FORMAT FILE, -t FORMAT FILE
+                        Output target: FORMAT is a built-in name (luabridge3) or path to .output.yml; FILE is the output path ('-' for stdout). Repeatable.
+  --classname CLASS, -c CLASS
+                        Generate bindings for a single class only
+  --formats-dir DIR, -f DIR
+                        Additional directory to search for .output.yml format files (repeatable)
+  --list-formats        Print available built-in output formats and exit
+  --dry-run             Parse and filter but do not generate output; print a summary instead
+  --manifest-file FILE, -m FILE
+                        Write API manifest JSON to FILE; if FILE already exists, compare with new manifest
+  --check-compat        Exit 1 if --manifest-file exists and breaking API changes are detected
+  --embed-version       Embed the API version hash in the generated code (template must support it)
+  --trace-transforms    Print which transform stages ran and on what entities to stderr
+  --dump-ir [FILE]      Dump the post-transform IR as JSON to FILE (default: stdout when flag is given without FILE)
+  --validate-config     Validate the input config YAML (regex patterns, transform stage names) and exit
+  --verbose, -v         Enable verbose output during parsing (currently only applies to Clang diagnostics)
+  --api-version VERSION
+                        Target API version (semver). Entities with api_since > VERSION or api_until <= VERSION are excluded.
 ```
 
 ---

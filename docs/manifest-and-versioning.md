@@ -32,7 +32,6 @@ The `uid` field is a SHA-256 hash of the `api` section serialised with sorted ke
 {
   "module": "myproject",
   "version": "1.2.0",
-  "uid": "3a8fe2d4c8b1f9e7d2c3a1b0f9e73a8f...64chars",
   "api": {
     "classes": [
       {
@@ -271,7 +270,6 @@ If the C++ API has breaking changes, `tsujikiri` exits with code 1 at the `--che
 {
   "module": "myproject",
   "version": "2.0.0",
-  "uid": "9f1a3d7b...newuid",
   "api": {
     "classes": [ ... ],
     "functions": [ ... ],

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import io
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -290,6 +289,19 @@ class TestParseTranslationUnitErrors:
         with pytest.raises(FileNotFoundError, match="Source file not found"):
             parse_translation_unit(src, [], "test")
 
+    def test_verbose_mode_prints_to_stderr(self, tmp_path: Path) -> None:
+        """verbose=True exercises the two diagnostic print branches (722, 796-797)."""
+        hpp = tmp_path / "verbose.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        buf = io.StringIO()
+        with patch("tsujikiri.parser.sys.stderr", buf):
+            module = parse_translation_unit(src, ["ns"], "verbose_test", verbose=True)
+        output = buf.getvalue()
+        assert "args=" in output
+        assert "IR built" in output
+        assert module is not None
+
 
 # ---------------------------------------------------------------------------
 # Nested classes and enums (nested_types.hpp)
@@ -536,129 +548,35 @@ class TestExplicitXArgNotDuplicated:
 
 
 # ---------------------------------------------------------------------------
-# Branch coverage: darwin sysroot injection
+# Branch coverage: bundled libcxx injection (715-719)
 # ---------------------------------------------------------------------------
 
-class TestIsysrootNotDuplicated:
-    def test_parse_with_explicit_isysroot(self, tmp_path: Path) -> None:
-        """When parse_args already contains ``-isysroot``, it must not be appended again."""
-        hpp = tmp_path / "isysroot.hpp"
-        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
-        module = parse_translation_unit(src, ["ns"], "isysroot_test")
-        assert module is not None
-        assert any(f.name == "foo" for f in module.functions)
-
-    def test_darwin_sysroot_appended_when_missing(self, tmp_path: Path) -> None:
-        """On darwin, -isysroot is appended to args when not already present."""
-        hpp = tmp_path / "sysroot.hpp"
+class TestBundledLibcxx:
+    def test_bundled_dirs_absent_skips_block(self, tmp_path: Path) -> None:
+        """Branch 715->721: bundled dirs do not exist — entire block skipped."""
+        hpp = tmp_path / "no_bundled.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("sys.platform", "darwin"):
-            module = parse_translation_unit(src, ["ns"], "sysroot_test")
-        assert module is not None
-        assert any(f.name == "foo" for f in module.functions)
-
-    def test_darwin_sysroot_fallback_when_xcrun_fails(self, tmp_path: Path) -> None:
-        """On darwin, fallback sysroot used when xcrun raises CalledProcessError."""
-        hpp = tmp_path / "sysroot_fallback.hpp"
-        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("sys.platform", "darwin"), \
-             patch("subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "xcrun")):
-            module = parse_translation_unit(src, ["ns"], "sysroot_fallback_test")
+        with patch.object(Path, "is_dir", return_value=False):
+            module = parse_translation_unit(src, ["ns"], "no_bundled")
         assert module is not None
 
-    def test_darwin_sysroot_skipped_when_empty(self, tmp_path: Path) -> None:
-        """On darwin, no -isysroot added when xcrun returns empty string."""
-        hpp = tmp_path / "sysroot_empty.hpp"
-        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("sys.platform", "darwin"), \
-             patch("subprocess.check_output", return_value=""):
-            module = parse_translation_unit(src, ["ns"], "sysroot_empty_test")
-        assert module is not None
-
-    def test_darwin_nostdinc_already_present_skips_append(self, tmp_path: Path) -> None:
-        """Branch 682→684: -nostdinc++ already in args — not appended again."""
+    def test_bundled_dirs_present_nostdinc_already_in_args(self, tmp_path: Path) -> None:
+        """Branch 716->718: bundled dirs exist, -nostdinc++ already in args — not appended again."""
         hpp = tmp_path / "nostdinc.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-nostdinc++", "-isysroot", "/"])
-
-        def _force_bundled_exist(self: Path) -> bool:
-            return True
-
-        with patch("sys.platform", "darwin"), \
-             patch.object(Path, "is_dir", _force_bundled_exist):
-            module = parse_translation_unit(src, ["ns"], "nostdinc_present_test")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-nostdinc++"])
+        with patch.object(Path, "is_dir", return_value=True):
+            module = parse_translation_unit(src, ["ns"], "nostdinc_preset")
         assert module is not None
 
-    def test_darwin_libcxx_already_in_args_skips_isystem(self, tmp_path: Path) -> None:
-        """Branch 684→697: libcxx already in args — -isystem<libcxx> not appended again."""
-        hpp = tmp_path / "libcxx_present.hpp"
+    def test_bundled_dirs_present_libcxx_already_in_args(self, tmp_path: Path) -> None:
+        """Branch 718->721: bundled dirs exist, libcxx already in args — isystem not appended again."""
+        hpp = tmp_path / "libcxx.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
-        src = SourceConfig(
-            path=str(hpp),
-            parse_args=["-std=c++17", "-isystem/usr/local/libcxx", "-isysroot", "/"],
-        )
-
-        def _force_bundled_exist(self: Path) -> bool:
-            return True
-
-        with patch("sys.platform", "darwin"), \
-             patch.object(Path, "is_dir", _force_bundled_exist):
-            module = parse_translation_unit(src, ["ns"], "libcxx_present_test")
-        assert module is not None
-
-    def test_darwin_bundled_dirs_missing_xcrun_resource_dir_fails(self, tmp_path: Path) -> None:
-        """Branch 687-693: bundled dirs absent, xcrun fails → resource_dir empty."""
-        hpp = tmp_path / "bundled_missing.hpp"
-        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
-
-        def _bundled_absent(self: Path) -> bool:
-            s = str(self)
-            return "/native/libcxx" not in s and "/native/resource/include" not in s
-
-        with patch("sys.platform", "darwin"), \
-             patch.object(Path, "is_dir", _bundled_absent), \
-             patch("subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "xcrun")):
-            module = parse_translation_unit(src, ["ns"], "bundled_missing_xcrun_fail")
-        assert module is not None
-
-    def test_darwin_bundled_dirs_missing_xcrun_returns_valid_dir(self, tmp_path: Path) -> None:
-        """Branch 694-695: bundled dirs absent, xcrun succeeds → resource_dir appended."""
-        hpp = tmp_path / "bundled_missing2.hpp"
-        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
-
-        def _bundled_absent(self: Path) -> bool:
-            s = str(self)
-            return "/native/libcxx" not in s and "/native/resource/include" not in s
-
-        with patch("sys.platform", "darwin"), \
-             patch.object(Path, "is_dir", _bundled_absent), \
-             patch("subprocess.check_output", return_value=str(tmp_path)):
-            module = parse_translation_unit(src, ["ns"], "bundled_missing_xcrun_ok")
-        assert module is not None
-
-    def test_darwin_bundled_dirs_missing_resource_dir_already_in_args(self, tmp_path: Path) -> None:
-        """Branch 687 False: bundled dirs absent but -resource-dir already in args — block skipped."""
-        hpp = tmp_path / "bundled_missing3.hpp"
-        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
-        src = SourceConfig(
-            path=str(hpp),
-            parse_args=["-std=c++17", "-resource-dir", str(tmp_path), "-isysroot", "/"],
-        )
-
-        def _bundled_absent(self: Path) -> bool:
-            s = str(self)
-            return "/native/libcxx" not in s and "/native/resource/include" not in s
-
-        with patch("sys.platform", "darwin"), \
-             patch.object(Path, "is_dir", _bundled_absent), \
-             patch("subprocess.check_output", side_effect=FileNotFoundError):
-            module = parse_translation_unit(src, ["ns"], "bundled_missing_res_preset")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isystem/usr/local/libcxx"])
+        with patch.object(Path, "is_dir", return_value=True):
+            module = parse_translation_unit(src, ["ns"], "libcxx_preset")
         assert module is not None
 
 
@@ -956,7 +874,6 @@ class TestTypeFromTokens:
             "namespace un { void f(int, double); }\n",
             encoding="utf-8",
         )
-        import sys
         args = ["-x", "c++", "-std=c++17"]
 
         index = ci.Index.create()
@@ -1368,145 +1285,3 @@ class TestParseClassUsingDeclNoTypeRef:
         assert ir_cls.using_declarations[0].member_name == "process"
 
 
-# ---------------------------------------------------------------------------
-# Platform branches in parse_translation_unit (parser.py lines 606-626)
-# ---------------------------------------------------------------------------
-
-class TestParseTranslationUnitPlatformBranches:
-    def test_non_darwin_platform_skips_sysroot(self, tmp_path: Path) -> None:
-        """Branch 606->627: sys.platform != 'darwin' — darwin block skipped entirely."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.sys") as mock_sys:
-            mock_sys.platform = "linux"
-            module = parse_translation_unit(src, [], "empty")
-        assert module is not None
-
-    def test_resource_dir_already_in_args_skips_xcrun(self, tmp_path: Path) -> None:
-        """Branch 617->627: '-resource-dir' already in parse_args — xcrun for resource-dir not called."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-resource-dir", "/usr/lib/clang/17"])
-        with patch("tsujikiri.parser.subprocess.check_output", wraps=subprocess.check_output) as mock_sub:
-            module = parse_translation_unit(src, [], "empty")
-            for call_args in mock_sub.call_args_list:
-                cmd = call_args[0][0]
-                assert "-print-resource-dir" not in cmd, "xcrun for resource-dir must not be called"
-        assert module is not None
-
-    def test_darwin_resource_dir_appended_when_xcrun_returns_existing_dir(self, tmp_path: Path) -> None:
-        """Branch 624->625: xcrun returns existing dir path — appended to args."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
-        with patch("tsujikiri.parser.sys") as mock_sys, \
-             patch("tsujikiri.parser.subprocess.check_output", return_value=str(tmp_path)):
-            mock_sys.platform = "darwin"
-            module = parse_translation_unit(src, [], "resource_dir_valid")
-        assert module is not None
-
-    def test_darwin_resource_dir_skipped_when_xcrun_returns_nonexistent_path(self, tmp_path: Path) -> None:
-        """Branch 624->end: xcrun returns path that is not a dir — resource-dir not appended."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
-        nonexistent = str(tmp_path / "no_such_dir")
-        with patch("tsujikiri.parser.sys") as mock_sys, \
-             patch("tsujikiri.parser.subprocess.check_output", return_value=nonexistent):
-            mock_sys.platform = "darwin"
-            module = parse_translation_unit(src, [], "resource_dir_nonexistent")
-        assert module is not None
-
-    def test_darwin_resource_dir_skipped_when_xcrun_raises_file_not_found(self, tmp_path: Path) -> None:
-        """Branch 622->624: xcrun raises FileNotFoundError — resource_dir empty, not appended."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/"])
-        with patch("tsujikiri.parser.sys") as mock_sys, \
-             patch("tsujikiri.parser.subprocess.check_output", side_effect=FileNotFoundError):
-            mock_sys.platform = "darwin"
-            module = parse_translation_unit(src, [], "resource_dir_fnf")
-        assert module is not None
-
-    def test_darwin_resource_dir_already_in_args_skips_block(self, tmp_path: Path) -> None:
-        """Branch 617->627 on darwin: '-resource-dir' already in parse_args — entire resource-dir block skipped."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/", "-resource-dir", str(tmp_path)])
-        with patch("tsujikiri.parser.sys") as mock_sys, \
-             patch("tsujikiri.parser.subprocess.check_output") as mock_sub:
-            mock_sys.platform = "darwin"
-            module = parse_translation_unit(src, [], "resource_dir_preset_on_darwin")
-            for call_args in mock_sub.call_args_list:
-                cmd = call_args[0][0]
-                assert "-print-resource-dir" not in cmd, "xcrun for resource-dir must not be called"
-        assert module is not None
-
-    def test_non_linux_non_darwin_platform_skips_both_blocks(self, tmp_path: Path) -> None:
-        """Branch 625->643: platform is neither darwin nor linux — linux elif False, skip to verbose."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.sys") as mock_sys, \
-             patch("tsujikiri.parser.subprocess.check_output") as mock_sub:
-            mock_sys.platform = "win32"
-            module = parse_translation_unit(src, [], "win32_platform")
-            for call_args in mock_sub.call_args_list:
-                cmd = call_args[0][0]
-                assert "-print-resource-dir" not in cmd, "resource-dir probe must not run on win32"
-        assert module is not None
-
-    def test_linux_resource_dir_already_in_args_skips_block(self, tmp_path: Path) -> None:
-        """Branch 628->643: linux platform but '-resource-dir' already in parse_args — inner block skipped."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-resource-dir", str(tmp_path)])
-        with patch("tsujikiri.parser.sys") as mock_sys, \
-             patch("tsujikiri.parser.subprocess.check_output") as mock_sub:
-            mock_sys.platform = "linux"
-            module = parse_translation_unit(src, [], "linux_resource_dir_preset")
-            for call_args in mock_sub.call_args_list:
-                cmd = call_args[0][0]
-                assert "-print-resource-dir" not in cmd, "clang probe must not run when resource-dir preset"
-        assert module is not None
-
-    def test_linux_resource_dir_all_clang_bins_fail(self, tmp_path: Path) -> None:
-        """Branches 630->640, 640->643: all clang bins raise FileNotFoundError — resource_dir stays empty."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.sys") as mock_sys, \
-             patch("tsujikiri.parser.subprocess.check_output", side_effect=FileNotFoundError):
-            mock_sys.platform = "linux"
-            module = parse_translation_unit(src, [], "linux_all_bins_fail")
-        assert module is not None
-
-    def test_linux_resource_dir_nonexistent_path_then_fail(self, tmp_path: Path) -> None:
-        """Branch 635->630: first clang bin returns non-existent path — loop continues, rest fail."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        nonexistent = str(tmp_path / "no_such_dir")
-
-        def _side_effect(cmd: list, **kwargs: object) -> str:
-            if cmd[0] == "clang-18":
-                return nonexistent
-            raise FileNotFoundError
-
-        with patch("tsujikiri.parser.sys") as mock_sys, \
-             patch("tsujikiri.parser.subprocess.check_output", side_effect=_side_effect):
-            mock_sys.platform = "linux"
-            module = parse_translation_unit(src, [], "linux_nonexistent_first")
-        assert module is not None
-
-    def test_linux_resource_dir_appended_when_clang_returns_valid_dir(self, tmp_path: Path) -> None:
-        """Happy path: linux, clang-18 returns existing dir — resource-dir appended to args."""
-        hpp = tmp_path / "empty.hpp"
-        hpp.write_text("// empty\n")
-        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.sys") as mock_sys, \
-             patch("tsujikiri.parser.subprocess.check_output", return_value=str(tmp_path)):
-            mock_sys.platform = "linux"
-            module = parse_translation_unit(src, [], "linux_valid_resource_dir")
-        assert module is not None

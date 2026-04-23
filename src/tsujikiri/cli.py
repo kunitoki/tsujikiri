@@ -340,24 +340,23 @@ def main() -> None:
         manifest_path = Path(args.manifest_file)
         if manifest_path.exists():
             old_manifest = load_manifest(manifest_path)
-            if "uid" in old_manifest and old_manifest["uid"] != manifest["uid"]:
-                report = compare_manifests(old_manifest, manifest)
-                if report.additive_changes:
-                    print("WARNING: Additive API changes:", file=sys.stderr)
-                    for ch in report.additive_changes:
-                        print(f"  + {ch}", file=sys.stderr)
-                if report.breaking_changes:
-                    print("ERROR: Breaking API changes detected:", file=sys.stderr)
-                    for ch in report.breaking_changes:
-                        print(f"  ! {ch}", file=sys.stderr)
-                    if args.check_compat:
-                        has_breaking = True
-                new_version = suggest_version_bump(old_manifest, report)
-                if new_version is not None:
-                    manifest["version"] = new_version
-                    old_version = old_manifest["version"]
-                    if new_version != old_version:
-                        print(f"INFO: Suggested version bump: {old_version} -> {new_version}", file=sys.stderr)
+            report = compare_manifests(old_manifest, manifest)
+            if report.additive_changes:
+                print("WARNING: Additive API changes:", file=sys.stderr)
+                for ch in report.additive_changes:
+                    print(f"  + {ch}", file=sys.stderr)
+            if report.breaking_changes:
+                print("ERROR: Breaking API changes detected:", file=sys.stderr)
+                for ch in report.breaking_changes:
+                    print(f"  ! {ch}", file=sys.stderr)
+                if args.check_compat:
+                    has_breaking = True
+            new_version = suggest_version_bump(old_manifest, report)
+            if new_version is not None:
+                manifest["version"] = new_version
+                old_version = old_manifest["version"]
+                if new_version != old_version:
+                    print(f"INFO: Suggested version bump: {old_version} -> {new_version}", file=sys.stderr)
 
     base_gen = input_config.generation
 
