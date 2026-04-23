@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import IO, Any, List, Optional
 
 from tsujikiri.attribute_processor import AttributeProcessor
-from tsujikiri.configurations import GenerationConfig, load_input_config, load_output_config
+from tsujikiri.configurations import (
+    FormatOverrideConfig,
+    GenerationConfig,
+    InputConfig,
+    load_input_config,
+    load_output_config,
+)
 from tsujikiri.filters import FilterEngine
 from tsujikiri.pretty_printers import pretty
 from tsujikiri.formats import apply_format_inheritance, resolve_format_path, list_builtin_formats
@@ -107,6 +113,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Target API version (semver). Entities with api_since > VERSION or api_until <= VERSION are excluded.",
     )
+    p.add_argument(
+        "--pretty",
+        nargs="*",
+        metavar="FORMAT",
+        default=None,
+        help=(
+            "Enable pretty printing. With no FORMAT args, enable for all targets. "
+            "With FORMAT names (e.g. --pretty luabridge3 pybind11), enable only for "
+            "those targets. Overrides the input.yml `pretty` setting."
+        ),
+    )
     return p
 
 
@@ -128,6 +145,39 @@ def _ir_to_dict(module: TIRModule) -> dict:
     d = _convert(module)
     d.pop("class_by_name", None)
     return d
+
+
+def _resolve_pretty(
+    fmt_name: str,
+    fmt_override: Optional[FormatOverrideConfig],
+    input_config: InputConfig,
+    cli_pretty: Optional[List[str]],
+) -> tuple[bool, List[str]]:
+    """Resolve whether pretty printing is active for a format and which options to use.
+
+    Priority (highest wins):
+      1. CLI --pretty [FORMAT...]: present with no args = all; with names = only those.
+      2. format_overrides.<fmt>.pretty: per-format YAML override.
+      3. top-level InputConfig.pretty: global YAML default.
+    """
+    if cli_pretty is not None:
+        enabled = (cli_pretty == []) or (fmt_name in cli_pretty)
+        if enabled:
+            opts = (
+                fmt_override.pretty_options
+                if fmt_override is not None and fmt_override.pretty_options is not None
+                else input_config.pretty_options
+            )
+            return True, opts
+        return False, []
+    if fmt_override is not None and fmt_override.pretty is not None:
+        opts = (
+            fmt_override.pretty_options
+            if fmt_override.pretty_options is not None
+            else input_config.pretty_options
+        )
+        return fmt_override.pretty, (opts if fmt_override.pretty else [])
+    return input_config.pretty, input_config.pretty_options
 
 
 def _validate_config_action(args: argparse.Namespace, extra_dirs: List[Path]) -> None:
@@ -417,8 +467,11 @@ def main() -> None:
         gen.generate(target_merged, buf, api_version=target_api_version)
         content = buf.getvalue()
 
-        if input_config.pretty:
-            content = pretty(content, output_config.language, input_config.pretty_options)
+        do_pretty, pretty_opts = _resolve_pretty(
+            output_config.format_name, fmt_override, input_config, args.pretty
+        )
+        if do_pretty:
+            content = pretty(content, output_config.language, pretty_opts)
 
         if outfile == "-":
             sys.stdout.write(content)

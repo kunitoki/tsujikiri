@@ -90,6 +90,30 @@ class TestBuildParser:
         args = p.parse_args(["--input", "x.yml", "--validate-config"])
         assert args.validate_config is True
 
+    def test_pretty_flag_absent_is_none(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "foo.yml", "--target", "luabridge3", "-"])
+        assert args.pretty is None
+
+    def test_pretty_flag_no_args_is_empty_list(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "foo.yml", "--target", "luabridge3", "-", "--pretty"])
+        assert args.pretty == []
+
+    def test_pretty_flag_with_one_format(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "foo.yml", "--target", "luabridge3", "-", "--pretty", "luabridge3"])
+        assert args.pretty == ["luabridge3"]
+
+    def test_pretty_flag_with_multiple_formats(self):
+        p = build_parser()
+        args = p.parse_args([
+            "--input", "foo.yml",
+            "--target", "luabridge3", "-",
+            "--pretty", "luabridge3", "pybind11",
+        ])
+        assert args.pretty == ["luabridge3", "pybind11"]
+
 
 # ---------------------------------------------------------------------------
 # --list-formats
@@ -667,6 +691,44 @@ class TestPrettyPrinting:
         args, kwargs = mock_fmt.call_args
         assert args[2] == ["--style=Google"]
 
+    def test_pyi_pretty_language_is_python(self, tmp_path):
+        """pyi format has language=python, so pretty receives 'python'."""
+        data = {
+            "source": {
+                "path": str(Path(__file__).parent / "simple.hpp"),
+                "parse_args": ["-std=c++17"],
+            },
+            "filters": {"namespaces": ["simple"]},
+            "pretty": True,
+        }
+        p = tmp_path / "pyi_lang.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        with patch("tsujikiri.cli.pretty", return_value="# ok\n") as mock_fmt:
+            _run("--input", str(p), "--target", "pyi", "-")
+
+        args, kwargs = mock_fmt.call_args
+        assert args[1] == "python"
+
+    def test_pyi_real_ruff_formats_output(self, tmp_path):
+        """Integration test: pyi generation with pretty: true calls ruff and reformats."""
+        data = {
+            "source": {
+                "path": str(Path(__file__).parent / "simple.hpp"),
+                "parse_args": ["-std=c++17"],
+            },
+            "filters": {"namespaces": ["simple"], "constructors": {"include": True}},
+            "pretty": True,
+        }
+        p = tmp_path / "pyi_ruff.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        stdout, _ = _run("--input", str(p), "--target", "pyi", "-")
+
+        # ruff should have run — output is valid, well-formed Python
+        assert "class Widget:" in stdout
+        assert "def __init__" in stdout
+
 
 # ---------------------------------------------------------------------------
 # --trace-transforms
@@ -888,3 +950,138 @@ class TestVerbose:
             "--verbose",
         )
         assert "[filter] emitted:" in stderr
+
+
+# ---------------------------------------------------------------------------
+# --pretty CLI flag (global and per-format)
+# ---------------------------------------------------------------------------
+
+HERE_CLI = Path(__file__).parent
+
+
+def _make_input_yml(tmp_path: Path, **extra: object) -> Path:
+    """Write a minimal input.yml pointing at simple.hpp with optional extra fields."""
+    data: dict = {
+        "source": {
+            "path": str(HERE_CLI / "simple.hpp"),
+            "parse_args": ["-std=c++17"],
+        },
+        "filters": {"namespaces": ["simple"]},
+    }
+    data.update(extra)
+    p = tmp_path / "test.input.yml"
+    p.write_text(yaml.dump(data), encoding="utf-8")
+    return p
+
+
+class TestPrettyFlag:
+    def test_absent_uses_yaml_false(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=False)
+        with patch("tsujikiri.cli.pretty") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        mock_fmt.assert_not_called()
+
+    def test_absent_uses_yaml_true(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=True)
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        mock_fmt.assert_called_once()
+
+    def test_no_args_enables_all(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=False)
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty")
+        mock_fmt.assert_called_once()
+
+    def test_matching_format_enables(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=False)
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty", "luabridge3")
+        mock_fmt.assert_called_once()
+
+    def test_nonmatching_format_disables(self, tmp_path: Path) -> None:
+        # YAML says pretty: true but CLI --pretty pybind11 should disable for luabridge3
+        yml = _make_input_yml(tmp_path, pretty=True)
+        with patch("tsujikiri.cli.pretty") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty", "pybind11")
+        mock_fmt.assert_not_called()
+
+    def test_multiple_formats_in_one_run(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=False)
+        out_lua = tmp_path / "out.lua"
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run(
+                "--input", str(yml),
+                "--target", "luabridge3", "-",
+                "--target", "luals", str(out_lua),
+                "--pretty",
+            )
+        assert mock_fmt.call_count == 2
+
+    def test_cli_enables_only_listed_format_in_multi_target(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=False)
+        out_lua = tmp_path / "out.lua"
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run(
+                "--input", str(yml),
+                "--target", "luabridge3", "-",
+                "--target", "luals", str(out_lua),
+                "--pretty", "luabridge3",
+            )
+        assert mock_fmt.call_count == 1
+        assert mock_fmt.call_args[0][1] == "cpp"
+
+    def test_format_override_true_overrides_global_false(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(
+            tmp_path,
+            pretty=False,
+            format_overrides={"luabridge3": {"pretty": True}},
+        )
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        mock_fmt.assert_called_once()
+
+    def test_format_override_false_overrides_global_true(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(
+            tmp_path,
+            pretty=True,
+            format_overrides={"luabridge3": {"pretty": False}},
+        )
+        with patch("tsujikiri.cli.pretty") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        mock_fmt.assert_not_called()
+
+    def test_format_override_options_used_when_format_enables(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(
+            tmp_path,
+            format_overrides={"luabridge3": {"pretty": True, "pretty_options": ["--style=LLVM"]}},
+        )
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        assert mock_fmt.call_args[0][2] == ["--style=LLVM"]
+
+    def test_format_override_options_fallback_to_global(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(
+            tmp_path,
+            pretty=True,
+            pretty_options=["--style=Google"],
+            format_overrides={"luabridge3": {"pretty": True}},
+        )
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        assert mock_fmt.call_args[0][2] == ["--style=Google"]
+
+    def test_cli_enables_uses_format_override_options(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(
+            tmp_path,
+            format_overrides={"luabridge3": {"pretty_options": ["--style=LLVM"]}},
+        )
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty")
+        assert mock_fmt.call_args[0][2] == ["--style=LLVM"]
+
+    def test_cli_enables_falls_back_to_global_options_when_no_format_override(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty_options=["--style=Google"])
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty")
+        assert mock_fmt.call_args[0][2] == ["--style=Google"]

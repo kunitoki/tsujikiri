@@ -1,6 +1,6 @@
 import argparse
 from tsujikiri.attribute_processor import AttributeProcessor as AttributeProcessor
-from tsujikiri.configurations import GenerationConfig as GenerationConfig, load_input_config as load_input_config, load_output_config as load_output_config
+from tsujikiri.configurations import FormatOverrideConfig as FormatOverrideConfig, GenerationConfig as GenerationConfig, InputConfig as InputConfig, load_input_config as load_input_config, load_output_config as load_output_config
 from tsujikiri.filters import FilterEngine as FilterEngine
 from tsujikiri.formats import apply_format_inheritance as apply_format_inheritance, list_builtin_formats as list_builtin_formats, resolve_format_path as resolve_format_path
 from tsujikiri.generator import Generator as Generator

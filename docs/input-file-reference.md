@@ -258,10 +258,14 @@ format_overrides:
       includes: ['"luabridge_extras.hpp"']
       prefix: "// LuaBridge3 custom header\n"
       postfix: "// LuaBridge3 custom footer\n"
+    pretty: true
+    pretty_options:
+      - "--style=LLVM"
 
   luals:
     generation:
       includes: []
+    pretty: false  # disable even if top-level pretty: true
 ```
 
 | Field | Type | Default | Override Behaviour |
@@ -274,6 +278,8 @@ format_overrides:
 | `generation.prefix` | string | `""` | **Replaces** the top-level prefix when non-empty |
 | `generation.postfix` | string | `""` | **Replaces** the top-level postfix when non-empty |
 | `generation.embed_version` | bool | `false` | OR'd with top-level `embed_version` |
+| `pretty` | bool or absent | (inherit) | `true` = force-enable; `false` = force-disable; absent = inherit top-level `pretty` |
+| `pretty_options` | list of strings or absent | (inherit) | Override args for the pretty printer; absent = inherit top-level `pretty_options` |
 
 ---
 
@@ -309,6 +315,17 @@ For generation prefix/postfix:
 format_overrides prefix/postfix replaces top-level when non-empty
 top-level prefix/postfix used when format_overrides omits or leaves empty
 ```
+
+For pretty printing (highest priority wins):
+```
+CLI --pretty [FORMAT...]                    ← overrides all YAML settings
+    ↑
+format_overrides.<format>.pretty            ← per-format YAML override
+    ↑
+pretty                                      ← top-level YAML default
+```
+
+`pretty_options` follows the same priority chain; the first non-absent level wins.
 
 ### Full Example
 
@@ -382,9 +399,10 @@ When `pretty: true`, tsujikiri pipes the generated output through the language-a
 
 Currently registered pretty printers:
 
-| Language | Command |
-|----------|---------|
-| `cpp` | `clang-format` |
+| Language | Command | Used by formats |
+|----------|---------|-----------------|
+| `cpp` | `clang-format` | `luabridge3`, `pybind11` |
+| `python` | `ruff format` | `pyi` |
 
 ```yaml
 pretty: true
@@ -401,6 +419,40 @@ pretty_options:
 The pretty printer is invoked with `-` as the filename so it reads from stdin and writes to stdout — no temporary file is created. If the pretty printer binary is not on `PATH`, tsujikiri raises `FileNotFoundError`. If the pretty printer exits non-zero, `subprocess.CalledProcessError` is raised.
 
 > **Tip:** When `language` has no registered pretty printer (e.g. `luals`), `pretty: true` is silently ignored.
+
+### Per-Format and CLI Overrides
+
+`pretty` can also be controlled per-format via `format_overrides` or overridden entirely from the CLI:
+
+```yaml
+# Enable globally but disable for the luals format (no registered printer)
+pretty: true
+pretty_options:
+  - "--style=Google"
+
+format_overrides:
+  luals:
+    pretty: false
+  pybind11:
+    pretty: true          # force-enable even if top-level were false
+    pretty_options:       # use different options for this format
+      - "--style=LLVM"
+```
+
+From the CLI, `--pretty` overrides the YAML setting for all targets or specific ones:
+
+```bash
+# Enable for all targets (overrides pretty: false in YAML)
+tsujikiri -i project.input.yml --target luabridge3 out.cpp --pretty
+
+# Enable only for luabridge3 (disables for all other targets even if YAML says true)
+tsujikiri -i project.input.yml \
+  --target luabridge3 out.cpp \
+  --target luals out.lua \
+  --pretty luabridge3
+```
+
+See [Override Precedence](#override-precedence) for the full resolution order.
 
 ---
 

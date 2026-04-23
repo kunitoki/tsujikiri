@@ -231,6 +231,11 @@ class FormatOverrideConfig:
     - ``generation``: if set, ``includes`` are appended to the collected
       includes; ``prefix``/``postfix`` replace the top-level values when
       non-empty.
+    - ``pretty``: ``None`` = inherit the top-level ``pretty`` setting;
+      ``True`` = force-enable for this format; ``False`` = force-disable
+      for this format even when the global default is ``True``.
+    - ``pretty_options``: ``None`` = inherit the top-level ``pretty_options``
+      list; a list = use these args instead of the global ones.
     """
     template_extends: str = ""  # inline child template for single-template system
     template_extends_file: str = ""  # external file path; takes precedence over template_extends
@@ -238,6 +243,8 @@ class FormatOverrideConfig:
     filters: Optional[FilterConfig] = None
     transforms: Optional[List[TransformSpec]] = None
     generation: Optional[GenerationConfig] = None
+    pretty: Optional[bool] = None
+    pretty_options: Optional[List[str]] = None
 
 
 @dataclass
@@ -554,6 +561,9 @@ def load_input_config(config_file: Path) -> InputConfig:
                 tef_path = config_dir / tef_path
             with open(tef_path, "r", encoding="utf-8") as _tf:
                 ov_template_extends = _tf.read()
+        # Use "key in" guard so `pretty: false` is not confused with absent key.
+        ov_pretty: Optional[bool] = override_raw["pretty"] if "pretty" in override_raw else None
+        ov_pretty_options: Optional[List[str]] = override_raw.get("pretty_options")
         format_overrides[fmt_name] = FormatOverrideConfig(
             template_extends=ov_template_extends,
             template_extends_file=tef_path_str,
@@ -561,6 +571,8 @@ def load_input_config(config_file: Path) -> InputConfig:
             filters=ov_filters,
             transforms=ov_transforms,
             generation=ov_generation,
+            pretty=ov_pretty,
+            pretty_options=ov_pretty_options,
         )
 
     # --- Typesystem ---

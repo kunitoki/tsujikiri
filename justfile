@@ -25,6 +25,9 @@ coverage *args: sync
 stubs: sync
     uv run stubgen -p tsujikiri -o src
 
+format: sync
+    uv run ruff format src tests
+
 # Run mypy type checking.
 check: sync
     uv run mypy

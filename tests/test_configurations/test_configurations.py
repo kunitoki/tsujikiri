@@ -8,6 +8,7 @@ import pytest
 
 from tsujikiri.configurations import (
     FilterPattern,
+    FormatOverrideConfig,
     InputConfig,
     OutputConfig,
     SourceConfig,
@@ -254,6 +255,14 @@ class TestMultiSourceLoading:
         override = cfg.format_overrides.get("luals")
         assert override is None
 
+    def test_format_override_pretty_parsed(self, cfg):
+        override = cfg.format_overrides["luabridge3"]
+        assert override.pretty is True
+
+    def test_format_override_pretty_options_parsed(self, cfg):
+        override = cfg.format_overrides["luabridge3"]
+        assert override.pretty_options == ["--style=LLVM"]
+
 
 class TestPrettyFields:
     def test_pretty_defaults_to_false(self, tmp_path):
@@ -483,3 +492,57 @@ class TestCustomDataLoading:
     def test_default_field_is_empty_dict(self):
         cfg = InputConfig()
         assert cfg.custom_data == {}
+
+
+class TestFormatOverridePretty:
+    def test_pretty_absent_gives_none(self, tmp_path: Path) -> None:
+        yml = tmp_path / "x.input.yml"
+        yml.write_text(
+            "source:\n  path: x.h\nformat_overrides:\n  luabridge3:\n    unsupported_types: []\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.format_overrides["luabridge3"].pretty is None
+
+    def test_pretty_true_parsed(self, tmp_path: Path) -> None:
+        yml = tmp_path / "x.input.yml"
+        yml.write_text(
+            "source:\n  path: x.h\nformat_overrides:\n  luabridge3:\n    pretty: true\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.format_overrides["luabridge3"].pretty is True
+
+    def test_pretty_false_parsed(self, tmp_path: Path) -> None:
+        yml = tmp_path / "x.input.yml"
+        yml.write_text(
+            "source:\n  path: x.h\nformat_overrides:\n  luabridge3:\n    pretty: false\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        # False must not be confused with absent (None)
+        assert cfg.format_overrides["luabridge3"].pretty is False
+
+    def test_pretty_options_absent_gives_none(self, tmp_path: Path) -> None:
+        yml = tmp_path / "x.input.yml"
+        yml.write_text(
+            "source:\n  path: x.h\nformat_overrides:\n  luabridge3:\n    unsupported_types: []\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.format_overrides["luabridge3"].pretty_options is None
+
+    def test_pretty_options_parsed(self, tmp_path: Path) -> None:
+        yml = tmp_path / "x.input.yml"
+        yml.write_text(
+            "source:\n  path: x.h\n"
+            "format_overrides:\n  luabridge3:\n    pretty_options:\n      - '--style=Google'\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.format_overrides["luabridge3"].pretty_options == ["--style=Google"]
+
+    def test_pretty_defaults_to_none_on_direct_construction(self) -> None:
+        override = FormatOverrideConfig()
+        assert override.pretty is None
+        assert override.pretty_options is None

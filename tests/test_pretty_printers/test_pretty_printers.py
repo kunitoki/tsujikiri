@@ -12,7 +12,10 @@ from tsujikiri.pretty_printers import get_pretty_printer_command, pretty
 
 class TestGetPrettyPrinterCommand:
     def test_cpp_maps_to_clang_format(self):
-        assert get_pretty_printer_command("cpp") == "clang-format"
+        assert get_pretty_printer_command("cpp") == ["clang-format"]
+
+    def test_python_maps_to_ruff_format(self):
+        assert get_pretty_printer_command("python") == ["ruff", "format"]
 
     def test_unknown_language_returns_none(self):
         assert get_pretty_printer_command("brainfuck") is None
@@ -88,3 +91,46 @@ class TestPretty:
         result = pretty(unformatted, "cpp")
         assert "int x = 1;" in result
         assert "int y = 2;" in result
+
+    def test_python_calls_ruff_format(self):
+        fake_result = MagicMock()
+        fake_result.stdout = "x = 1\n"
+        with patch("subprocess.run", return_value=fake_result) as mock_run:
+            result = pretty("x=1", "python")
+        mock_run.assert_called_once_with(
+            ["ruff", "format", "-"],
+            input="x=1",
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert result == "x = 1\n"
+
+    def test_python_with_extra_args(self):
+        fake_result = MagicMock()
+        fake_result.stdout = "x = 1\n"
+        with patch("subprocess.run", return_value=fake_result) as mock_run:
+            pretty("x=1", "python", extra_args=["--line-length=79"])
+        call_args = mock_run.call_args[0][0]
+        assert call_args == ["ruff", "format", "--line-length=79", "-"]
+
+    def test_python_real_ruff(self):
+        """Integration test: verify ruff actually runs and reformats Python."""
+        unformatted = "x=1\ny=2\nz  =  3"
+        result = pretty(unformatted, "python")
+        assert "x = 1" in result
+        assert "y = 2" in result
+        assert "z = 3" in result
+
+    def test_python_real_ruff_pyi_stub(self):
+        """Integration test: ruff formats a Python type stub (.pyi-style content)."""
+        unformatted = (
+            "from __future__ import annotations\n"
+            "class   Foo :\n"
+            "    def bar(self,x:int)->str:...\n"
+            "    def baz(self)->None:...\n"
+        )
+        result = pretty(unformatted, "python")
+        assert "class Foo:" in result
+        assert "def bar(self, x: int) -> str: ..." in result
+        assert "def baz(self) -> None: ..." in result
