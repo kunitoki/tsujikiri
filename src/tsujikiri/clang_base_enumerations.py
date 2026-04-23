@@ -568,3 +568,37 @@ class TLSKind(Enum):
   NONE = clang.cindex.TLSKind.from_id(0)
   DYNAMIC = clang.cindex.TLSKind.from_id(1)
   STATIC = clang.cindex.TLSKind.from_id(2)
+
+class PrintingPolicyProperty(Enum):
+  def __eq__(self, other: object) -> bool:
+    """Overrides the default implementation"""
+    if isinstance(other, clang.cindex.PrintingPolicyProperty):
+        return self.name == other.name
+    return NotImplemented
+    
+  Indentation = clang.cindex.PrintingPolicyProperty.from_id(0)
+  SuppressSpecifiers = clang.cindex.PrintingPolicyProperty.from_id(1)
+  SuppressTagKeyword = clang.cindex.PrintingPolicyProperty.from_id(2)
+  IncludeTagDefinition = clang.cindex.PrintingPolicyProperty.from_id(3)
+  SuppressScope = clang.cindex.PrintingPolicyProperty.from_id(4)
+  SuppressUnwrittenScope = clang.cindex.PrintingPolicyProperty.from_id(5)
+  SuppressInitializers = clang.cindex.PrintingPolicyProperty.from_id(6)
+  ConstantArraySizeAsWritten = clang.cindex.PrintingPolicyProperty.from_id(7)
+  AnonymousTagLocations = clang.cindex.PrintingPolicyProperty.from_id(8)
+  SuppressStrongLifetime = clang.cindex.PrintingPolicyProperty.from_id(9)
+  SuppressLifetimeQualifiers = clang.cindex.PrintingPolicyProperty.from_id(10)
+  SuppressTemplateArgsInCXXConstructors = clang.cindex.PrintingPolicyProperty.from_id(11)
+  Bool = clang.cindex.PrintingPolicyProperty.from_id(12)
+  Restrict = clang.cindex.PrintingPolicyProperty.from_id(13)
+  Alignof = clang.cindex.PrintingPolicyProperty.from_id(14)
+  UnderscoreAlignof = clang.cindex.PrintingPolicyProperty.from_id(15)
+  UseVoidForZeroParams = clang.cindex.PrintingPolicyProperty.from_id(16)
+  TerseOutput = clang.cindex.PrintingPolicyProperty.from_id(17)
+  PolishForDeclaration = clang.cindex.PrintingPolicyProperty.from_id(18)
+  Half = clang.cindex.PrintingPolicyProperty.from_id(19)
+  MSWChar = clang.cindex.PrintingPolicyProperty.from_id(20)
+  IncludeNewlines = clang.cindex.PrintingPolicyProperty.from_id(21)
+  MSVCFormatting = clang.cindex.PrintingPolicyProperty.from_id(22)
+  ConstantsAsWritten = clang.cindex.PrintingPolicyProperty.from_id(23)
+  SuppressImplicitBase = clang.cindex.PrintingPolicyProperty.from_id(24)
+  FullyQualifiedName = clang.cindex.PrintingPolicyProperty.from_id(25)
