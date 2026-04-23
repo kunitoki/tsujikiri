@@ -15,8 +15,8 @@ from typing import Dict, List, Optional
 
 import clang
 from clang import cindex
+from clang.cindex import AccessSpecifier, AvailabilityKind, CursorKind
 
-from tsujikiri.clang_base_enumerations import AccessSpecifier, AvailabilityKind, CursorKind
 from tsujikiri.configurations import SourceConfig
 from tsujikiri.ir import (
     IRBase,
