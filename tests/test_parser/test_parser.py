@@ -10,10 +10,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from clang import cindex as ci
-from clang.cindex import CursorKind
+from clang.cindex import AccessSpecifier, CursorKind
+
 from tsujikiri.configurations import SourceConfig
-from tsujikiri.clang_base_enumerations import CursorKind, AccessSpecifier
-from tsujikiri.clang_base_enumerations import AccessSpecifier, AvailabilityKind
 from tsujikiri.parser import (
     parse_translation_unit,
     _canonicalize_operator,
