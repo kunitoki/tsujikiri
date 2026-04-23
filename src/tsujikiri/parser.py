@@ -13,6 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import clang
 from clang import cindex
 
 from tsujikiri.clang_base_enumerations import AccessSpecifier, AvailabilityKind, CursorKind
@@ -79,19 +80,90 @@ def _type_from_tokens(cursor) -> str:
     return cursor.type.spelling
 
 
+def _param_types_from_fn_tokens(cursor) -> List[str]:
+    """Extract all parameter type spellings from a function cursor's token stream.
+
+    Fallback for a libclang 19 bug where PARM_DECL children of unnamed parameters
+    whose type is a complex template (e.g. ::std::function<T(U...)>) are given
+    a zero source extent and empty token stream, making _type_from_tokens unusable.
+    """
+    tokens = list(cursor.get_tokens())
+    name = cursor.spelling
+    start = -1
+    for i, tok in enumerate(tokens):
+        if tok.spelling == name:
+            if i + 1 < len(tokens) and tokens[i + 1].spelling == "(":
+                start = i + 2
+                break
+    if start < 0:
+        return []
+
+    params: List[str] = []
+    current: List[str] = []
+    depth_paren = 0
+    depth_angle = 0
+
+    for tok in tokens[start:]:
+        s = tok.spelling
+        if s == "<":
+            depth_angle += 1
+            current.append(s)
+        elif s == ">":
+            depth_angle -= 1
+            current.append(s)
+        elif s == "(":
+            depth_paren += 1
+            current.append(s)
+        elif s == ")":
+            if depth_paren == 0 and depth_angle == 0:
+                if current:
+                    raw = " ".join(current)
+                    normalized = re.sub(r"\s*::\s*", "::", raw).strip()
+                    if normalized:
+                        params.append(normalized)
+                break
+            depth_paren -= 1
+            current.append(s)
+        elif s == "," and depth_paren == 0 and depth_angle == 0:
+            raw = " ".join(current)
+            normalized = re.sub(r"\s*::\s*", "::", raw).strip()
+            if normalized:
+                params.append(normalized)
+            current = []
+        else:
+            current.append(s)
+
+    return params
+
+
 def _parse_parameters(cursor) -> List[IRParameter]:
     # Use PARM_DECL children and token-based type extraction to avoid a
     # libclang bug where constructors with initializer lists using std::move
     # cause parameter types to be reported incorrectly via cursor.type.spelling.
-    return [
-        IRParameter(
+    args = [arg for arg in cursor.get_children() if arg.kind == CursorKind.PARM_DECL]
+
+    # libclang 19 bug: unnamed PARM_DECL children whose type is a complex template
+    # (e.g. ::std::function<T(U...)>) get a zero source extent and empty token
+    # stream, so _type_from_tokens falls back to cursor.type.spelling which also
+    # returns the wrong type ('int'). In that case we fall back to parsing the
+    # parent function cursor's token stream.
+    has_zero_extent_unnamed = any(
+        not arg.spelling and not list(arg.get_tokens()) for arg in args
+    )
+    fallback_types: List[str] = _param_types_from_fn_tokens(cursor) if has_zero_extent_unnamed else []
+
+    result: List[IRParameter] = []
+    for i, arg in enumerate(args):
+        if not arg.spelling and not list(arg.get_tokens()) and i < len(fallback_types):
+            type_spelling = fallback_types[i]
+        else:
+            type_spelling = _type_from_tokens(arg)
+        result.append(IRParameter(
             name=arg.spelling,
-            type_spelling=_type_from_tokens(arg),
+            type_spelling=type_spelling,
             default_value=_get_default_value(arg),
-        )
-        for arg in cursor.get_children()
-        if arg.kind == CursorKind.PARM_DECL
-    ]
+        ))
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +406,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         if child.kind == CursorKind.CXX_METHOD:
             methods_by_name[child.spelling].append(child)
 
-    for spell, cursors in methods_by_name.items():
+    for cursors in methods_by_name.values():
         is_overload = len(cursors) > 1
         for m in cursors:
             params = _parse_parameters(m)
@@ -600,8 +672,28 @@ def parse_translation_unit(
     # Ensure we parse as C++ by default if not already specified
     if "-x" not in args:
         args = ["-x", "c++"] + args
+
     # Ensure sysroot and C++ stdlib headers on darwin.
     if sys.platform == "darwin":
+        clang_native = Path(clang.__file__).parent / "native"
+        bundled_libcxx = clang_native / "libcxx"
+        bundled_resource = clang_native / "resource" / "include"
+        if bundled_libcxx.is_dir() and bundled_resource.is_dir():
+            if "-nostdinc++" not in args:
+                args.append("-nostdinc++")
+            if not any("libcxx" in a for a in args):
+                args += [f"-isystem{bundled_libcxx}", f"-isystem{bundled_resource}"]
+        else:
+            if "-resource-dir" not in args:
+                try:
+                    resource_dir = subprocess.check_output(
+                        ["xcrun", "clang", "-print-resource-dir"], text=True, stderr=subprocess.DEVNULL
+                    ).strip()
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    resource_dir = ""
+                if resource_dir and Path(resource_dir).is_dir():
+                    args += ["-resource-dir", resource_dir]
+
         if "-isysroot" not in args:
             try:
                 sysroot = subprocess.check_output(
@@ -610,17 +702,6 @@ def parse_translation_unit(
             except (subprocess.CalledProcessError, FileNotFoundError):
                 sysroot = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
             args += ["-isysroot", sysroot]
-
-        # Point libclang at Xcode's clang resource directory so it uses the correct built-in headers (stdarg.h, stddef.h, …).
-        if "-resource-dir" not in args:
-            try:
-                resource_dir = subprocess.check_output(
-                    ["xcrun", "clang", "-print-resource-dir"], text=True, stderr=subprocess.DEVNULL
-                ).strip()
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                resource_dir = ""
-            if resource_dir and Path(resource_dir).is_dir():
-                args += ["-resource-dir", resource_dir]
 
     elif sys.platform.startswith("linux"):
         # On Linux, libclang pip package ships without builtin headers; point it at the

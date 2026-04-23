@@ -17,7 +17,7 @@ class {klazz.__name__}(Enum):
         return self.name == other.name
     return NotImplemented
     """
-    for kind in [x for x in klazz._kinds if not x is None]:
+    for kind in klazz:
       buf += f"\n  {kind.name} = clang.cindex.{klazz.__name__}.from_id({kind.value})"
     buf += "\n"
 
