@@ -1244,21 +1244,21 @@ class RegisterExceptionStage(TransformStage):
     YAML::
       stage: register_exception
       cpp_type: "ns::MyException"    # C++ qualified type
-      python_name: "MyException"     # Python class name (defaults to cpp_type)
+      target_name: "MyException"     # Python class name (defaults to cpp_type)
       base: "Exception"              # Python base class (defaults to "Exception")
     """
     name = "register_exception"
 
     def __init__(self, **kwargs: Any) -> None:
         self.cpp_exception_type: str = kwargs["cpp_type"]
-        self.python_exception_name: str = kwargs.get("python_name", kwargs["cpp_type"].split("::")[-1])
-        self.base_python_exception: str = kwargs.get("base", "Exception")
+        self.target_exception_name: str = kwargs.get("target_name", kwargs["cpp_type"].split("::")[-1])
+        self.base_target_exception: str = kwargs.get("base", "Exception")
 
     def apply(self, module: TIRModule) -> None:
         module.exception_registrations.append(IRExceptionRegistration(
             cpp_exception_type=self.cpp_exception_type,
-            python_exception_name=self.python_exception_name,
-            base_python_exception=self.base_python_exception,
+            target_exception_name=self.target_exception_name,
+            base_target_exception=self.base_target_exception,
         ))
 
 

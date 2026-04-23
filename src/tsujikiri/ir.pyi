@@ -119,8 +119,8 @@ class IRClass:
 @dataclass
 class IRExceptionRegistration:
     cpp_exception_type: str
-    python_exception_name: str
-    base_python_exception: str = ...
+    target_exception_name: str
+    base_target_exception: str = ...
 
 @dataclass
 class IRFunction:

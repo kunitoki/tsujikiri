@@ -463,29 +463,29 @@ class TestResolveUsingDeclarationsStage:
 class TestRegisterExceptionStage:
     def test_registers_exception(self):
         mod = TIRModule(name="m")
-        RegisterExceptionStage(cpp_type="ns::ParseError", python_name="ParseError").apply(mod)
+        RegisterExceptionStage(cpp_type="ns::ParseError", target_name="ParseError").apply(mod)
         assert len(mod.exception_registrations) == 1
         exc = mod.exception_registrations[0]
         assert exc.cpp_exception_type == "ns::ParseError"
-        assert exc.python_exception_name == "ParseError"
-        assert exc.base_python_exception == "Exception"
+        assert exc.target_exception_name == "ParseError"
+        assert exc.base_target_exception == "Exception"
 
     def test_custom_base(self):
         mod = TIRModule(name="m")
         RegisterExceptionStage(
             cpp_type="ns::IoError",
-            python_name="IoError",
+            target_name="IoError",
             base="OSError",
         ).apply(mod)
-        assert mod.exception_registrations[0].base_python_exception == "OSError"
+        assert mod.exception_registrations[0].base_target_exception == "OSError"
 
-    def test_default_python_name_from_cpp_type(self):
+    def test_default_target_name_from_cpp_type(self):
         mod = TIRModule(name="m")
         RegisterExceptionStage(cpp_type="ns::MyError").apply(mod)
-        assert mod.exception_registrations[0].python_exception_name == "MyError"
+        assert mod.exception_registrations[0].target_exception_name == "MyError"
 
     def test_multiple_registrations(self):
         mod = TIRModule(name="m")
-        RegisterExceptionStage(cpp_type="ns::ErrA", python_name="ErrA").apply(mod)
-        RegisterExceptionStage(cpp_type="ns::ErrB", python_name="ErrB").apply(mod)
+        RegisterExceptionStage(cpp_type="ns::ErrA", target_exception_name="ErrA").apply(mod)
+        RegisterExceptionStage(cpp_type="ns::ErrB", target_exception_name="ErrB").apply(mod)
         assert len(mod.exception_registrations) == 2

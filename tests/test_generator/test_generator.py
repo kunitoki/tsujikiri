@@ -908,7 +908,7 @@ class TestTypesystemGenerator:
     def test_typesystem_primitive_mapping_fallback(self, luabridge3_output_config: OutputConfig) -> None:
         from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
         ts = TypesystemConfig(
-            primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", python_name="int")]
+            primitive_types=[PrimitiveTypeEntry(cpp_name="int64_t", target_name="int")]
         )
         gen = Generator(luabridge3_output_config, typesystem=ts)
         assert gen._map_type("int64_t") == "int"
@@ -916,7 +916,7 @@ class TestTypesystemGenerator:
     def test_output_config_type_mapping_wins_over_typesystem(self) -> None:
         from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
         ts = TypesystemConfig(
-            primitive_types=[PrimitiveTypeEntry(cpp_name="MyType", python_name="from_typesystem")]
+            primitive_types=[PrimitiveTypeEntry(cpp_name="MyType", target_name="from_typesystem")]
         )
         cfg = OutputConfig(
             format_name="test",

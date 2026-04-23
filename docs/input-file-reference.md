@@ -411,9 +411,9 @@ The `typesystem` section provides first-class type metadata to the generator. It
 ```yaml
 typesystem:
   primitive_types:
-    - { cpp_name: "int32_t",    python_name: "int" }
-    - { cpp_name: "float",      python_name: "float" }
-    - { cpp_name: "std::string", python_name: "str" }
+    - { cpp_name: "int32_t",     target_name: "int" }
+    - { cpp_name: "float",       target_name: "float" }
+    - { cpp_name: "std::string", target_name: "str" }
 
   typedef_types:
     - { cpp_name: "EntityId", source: "int32_t" }
@@ -469,7 +469,7 @@ Each entry maps one C++ type spelling to a target-language name:
 | Field | Type | Notes |
 |-------|------|-------|
 | `cpp_name` | string | Exact C++ type spelling (e.g. `"std::string"`) |
-| `python_name` | string | Target type name (e.g. `"str"`) |
+| `target_name` | string | Target type name (e.g. `"str"`) |
 
 ### `typedef_types`
 

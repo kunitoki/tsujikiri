@@ -1,6 +1,6 @@
 """Intermediate Representation (IR) for the C++ binding generator.
 
-All IR nodes are pure Python dataclasses containing only what libclang provides.
+All IR nodes are pure dataclasses containing only what libclang provides.
 No filtering, transformation, or augmentation data is stored here — that lives
 in the TIR* (Transformed IR) layer defined in tir.py.
 """
@@ -143,10 +143,10 @@ class IRClass:
 
 @dataclass
 class IRExceptionRegistration:
-    """Registration of a C++ exception type as a Python exception class."""
+    """Registration of a C++ exception type as a target exception class."""
     cpp_exception_type: str
-    python_exception_name: str
-    base_python_exception: str = "Exception"
+    target_exception_name: str
+    base_target_exception: str = "Exception"
 
 
 @dataclass

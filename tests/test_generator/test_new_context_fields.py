@@ -1055,8 +1055,8 @@ class TestTypesystemTypeMappingBranches:
         from tsujikiri.configurations import OutputConfig
         ts = TypesystemConfig(
             primitive_types=[
-                PrimitiveTypeEntry(cpp_name="int64_t", python_name="int"),
-                PrimitiveTypeEntry(cpp_name="float32_t", python_name="float"),
+                PrimitiveTypeEntry(cpp_name="int64_t", target_name="int"),
+                PrimitiveTypeEntry(cpp_name="float32_t", target_name="float"),
             ]
         )
         cfg = OutputConfig(format_name="test", template="")
