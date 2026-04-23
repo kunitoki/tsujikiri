@@ -982,7 +982,7 @@ class TestTypesystemGenerator:
     def test_typesystem_typedef_mapping_fallback(self, luabridge3_output_config: OutputConfig) -> None:
         from tsujikiri.configurations import TypesystemConfig, TypedefTypeEntry
 
-        ts = TypesystemConfig(typedef_types=[TypedefTypeEntry(cpp_name="MyString", source="std::string")])
+        ts = TypesystemConfig(typedef_types=[TypedefTypeEntry(cpp_name="MyString", target_name="std::string")])
         gen = Generator(luabridge3_output_config, typesystem=ts)
         assert gen._map_type("MyString") == "std::string"
 

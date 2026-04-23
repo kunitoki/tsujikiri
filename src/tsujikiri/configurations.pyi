@@ -10,7 +10,7 @@ class PrimitiveTypeEntry:
 @dataclass
 class TypedefTypeEntry:
     cpp_name: str
-    source: str
+    target_name: str
 
 @dataclass
 class CustomTypeEntry:
@@ -34,10 +34,6 @@ class ConversionRuleEntry:
     target_to_native: str
 
 @dataclass
-class LoadTypesystemEntry:
-    path: str
-
-@dataclass
 class DeclaredFunctionEntry:
     name: str
     namespace: str = ...
@@ -53,7 +49,6 @@ class TypesystemConfig:
     custom_types: list[CustomTypeEntry] = field(default_factory=list)
     container_types: list[ContainerTypeEntry] = field(default_factory=list)
     smart_pointer_types: list[SmartPointerTypeEntry] = field(default_factory=list)
-    load_typesystems: list[LoadTypesystemEntry] = field(default_factory=list)
     declared_functions: list[DeclaredFunctionEntry] = field(default_factory=list)
     conversion_rules: list[ConversionRuleEntry] = field(default_factory=list)
 
@@ -153,6 +148,8 @@ class FormatOverrideConfig:
     filters: FilterConfig | None = ...
     transforms: list[TransformSpec] | None = ...
     generation: GenerationConfig | None = ...
+    typesystem: TypesystemConfig | None = ...
+    typesystem_file: str = ...
     pretty: bool | None = ...
     pretty_options: list[str] | None = ...
 
@@ -184,5 +181,6 @@ class OutputConfig:
     unsupported_types: list[str] = field(default_factory=list)
     template: str = ...
 
+def merge_typesystems(priority: TypesystemConfig, base: TypesystemConfig) -> TypesystemConfig: ...
 def load_input_config(config_file: Path) -> InputConfig: ...
 def load_output_config(config_file: Path) -> OutputConfig: ...

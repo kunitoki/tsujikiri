@@ -699,7 +699,7 @@ class Generator:
                     return pt.target_name
             for tt in self._typesystem.typedef_types:
                 if tt.cpp_name == type_spelling:
-                    return tt.source
+                    return tt.target_name
         return type_spelling
 
     def _is_unsupported(self, type_spelling: str) -> bool:

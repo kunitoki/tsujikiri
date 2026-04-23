@@ -18,6 +18,7 @@ from tsujikiri.configurations import (
     InputConfig,
     load_input_config,
     load_output_config,
+    merge_typesystems,
 )
 from tsujikiri.filters import FilterEngine
 from tsujikiri.pretty_printers import pretty
@@ -465,12 +466,18 @@ def main() -> None:
             embed_version=ev,
         )
 
+        effective_typesystem = (
+            merge_typesystems(fmt_override.typesystem, input_config.typesystem)
+            if fmt_override and fmt_override.typesystem
+            else input_config.typesystem
+        )
+
         gen = Generator(
             output_config,
             generation=effective_generation,
             extra_unsupported_types=extra_unsupported,
             template_extends=template_extends,
-            typesystem=input_config.typesystem,
+            typesystem=effective_typesystem,
             extra_dirs=extra_dirs,
             custom_data=input_config.custom_data,
         )

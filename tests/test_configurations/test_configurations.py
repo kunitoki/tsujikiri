@@ -535,3 +535,226 @@ class TestFormatOverridePretty:
         override = FormatOverrideConfig()
         assert override.pretty is None
         assert override.pretty_options is None
+
+
+class TestConfigLoads:
+    def test_no_loads_loads_normally(self, tmp_path: Path) -> None:
+        yml = tmp_path / "plain.input.yml"
+        yml.write_text("source:\n  path: plain.hpp\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.source is not None
+        assert "plain.hpp" in cfg.source.path
+
+    def test_empty_loads_list(self, tmp_path: Path) -> None:
+        yml = tmp_path / "empty.input.yml"
+        yml.write_text("loads: []\nsource:\n  path: empty.hpp\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.source is not None
+
+    def test_loaded_source_appears_when_child_has_none(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text("source:\n  path: base.hpp\n", encoding="utf-8")
+        child = tmp_path / "child.input.yml"
+        child.write_text("loads:\n  - base.input.yml\n", encoding="utf-8")
+        cfg = load_input_config(child)
+        assert cfg.source is not None
+        assert "base.hpp" in cfg.source.path
+
+    def test_child_source_wins_over_loaded(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text("source:\n  path: base.hpp\n", encoding="utf-8")
+        child = tmp_path / "child.input.yml"
+        child.write_text("loads:\n  - base.input.yml\nsource:\n  path: child.hpp\n", encoding="utf-8")
+        cfg = load_input_config(child)
+        assert cfg.source is not None
+        assert "child.hpp" in cfg.source.path
+
+    def test_loaded_sources_list_prepended(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text("sources:\n  - path: base.hpp\n", encoding="utf-8")
+        child = tmp_path / "child.input.yml"
+        child.write_text("loads:\n  - base.input.yml\nsources:\n  - path: child.hpp\n", encoding="utf-8")
+        cfg = load_input_config(child)
+        assert len(cfg.sources) == 2
+        assert "base.hpp" in cfg.sources[0].source.path
+        assert "child.hpp" in cfg.sources[1].source.path
+
+    def test_loaded_transforms_prepended(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text(
+            "source:\n  path: b.hpp\ntransforms:\n  - stage: suppress_class\n    pattern: Base\n",
+            encoding="utf-8",
+        )
+        child = tmp_path / "child.input.yml"
+        child.write_text(
+            "loads:\n  - base.input.yml\nsource:\n  path: c.hpp\n"
+            "transforms:\n  - stage: suppress_class\n    pattern: Child\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(child)
+        assert len(cfg.transforms) == 2
+        assert cfg.transforms[0].kwargs["pattern"] == "Base"
+        assert cfg.transforms[1].kwargs["pattern"] == "Child"
+
+    def test_loaded_scalar_provides_default(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text("source:\n  path: b.hpp\npretty: true\n", encoding="utf-8")
+        child = tmp_path / "child.input.yml"
+        child.write_text("loads:\n  - base.input.yml\nsource:\n  path: c.hpp\n", encoding="utf-8")
+        cfg = load_input_config(child)
+        assert cfg.pretty is True
+
+    def test_child_scalar_wins_over_loaded(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text("source:\n  path: b.hpp\npretty: true\n", encoding="utf-8")
+        child = tmp_path / "child.input.yml"
+        child.write_text("loads:\n  - base.input.yml\nsource:\n  path: c.hpp\npretty: false\n", encoding="utf-8")
+        cfg = load_input_config(child)
+        assert cfg.pretty is False
+
+    def test_loaded_filters_namespaces_merged(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text(
+            "source:\n  path: b.hpp\nfilters:\n  namespaces:\n    - base_ns\n",
+            encoding="utf-8",
+        )
+        child = tmp_path / "child.input.yml"
+        child.write_text(
+            "loads:\n  - base.input.yml\nsource:\n  path: c.hpp\nfilters:\n  namespaces:\n    - child_ns\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(child)
+        assert "base_ns" in cfg.filters.namespaces
+        assert "child_ns" in cfg.filters.namespaces
+        assert cfg.filters.namespaces.index("base_ns") < cfg.filters.namespaces.index("child_ns")
+
+    def test_loaded_generation_includes_prepended(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text(
+            "source:\n  path: b.hpp\ngeneration:\n  includes:\n    - '<base.h>'\n",
+            encoding="utf-8",
+        )
+        child = tmp_path / "child.input.yml"
+        child.write_text(
+            "loads:\n  - base.input.yml\nsource:\n  path: c.hpp\ngeneration:\n  includes:\n    - '<child.h>'\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(child)
+        assert "<base.h>" in cfg.generation.includes
+        assert "<child.h>" in cfg.generation.includes
+        assert cfg.generation.includes.index("<base.h>") < cfg.generation.includes.index("<child.h>")
+
+    def test_loaded_custom_data_merged(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text("source:\n  path: b.hpp\ncustom_data:\n  from_base: 1\n", encoding="utf-8")
+        child = tmp_path / "child.input.yml"
+        child.write_text(
+            "loads:\n  - base.input.yml\nsource:\n  path: c.hpp\ncustom_data:\n  from_child: 2\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(child)
+        assert cfg.custom_data["from_base"] == 1
+        assert cfg.custom_data["from_child"] == 2
+
+    def test_child_custom_data_wins_on_collision(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text("source:\n  path: b.hpp\ncustom_data:\n  key: base_val\n", encoding="utf-8")
+        child = tmp_path / "child.input.yml"
+        child.write_text(
+            "loads:\n  - base.input.yml\nsource:\n  path: c.hpp\ncustom_data:\n  key: child_val\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(child)
+        assert cfg.custom_data["key"] == "child_val"
+
+    def test_multiple_loads_order_preserved(self, tmp_path: Path) -> None:
+        a = tmp_path / "a.input.yml"
+        a.write_text(
+            "source:\n  path: a.hpp\ntransforms:\n  - stage: suppress_class\n    pattern: A\n", encoding="utf-8"
+        )
+        b = tmp_path / "b.input.yml"
+        b.write_text(
+            "source:\n  path: b.hpp\ntransforms:\n  - stage: suppress_class\n    pattern: B\n", encoding="utf-8"
+        )
+        child = tmp_path / "child.input.yml"
+        child.write_text(
+            "loads:\n  - a.input.yml\n  - b.input.yml\nsource:\n  path: c.hpp\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(child)
+        patterns = [t.kwargs["pattern"] for t in cfg.transforms]
+        assert patterns == ["A", "B"]
+
+    def test_nested_loads(self, tmp_path: Path) -> None:
+        common = tmp_path / "common.input.yml"
+        common.write_text("source:\n  path: common.hpp\ncustom_data:\n  level: common\n", encoding="utf-8")
+        middle = tmp_path / "middle.input.yml"
+        middle.write_text(
+            "loads:\n  - common.input.yml\nsource:\n  path: middle.hpp\ncustom_data:\n  mid: true\n",
+            encoding="utf-8",
+        )
+        top = tmp_path / "top.input.yml"
+        top.write_text(
+            "loads:\n  - middle.input.yml\nsource:\n  path: top.hpp\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(top)
+        assert "top.hpp" in cfg.source.path
+        assert cfg.custom_data["level"] == "common"
+        assert cfg.custom_data["mid"] is True
+
+    def test_cycle_detection_no_infinite_loop(self, tmp_path: Path) -> None:
+        a = tmp_path / "a.input.yml"
+        b = tmp_path / "b.input.yml"
+        a.write_text("loads:\n  - b.input.yml\nsource:\n  path: a.hpp\n", encoding="utf-8")
+        b.write_text("loads:\n  - a.input.yml\nsource:\n  path: b.hpp\n", encoding="utf-8")
+        cfg = load_input_config(a)
+        assert "a.hpp" in cfg.source.path
+
+    def test_self_loads_cycle_detection(self, tmp_path: Path) -> None:
+        a = tmp_path / "self.input.yml"
+        a.write_text("loads:\n  - self.input.yml\nsource:\n  path: self.hpp\n", encoding="utf-8")
+        cfg = load_input_config(a)
+        assert "self.hpp" in cfg.source.path
+
+    def test_relative_path_resolved_from_loading_file(self, tmp_path: Path) -> None:
+        subdir = tmp_path / "sub"
+        subdir.mkdir()
+        base = subdir / "base.input.yml"
+        base.write_text("source:\n  path: sub.hpp\n", encoding="utf-8")
+        child = tmp_path / "child.input.yml"
+        child.write_text("loads:\n  - sub/base.input.yml\n", encoding="utf-8")
+        cfg = load_input_config(child)
+        assert cfg.source is not None
+        assert "sub.hpp" in cfg.source.path
+
+    def test_loaded_typesystem_merged(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text(
+            "source:\n  path: b.hpp\ntypesystem:\n  primitive_types:\n    - { cpp_name: int32_t, target_name: int }\n",
+            encoding="utf-8",
+        )
+        child = tmp_path / "child.input.yml"
+        child.write_text(
+            "loads:\n  - base.input.yml\nsource:\n  path: c.hpp\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(child)
+        names = [e.cpp_name for e in cfg.typesystem.primitive_types]
+        assert "int32_t" in names
+
+    def test_loads_key_not_in_resulting_config(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text("source:\n  path: b.hpp\n", encoding="utf-8")
+        child = tmp_path / "child.input.yml"
+        child.write_text("loads:\n  - base.input.yml\nsource:\n  path: c.hpp\n", encoding="utf-8")
+        cfg = load_input_config(child)
+        assert not hasattr(cfg, "loads")
+
+    def test_absolute_loads_path(self, tmp_path: Path) -> None:
+        base = tmp_path / "abs_base.input.yml"
+        base.write_text("source:\n  path: abs.hpp\ncustom_data:\n  abs: true\n", encoding="utf-8")
+        child = tmp_path / "child.input.yml"
+        child.write_text(f"loads:\n  - {base}\nsource:\n  path: c.hpp\n", encoding="utf-8")
+        cfg = load_input_config(child)
+        assert cfg.custom_data["abs"] is True

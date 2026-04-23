@@ -1128,8 +1128,8 @@ class TestTypesystemTypeMappingBranches:
 
         ts = TypesystemConfig(
             typedef_types=[
-                TypedefTypeEntry(cpp_name="MyString", source="std::string"),
-                TypedefTypeEntry(cpp_name="MyBuffer", source="std::vector<uint8_t>"),
+                TypedefTypeEntry(cpp_name="MyString", target_name="std::string"),
+                TypedefTypeEntry(cpp_name="MyBuffer", target_name="std::vector<uint8_t>"),
             ]
         )
         cfg = OutputConfig(format_name="test", template="")

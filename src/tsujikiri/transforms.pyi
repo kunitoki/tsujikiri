@@ -1,19 +1,7 @@
 from _typeshed import Incomplete
 from tsujikiri.configurations import TransformSpec as TransformSpec
-from tsujikiri.ir import (
-    IRCodeInjection as IRCodeInjection,
-    IRExceptionRegistration as IRExceptionRegistration,
-    IRProperty as IRProperty,
-)
-from tsujikiri.tir import (
-    TIRClass as TIRClass,
-    TIRConstructor as TIRConstructor,
-    TIREnum as TIREnum,
-    TIRFunction as TIRFunction,
-    TIRMethod as TIRMethod,
-    TIRModule as TIRModule,
-    TIRParameter as TIRParameter,
-)
+from tsujikiri.ir import IRCodeInjection as IRCodeInjection, IRExceptionRegistration as IRExceptionRegistration, IRProperty as IRProperty
+from tsujikiri.tir import TIRClass as TIRClass, TIRConstructor as TIRConstructor, TIREnum as TIREnum, TIRFunction as TIRFunction, TIRMethod as TIRMethod, TIRModule as TIRModule, TIRParameter as TIRParameter
 from typing import Any
 
 class TransformStage:
