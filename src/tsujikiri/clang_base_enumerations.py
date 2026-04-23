@@ -241,6 +241,7 @@ class CursorKind(Enum):
   OMP_PARALLEL_MASKED_TASK_LOOP_SIMD_DIRECTIVE = clang.cindex.CursorKind.from_id(304)
   OMP_ERROR_DIRECTIVE = clang.cindex.CursorKind.from_id(305)
   OMP_SCOPE_DIRECTIVE = clang.cindex.CursorKind.from_id(306)
+  OMP_STRIPE_DIRECTIVE = clang.cindex.CursorKind.from_id(310)
   OPEN_ACC_COMPUTE_DIRECTIVE = clang.cindex.CursorKind.from_id(320)
   TRANSLATION_UNIT = clang.cindex.CursorKind.from_id(350)
   UNEXPOSED_ATTR = clang.cindex.CursorKind.from_id(400)
@@ -453,6 +454,7 @@ class TypeKind(Enum):
   OBJCSEL = clang.cindex.TypeKind.from_id(29)
   FLOAT128 = clang.cindex.TypeKind.from_id(30)
   HALF = clang.cindex.TypeKind.from_id(31)
+  FLOAT16 = clang.cindex.TypeKind.from_id(32)
   IBM128 = clang.cindex.TypeKind.from_id(40)
   COMPLEX = clang.cindex.TypeKind.from_id(100)
   POINTER = clang.cindex.TypeKind.from_id(101)
@@ -568,3 +570,37 @@ class TLSKind(Enum):
   NONE = clang.cindex.TLSKind.from_id(0)
   DYNAMIC = clang.cindex.TLSKind.from_id(1)
   STATIC = clang.cindex.TLSKind.from_id(2)
+
+class PrintingPolicyProperty(Enum):
+  def __eq__(self, other: object) -> bool:
+    """Overrides the default implementation"""
+    if isinstance(other, clang.cindex.PrintingPolicyProperty):
+        return self.name == other.name
+    return NotImplemented
+    
+  Indentation = clang.cindex.PrintingPolicyProperty.from_id(0)
+  SuppressSpecifiers = clang.cindex.PrintingPolicyProperty.from_id(1)
+  SuppressTagKeyword = clang.cindex.PrintingPolicyProperty.from_id(2)
+  IncludeTagDefinition = clang.cindex.PrintingPolicyProperty.from_id(3)
+  SuppressScope = clang.cindex.PrintingPolicyProperty.from_id(4)
+  SuppressUnwrittenScope = clang.cindex.PrintingPolicyProperty.from_id(5)
+  SuppressInitializers = clang.cindex.PrintingPolicyProperty.from_id(6)
+  ConstantArraySizeAsWritten = clang.cindex.PrintingPolicyProperty.from_id(7)
+  AnonymousTagLocations = clang.cindex.PrintingPolicyProperty.from_id(8)
+  SuppressStrongLifetime = clang.cindex.PrintingPolicyProperty.from_id(9)
+  SuppressLifetimeQualifiers = clang.cindex.PrintingPolicyProperty.from_id(10)
+  SuppressTemplateArgsInCXXConstructors = clang.cindex.PrintingPolicyProperty.from_id(11)
+  Bool = clang.cindex.PrintingPolicyProperty.from_id(12)
+  Restrict = clang.cindex.PrintingPolicyProperty.from_id(13)
+  Alignof = clang.cindex.PrintingPolicyProperty.from_id(14)
+  UnderscoreAlignof = clang.cindex.PrintingPolicyProperty.from_id(15)
+  UseVoidForZeroParams = clang.cindex.PrintingPolicyProperty.from_id(16)
+  TerseOutput = clang.cindex.PrintingPolicyProperty.from_id(17)
+  PolishForDeclaration = clang.cindex.PrintingPolicyProperty.from_id(18)
+  Half = clang.cindex.PrintingPolicyProperty.from_id(19)
+  MSWChar = clang.cindex.PrintingPolicyProperty.from_id(20)
+  IncludeNewlines = clang.cindex.PrintingPolicyProperty.from_id(21)
+  MSVCFormatting = clang.cindex.PrintingPolicyProperty.from_id(22)
+  ConstantsAsWritten = clang.cindex.PrintingPolicyProperty.from_id(23)
+  SuppressImplicitBase = clang.cindex.PrintingPolicyProperty.from_id(24)
+  FullyQualifiedName = clang.cindex.PrintingPolicyProperty.from_id(25)
