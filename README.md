@@ -1,4 +1,4 @@
-![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=11)
+![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=12)
 
 [![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=11)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
 [![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=11)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
@@ -279,10 +279,11 @@ The test suite covers parsing, filtering, transforms, generation, CLI integratio
 
 ## Coverage
 
-[![Coverage tree](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?x=11&token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Coverage tree](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?x=12&token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
 
 ---
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
