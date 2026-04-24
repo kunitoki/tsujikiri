@@ -913,6 +913,8 @@ dev = [
     { name = "types-pyyaml" },
     { name = "zig-bin" },
 ]
+
+[package.dev-dependencies]
 docs = [
     { name = "myst-parser" },
     { name = "sphinx" },
@@ -930,18 +932,22 @@ requires-dist = [
     { name = "libclang-ng", marker = "extra == 'clang21'", specifier = ">=21,<22" },
     { name = "libclang-ng", marker = "extra == 'clang22'", specifier = ">=22,<23" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
-    { name = "myst-parser", marker = "extra == 'docs'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", specifier = ">=0.15.11" },
-    { name = "sphinx", marker = "extra == 'docs'" },
-    { name = "sphinx-rtd-theme", marker = "extra == 'docs'" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "zig-bin", marker = "extra == 'dev'", specifier = ">=0.15.2" },
 ]
-provides-extras = ["clang19", "clang20", "clang21", "clang22", "dev", "docs"]
+provides-extras = ["clang19", "clang20", "clang21", "clang22", "dev"]
+
+[package.metadata.requires-dev]
+docs = [
+    { name = "myst-parser" },
+    { name = "sphinx" },
+    { name = "sphinx-rtd-theme" },
+]
 
 [[package]]
 name = "types-pyyaml"

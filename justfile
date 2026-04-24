@@ -36,7 +36,7 @@ check: sync format
 
 # Build HTML documentation locally (mirrors ReadTheDocs build).
 docs:
-    uv sync --extra dev --extra docs
+    uv sync --extra dev --group docs
     uv run sphinx-build -T -W --keep-going -j auto -b html -d docs/_build/doctrees -D language=en docs docs/_build/html
     @echo "Docs built at docs/_build/html/index.html"
 
