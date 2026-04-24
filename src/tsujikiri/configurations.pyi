@@ -1,61 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+from tsujikiri.typesystem import TypesystemConfig as TypesystemConfig
 from typing import Any
-
-@dataclass
-class PrimitiveTypeEntry:
-    cpp_name: str
-    target_name: str
-
-@dataclass
-class TypedefTypeEntry:
-    cpp_name: str
-    source: str
-
-@dataclass
-class CustomTypeEntry:
-    cpp_name: str
-
-@dataclass
-class ContainerTypeEntry:
-    cpp_name: str
-    kind: str
-
-@dataclass
-class SmartPointerTypeEntry:
-    cpp_name: str
-    kind: str
-    getter: str = ...
-
-@dataclass
-class ConversionRuleEntry:
-    cpp_type: str
-    native_to_target: str
-    target_to_native: str
-
-@dataclass
-class LoadTypesystemEntry:
-    path: str
-
-@dataclass
-class DeclaredFunctionEntry:
-    name: str
-    namespace: str = ...
-    return_type: str = ...
-    parameters: list[dict[str, str]] = field(default_factory=list)
-    wrapper_code: str | None = ...
-    doc: str | None = ...
-
-@dataclass
-class TypesystemConfig:
-    primitive_types: list[PrimitiveTypeEntry] = field(default_factory=list)
-    typedef_types: list[TypedefTypeEntry] = field(default_factory=list)
-    custom_types: list[CustomTypeEntry] = field(default_factory=list)
-    container_types: list[ContainerTypeEntry] = field(default_factory=list)
-    smart_pointer_types: list[SmartPointerTypeEntry] = field(default_factory=list)
-    load_typesystems: list[LoadTypesystemEntry] = field(default_factory=list)
-    declared_functions: list[DeclaredFunctionEntry] = field(default_factory=list)
-    conversion_rules: list[ConversionRuleEntry] = field(default_factory=list)
 
 @dataclass
 class FilterPattern:
@@ -153,6 +99,10 @@ class FormatOverrideConfig:
     filters: FilterConfig | None = ...
     transforms: list[TransformSpec] | None = ...
     generation: GenerationConfig | None = ...
+    typesystem: TypesystemConfig | None = ...
+    typesystem_file: str = ...
+    pretty: bool | None = ...
+    pretty_options: list[str] | None = ...
 
 @dataclass
 class InputConfig:

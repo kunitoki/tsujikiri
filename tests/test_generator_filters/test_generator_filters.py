@@ -9,6 +9,7 @@ from tsujikiri.generator_filters import camel_to_snake, code_at, param_pairs, sn
 # camel_to_snake
 # ---------------------------------------------------------------------------
 
+
 class TestCamelToSnake:
     def test_simple_camel(self):
         assert camel_to_snake("getValue") == "get_value"
@@ -44,6 +45,7 @@ class TestCamelToSnake:
 # ---------------------------------------------------------------------------
 # snake_to_camel
 # ---------------------------------------------------------------------------
+
 
 class TestSnakeToCamel:
     def test_simple_snake(self) -> None:
@@ -84,6 +86,7 @@ class TestSnakeToCamel:
 # param_pairs
 # ---------------------------------------------------------------------------
 
+
 class TestParamPairs:
     def _make_params(self, *name_type_pairs):
         return [{"name": n, "type": t} for n, t in name_type_pairs]
@@ -116,6 +119,7 @@ class TestParamPairs:
 # ---------------------------------------------------------------------------
 # code_at
 # ---------------------------------------------------------------------------
+
 
 class TestCodeAt:
     def _make_injections(self, *pos_code_pairs):

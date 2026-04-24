@@ -21,6 +21,7 @@ from tsujikiri.tir import TIRClass, TIRModule
 # Compatibility report
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CompatibilityReport:
     breaking_changes: List[str] = field(default_factory=list)
@@ -39,34 +40,37 @@ class CompatibilityReport:
 # Canonical builders (format-agnostic, raw C++ types, emit=True only)
 # ---------------------------------------------------------------------------
 
+
 def _canonical_class(ir_class: TIRClass) -> Dict[str, Any]:
     name = ir_class.binding_name
 
-    constructors = sorted(
-        [tuple(p.type_spelling for p in c.parameters) for c in ir_class.constructors if c.emit]
-    )
+    constructors = sorted([tuple(p.type_spelling for p in c.parameters) for c in ir_class.constructors if c.emit])
 
     methods: List[Dict[str, Any]] = []
     for m in ir_class.methods:
         if not m.emit:
             continue
-        methods.append({
-            "name": m.binding_name,
-            "params": [p.type_spelling for p in m.parameters],
-            "return_type": m.return_type,
-            "is_static": m.is_static,
-        })
+        methods.append(
+            {
+                "name": m.binding_name,
+                "params": [p.type_spelling for p in m.parameters],
+                "return_type": m.return_type,
+                "is_static": m.is_static,
+            }
+        )
     methods.sort(key=lambda m: (m["name"], m["params"], m["is_static"]))
 
     fields: List[Dict[str, Any]] = []
     for f in ir_class.fields:
         if not f.emit:
             continue
-        fields.append({
-            "name": f.binding_name,
-            "type": f.type_spelling,
-            "is_const": f.is_const,
-        })
+        fields.append(
+            {
+                "name": f.binding_name,
+                "type": f.type_spelling,
+                "is_const": f.is_const,
+            }
+        )
     fields.sort(key=lambda f: f["name"])
 
     enums = sorted(
@@ -95,6 +99,7 @@ def _canonical_enum_entry(enum) -> Dict[str, Any]:
 # Public: compute
 # ---------------------------------------------------------------------------
 
+
 def compute_manifest(module: TIRModule) -> Dict[str, Any]:
     """Build a canonical manifest dict from a fully-filtered/transformed IRModule."""
     classes = sorted(
@@ -106,11 +111,13 @@ def compute_manifest(module: TIRModule) -> Dict[str, Any]:
     for fn in module.functions:
         if not fn.emit:
             continue
-        functions.append({
-            "name": fn.binding_name,
-            "params": [p.type_spelling for p in fn.parameters],
-            "return_type": fn.return_type,
-        })
+        functions.append(
+            {
+                "name": fn.binding_name,
+                "params": [p.type_spelling for p in fn.parameters],
+                "return_type": fn.return_type,
+            }
+        )
     functions.sort(key=lambda f: (f["name"], f["params"]))
 
     enums = sorted(
@@ -134,6 +141,7 @@ def compute_manifest(module: TIRModule) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Public: save / load
 # ---------------------------------------------------------------------------
+
 
 def save_manifest(manifest: Dict[str, Any], path: Path) -> None:
     with open(path, "w", encoding="utf-8") as f:
@@ -179,9 +187,7 @@ def bump_semver(version: str, report: CompatibilityReport) -> str:
     return version
 
 
-def suggest_version_bump(
-    old_manifest: Dict[str, Any], report: CompatibilityReport
-) -> Optional[str]:
+def suggest_version_bump(old_manifest: Dict[str, Any], report: CompatibilityReport) -> Optional[str]:
     """Return the suggested semver for the new manifest, or ``None``.
 
     A suggestion is returned only when *old_manifest* contains a ``"semver"``
@@ -200,6 +206,7 @@ def suggest_version_bump(
 # Public: compare
 # ---------------------------------------------------------------------------
 
+
 def compare_manifests(old: Dict[str, Any], new: Dict[str, Any]) -> CompatibilityReport:
     """Compare two manifests and classify each change as breaking or additive."""
     report = CompatibilityReport()
@@ -212,6 +219,7 @@ def compare_manifests(old: Dict[str, Any], new: Dict[str, Any]) -> Compatibility
 # ---------------------------------------------------------------------------
 # Internal comparators
 # ---------------------------------------------------------------------------
+
 
 def _compare_classes(
     old_list: List[Dict],
@@ -294,9 +302,7 @@ def _compare_methods(
             )
         for sig in new_sigs - old_sigs:
             params_str = ", ".join(sig[0])
-            report.additive_changes.append(
-                f"Method '{label}({params_str}) -> {sig[1]}' overload was added"
-            )
+            report.additive_changes.append(f"Method '{label}({params_str}) -> {sig[1]}' overload was added")
 
     for key in new_groups:
         if key not in old_groups:
@@ -322,9 +328,7 @@ def _compare_fields(
             continue
         new_f = new_by_name[name]
         if old_f["type"] != new_f["type"]:
-            report.breaking_changes.append(
-                f"Field '{label}' type changed: {old_f['type']} -> {new_f['type']}"
-            )
+            report.breaking_changes.append(f"Field '{label}' type changed: {old_f['type']} -> {new_f['type']}")
         if old_f["is_const"] != new_f["is_const"]:
             report.breaking_changes.append(
                 f"Field '{label}' const qualifier changed: {old_f['is_const']} -> {new_f['is_const']}"
@@ -365,9 +369,7 @@ def _compare_functions(
             )
         for sig in new_sigs - old_sigs:
             params_str = ", ".join(sig[0])
-            report.additive_changes.append(
-                f"Function '{label}({params_str}) -> {sig[1]}' overload was added"
-            )
+            report.additive_changes.append(f"Function '{label}({params_str}) -> {sig[1]}' overload was added")
 
     for name in new_groups:
         if name not in old_groups:
@@ -394,18 +396,14 @@ def _compare_enums(
         new_values = {v["name"]: v["value"] for v in new_e["values"]}
         for vname, vval in old_values.items():
             if vname not in new_values:
-                report.breaking_changes.append(
-                    f"Enum value '{label}.{vname}' was removed"
-                )
+                report.breaking_changes.append(f"Enum value '{label}.{vname}' was removed")
             elif vval != new_values[vname]:
                 report.breaking_changes.append(
                     f"Enum value '{label}.{vname}' integer changed: {vval} -> {new_values[vname]}"
                 )
         for vname in new_values:
             if vname not in old_values:
-                report.additive_changes.append(
-                    f"Enum value '{label}.{vname}' was added"
-                )
+                report.additive_changes.append(f"Enum value '{label}.{vname}' was added")
 
     for name in new_by_name:
         if name not in old_by_name:

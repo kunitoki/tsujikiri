@@ -40,15 +40,17 @@ _BUILTIN_HANDLERS: Dict[str, str] = {
 }
 
 # Built-in attribute names that require special (non-action-string) handling.
-_COMPLEX_BUILTINS = frozenset({
-    "tsujikiri::readonly",
-    "tsujikiri::thread_safe",
-    "tsujikiri::doc",
-    "tsujikiri::rename_argument",
-    "tsujikiri::type_map",
-    "tsujikiri::arithmetic",
-    "tsujikiri::hashable",
-})
+_COMPLEX_BUILTINS = frozenset(
+    {
+        "tsujikiri::readonly",
+        "tsujikiri::thread_safe",
+        "tsujikiri::doc",
+        "tsujikiri::rename_argument",
+        "tsujikiri::type_map",
+        "tsujikiri::arithmetic",
+        "tsujikiri::hashable",
+    }
+)
 
 
 def _parse_attribute(attr: str) -> Tuple[str, List[str]]:

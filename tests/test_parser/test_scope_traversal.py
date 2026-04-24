@@ -32,6 +32,7 @@ def test_regular_namespace_not_inline() -> None:
 
 # --- scope traversal integration tests ---
 
+
 def test_nested_namespace_filter() -> None:
     source = SourceConfig(path=str(FIXTURE), parse_args=["-std=c++20"])
     module = parse_translation_unit(source, namespaces=["outer::inner"], module_name="test")
@@ -47,8 +48,8 @@ def test_inline_namespace_transparent_under_parent() -> None:
     module = parse_translation_unit(source, namespaces=["outer"], module_name="test")
     names = [c.name for c in module.classes]
     assert "Direct" in names
-    assert "Inlined" in names      # inline namespace is transparent under outer
-    assert "Deep" not in names     # non-inline nested not included without outer::inner
+    assert "Inlined" in names  # inline namespace is transparent under outer
+    assert "Deep" not in names  # non-inline nested not included without outer::inner
 
 
 def test_global_scope_empty_filter() -> None:

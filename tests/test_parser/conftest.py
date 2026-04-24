@@ -12,12 +12,14 @@ HERE = Path(__file__).parent
 @pytest.fixture(scope="module")
 def parser_input_config():
     from tsujikiri.configurations import load_input_config
+
     return load_input_config(HERE / "combined.input.yml")
 
 
 @pytest.fixture(scope="module")
 def parsed_module(parser_input_config):
     from tsujikiri.parser import parse_translation_unit
+
     entries = parser_input_config.get_source_entries()
     return parse_translation_unit(entries[0].source, parser_input_config.filters.namespaces, "combined")
 
@@ -26,6 +28,7 @@ def parsed_module(parser_input_config):
 def nested_parsed_module():
     from tsujikiri.configurations import SourceConfig
     from tsujikiri.parser import parse_translation_unit
+
     src = SourceConfig(path=str(HERE / "nested_types.hpp"), parse_args=["-std=c++17"])
     return parse_translation_unit(src, ["mylib"], "nested")
 
@@ -34,6 +37,7 @@ def nested_parsed_module():
 def defaults_parsed_module():
     from tsujikiri.configurations import SourceConfig
     from tsujikiri.parser import parse_translation_unit
+
     src = SourceConfig(path=str(HERE / "defaults.hpp"), parse_args=["-std=c++17"])
     return parse_translation_unit(src, ["mylib"], "defaults")
 
@@ -42,5 +46,6 @@ def defaults_parsed_module():
 def type_tokens_module():
     from tsujikiri.configurations import SourceConfig
     from tsujikiri.parser import parse_translation_unit
+
     src = SourceConfig(path=str(HERE / "type_tokens.hpp"), parse_args=["-std=c++17"])
     return parse_translation_unit(src, ["types"], "type_tokens")

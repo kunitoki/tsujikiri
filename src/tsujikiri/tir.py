@@ -40,6 +40,7 @@ from tsujikiri.ir import (
 # TIR leaf nodes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TIRParameter(IRParameter):
     """IRParameter augmented with binding-layer overrides."""
@@ -215,11 +216,14 @@ class TIRModule(IRModule):
 # Upgrade helpers
 # ---------------------------------------------------------------------------
 
+
 def _ir_fields_dict(ir: object) -> dict:
     """Return a dict of init-visible dataclass fields from *ir*."""
-    return {f.name: getattr(ir, f.name)
-            for f in dataclasses.fields(ir)  # type: ignore[arg-type]
-            if f.init}
+    return {
+        f.name: getattr(ir, f.name)
+        for f in dataclasses.fields(ir)  # type: ignore[arg-type]
+        if f.init
+    }
 
 
 def upgrade_parameter(ir: IRParameter, index: int = 0) -> TIRParameter:

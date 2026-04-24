@@ -1,10 +1,12 @@
 """Post-generation output pretty printers.
 
 The registry maps a language name (as declared in a ``.output.yml`` file under
-the ``language:`` key) to the CLI command used to pretty print the generated source.
+the ``language:`` key) to the base argv (command + fixed subcommands) used to
+pretty print the generated source.
 
 Currently registered:
-  - ``cpp`` → ``clang-format``
+  - ``cpp``    → ``clang-format``
+  - ``python`` → ``ruff format``
 """
 
 from __future__ import annotations
@@ -12,13 +14,14 @@ from __future__ import annotations
 import subprocess
 from typing import Dict, List, Optional
 
-_REGISTRY: Dict[str, str] = {
-    "cpp": "clang-format",
+_REGISTRY: Dict[str, List[str]] = {
+    "cpp": ["clang-format"],
+    "python": ["ruff", "format"],
 }
 
 
-def get_pretty_printer_command(language: str) -> Optional[str]:
-    """Return the pretty printer executable for *language*, or ``None`` if unregistered."""
+def get_pretty_printer_command(language: str) -> Optional[List[str]]:
+    """Return the base argv for the pretty printer for *language*, or ``None`` if unregistered."""
     return _REGISTRY.get(language)
 
 
@@ -38,6 +41,6 @@ def pretty(content: str, language: str, extra_args: Optional[List[str]] = None) 
     if cmd is None:
         return content
 
-    argv = [cmd] + (extra_args or []) + ["-"]
+    argv = cmd + (extra_args or []) + ["-"]
     result = subprocess.run(argv, input=content, capture_output=True, text=True, check=True)
     return result.stdout

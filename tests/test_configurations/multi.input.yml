@@ -43,3 +43,6 @@ format_overrides:
       includes: ["<luabridge3_extra.h>"]
       prefix: "// lua prefix\n"
       postfix: "// lua postfix\n"
+    pretty: true
+    pretty_options:
+      - "--style=LLVM"

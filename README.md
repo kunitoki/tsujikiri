@@ -5,6 +5,7 @@
 [![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=11)](https://codecov.io/gh/kunitoki/tsujikiri)
 [![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=11)](https://tsujikiri.readthedocs.io/en/latest/)
 [![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=11)](https://pypi.org/project/tsujikiri/)
+[![Downloads](https://img.shields.io/pypi/dw/tsujikiri?x=2)](https://pypistats.org/packages/tsujikiri)
 [![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=11)](https://pypi.org/project/tsujikiri/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 

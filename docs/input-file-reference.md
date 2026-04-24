@@ -10,6 +10,7 @@ An **input file** (conventionally named `*.input.yml`) is the primary configurat
 
 | Key | Type | Required | Default | Purpose |
 |-----|------|----------|---------|---------|
+| `loads` | list of strings | no | `[]` | Other input config files to merge in as defaults (resolved relative to this file) |
 | `source` | mapping | one of `source`/`sources` | — | Single C++ source to parse |
 | `sources` | list | one of `source`/`sources` | — | Multiple C++ sources to parse |
 | `filters` | mapping | no | (all included) | Default filtering rules |
@@ -24,6 +25,70 @@ An **input file** (conventionally named `*.input.yml`) is the primary configurat
 | `custom_data` | mapping | no | `{}` | Arbitrary key-value data passed verbatim into the template context as `custom_data` |
 
 The module name used in the generated output (e.g. `register_myproject`) is derived from the input file name: `myproject.input.yml` → `myproject`.
+
+---
+
+## `loads` — Configuration Loads
+
+`loads` lets you split shared configuration into reusable files and compose them. Each path is resolved relative to the file declaring it.
+
+```yaml
+loads:
+  - ./common/base.input.yml
+  - ../shared/typesystem.input.yml
+```
+
+### Merge semantics
+
+Loaded files are processed first and provide **defaults**. The current file's values **extend or override** them:
+
+| Value type | Behaviour |
+|------------|-----------|
+| Scalar (`pretty`, `pretty_options`, `prefix`, …) | Current file wins on conflict; loaded value used when key is absent |
+| List (`sources`, `transforms`, `generation.includes`, …) | Loaded entries come first, then current file's entries |
+| Mapping (`filters`, `custom_data`, `format_overrides`, …) | Deep-merged; current file wins on scalar-leaf conflicts |
+
+When multiple paths are listed under `loads`, they are merged in order — earlier entries are treated as deeper defaults, later entries extend them.
+
+### Cycle detection
+
+If file A loads B and B loads A (or A loads itself), the cycle is silently broken — each file is loaded at most once per resolution chain.
+
+### Nested loads
+
+Loaded files may themselves declare `loads`. Resolution is recursive: the full merged result of a loaded file (including its own loads) is merged into the parent before the parent's own values are applied.
+
+### Example
+
+```yaml
+# common/filters.input.yml
+filters:
+  classes:
+    blacklist:
+      - pattern: ".*Impl$"
+        is_regex: true
+  constructors:
+    include: true
+transforms:
+  - stage: add_type_mapping
+    from: "engine::String"
+    to: "std::string"
+```
+
+```yaml
+# game_engine.input.yml
+loads:
+  - common/filters.input.yml
+
+sources:
+  - path: engine/physics.hpp
+  - path: engine/audio.hpp
+
+generation:
+  embed_version: true
+```
+
+The resulting config has the class blacklist and `add_type_mapping` transform from `filters.input.yml`, with both sources and `embed_version: true` from `game_engine.input.yml`. Transforms from the loaded file appear before any transforms declared in `game_engine.input.yml`.
 
 ---
 
@@ -258,10 +323,18 @@ format_overrides:
       includes: ['"luabridge_extras.hpp"']
       prefix: "// LuaBridge3 custom header\n"
       postfix: "// LuaBridge3 custom footer\n"
+    typesystem:
+      primitive_types:
+        - { cpp_name: "juce::String", target_name: "str" }
+    pretty: true
+    pretty_options:
+      - "--style=LLVM"
 
   luals:
     generation:
       includes: []
+    typesystem_file: luals_types.input.yml   # load typesystem from an external file
+    pretty: false  # disable even if top-level pretty: true
 ```
 
 | Field | Type | Default | Override Behaviour |
@@ -274,6 +347,10 @@ format_overrides:
 | `generation.prefix` | string | `""` | **Replaces** the top-level prefix when non-empty |
 | `generation.postfix` | string | `""` | **Replaces** the top-level postfix when non-empty |
 | `generation.embed_version` | bool | `false` | OR'd with top-level `embed_version` |
+| `typesystem` | mapping | (absent) | Inline typesystem declarations; entries **take priority over** the top-level `typesystem` for this format only |
+| `typesystem_file` | string | `""` | Path to a YAML file whose `typesystem:` block is used as the format typesystem; **takes precedence over** inline `typesystem` when non-empty; relative paths resolved relative to the input YAML |
+| `pretty` | bool or absent | (inherit) | `true` = force-enable; `false` = force-disable; absent = inherit top-level `pretty` |
+| `pretty_options` | list of strings or absent | (inherit) | Override args for the pretty printer; absent = inherit top-level `pretty_options` |
 
 ---
 
@@ -309,6 +386,17 @@ For generation prefix/postfix:
 format_overrides prefix/postfix replaces top-level when non-empty
 top-level prefix/postfix used when format_overrides omits or leaves empty
 ```
+
+For pretty printing (highest priority wins):
+```
+CLI --pretty [FORMAT...]                    ← overrides all YAML settings
+    ↑
+format_overrides.<format>.pretty            ← per-format YAML override
+    ↑
+pretty                                      ← top-level YAML default
+```
+
+`pretty_options` follows the same priority chain; the first non-absent level wins.
 
 ### Full Example
 
@@ -382,9 +470,10 @@ When `pretty: true`, tsujikiri pipes the generated output through the language-a
 
 Currently registered pretty printers:
 
-| Language | Command |
-|----------|---------|
-| `cpp` | `clang-format` |
+| Language | Command | Used by formats |
+|----------|---------|-----------------|
+| `cpp` | `clang-format` | `luabridge3`, `pybind11` |
+| `python` | `ruff format` | `pyi` |
 
 ```yaml
 pretty: true
@@ -402,6 +491,40 @@ The pretty printer is invoked with `-` as the filename so it reads from stdin an
 
 > **Tip:** When `language` has no registered pretty printer (e.g. `luals`), `pretty: true` is silently ignored.
 
+### Per-Format and CLI Overrides
+
+`pretty` can also be controlled per-format via `format_overrides` or overridden entirely from the CLI:
+
+```yaml
+# Enable globally but disable for the luals format (no registered printer)
+pretty: true
+pretty_options:
+  - "--style=Google"
+
+format_overrides:
+  luals:
+    pretty: false
+  pybind11:
+    pretty: true          # force-enable even if top-level were false
+    pretty_options:       # use different options for this format
+      - "--style=LLVM"
+```
+
+From the CLI, `--pretty` overrides the YAML setting for all targets or specific ones:
+
+```bash
+# Enable for all targets (overrides pretty: false in YAML)
+tsujikiri -i project.input.yml --target luabridge3 out.cpp --pretty
+
+# Enable only for luabridge3 (disables for all other targets even if YAML says true)
+tsujikiri -i project.input.yml \
+  --target luabridge3 out.cpp \
+  --target luals out.lua \
+  --pretty luabridge3
+```
+
+See [Override Precedence](#override-precedence) for the full resolution order.
+
 ---
 
 ## `typesystem` — Type System Declarations
@@ -416,7 +539,7 @@ typesystem:
     - { cpp_name: "std::string", target_name: "str" }
 
   typedef_types:
-    - { cpp_name: "EntityId", source: "int32_t" }
+    - { cpp_name: "EntityId",    target_name: "int32_t" }
 
   custom_types:
     - { cpp_name: "lua_State" }
@@ -430,9 +553,6 @@ typesystem:
   smart_pointer_types:
     - { cpp_name: "std::shared_ptr", kind: "shared", getter: "get" }
     - { cpp_name: "std::unique_ptr", kind: "unique", getter: "get" }
-
-  load_typesystems:
-    - { path: "../common/base.input.yml" }
 
   declared_functions:
     - name: makeCircle
@@ -458,7 +578,6 @@ typesystem:
 | `custom_types` | list | Declare types that exist externally — no binding is generated, but the type is recognised |
 | `container_types` | list | Declare C++ container templates and their sequence protocol kind |
 | `smart_pointer_types` | list | Declare smart pointer templates with their kind and inner-object accessor |
-| `load_typesystems` | list | Import type metadata from another input config (merged into this config) |
 | `declared_functions` | list | Manually declare functions the parser cannot see (templates, wrappers) |
 | `conversion_rules` | list | Provide native ↔ target conversion code for a C++ type |
 
@@ -498,16 +617,6 @@ Each entry maps one C++ type spelling to a target-language name:
 | `cpp_name` | string | — | Template name (e.g. `"std::shared_ptr"`) |
 | `kind` | string | — | `"shared"` \| `"unique"` \| `"weak"` |
 | `getter` | string | `"get"` | Member function returning the raw pointer |
-
-### `load_typesystems`
-
-Inherits type entries from another project's input config. The path resolves relative to the current config file.
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `path` | string | Path to another `.input.yml` file whose `typesystem:` block is merged in |
-
-**Collision semantics:** The current config wins on `cpp_name` collisions — entries from the loaded config are prepended, but any same-named entry already in the current config takes precedence.
 
 ### `declared_functions`
 

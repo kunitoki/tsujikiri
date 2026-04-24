@@ -54,7 +54,7 @@ def _get_default_value(cursor) -> Optional[str]:
     tokens = list(cursor.get_tokens())
     for i, tok in enumerate(tokens):
         if tok.spelling == "=":
-            rest = [t.spelling for t in tokens[i + 1:]]
+            rest = [t.spelling for t in tokens[i + 1 :]]
             return " ".join(rest).strip() if rest else None
     return None
 
@@ -100,9 +100,7 @@ def _type_from_tokens(cursor) -> str:
             if i == 0:
                 return _normalize_type_spelling(cursor.type.spelling)
             raw = " ".join(t.spelling for t in tokens[:i])
-            return _normalize_type_spelling(raw) or _normalize_type_spelling(
-                cursor.type.spelling
-            )
+            return _normalize_type_spelling(raw) or _normalize_type_spelling(cursor.type.spelling)
     return _normalize_type_spelling(cursor.type.spelling)
 
 
@@ -173,9 +171,7 @@ def _parse_parameters(cursor) -> List[IRParameter]:
     # stream, so _type_from_tokens falls back to cursor.type.spelling which also
     # returns the wrong type ('int'). In that case we fall back to parsing the
     # parent function cursor's token stream.
-    has_zero_extent_unnamed = any(
-        not arg.spelling and not list(arg.get_tokens()) for arg in args
-    )
+    has_zero_extent_unnamed = any(not arg.spelling and not list(arg.get_tokens()) for arg in args)
     fallback_types: List[str] = _param_types_from_fn_tokens(cursor) if has_zero_extent_unnamed else []
 
     result: List[IRParameter] = []
@@ -184,11 +180,13 @@ def _parse_parameters(cursor) -> List[IRParameter]:
             type_spelling = fallback_types[i]
         else:
             type_spelling = _type_from_tokens(arg)
-        result.append(IRParameter(
-            name=arg.spelling,
-            type_spelling=type_spelling,
-            default_value=_get_default_value(arg),
-        ))
+        result.append(
+            IRParameter(
+                name=arg.spelling,
+                type_spelling=type_spelling,
+                default_value=_get_default_value(arg),
+            )
+        )
     return result
 
 
@@ -250,15 +248,15 @@ def _get_attributes(cursor) -> List[str]:
     if not lines:
         return []
 
-    start_line = cursor.extent.start.line   # 1-indexed
-    end_line = cursor.extent.end.line       # 1-indexed
+    start_line = cursor.extent.start.line  # 1-indexed
+    end_line = cursor.extent.end.line  # 1-indexed
     start_col = cursor.extent.start.column  # 1-indexed
-    end_col = cursor.extent.end.column      # 1-indexed
+    end_col = cursor.extent.end.column  # 1-indexed
 
     attrs: List[str] = []
 
     # Text before the cursor start on the same line (leading attr, same line)
-    before = lines[start_line - 1][:start_col - 1]
+    before = lines[start_line - 1][: start_col - 1]
     attrs.extend(_collect_attr_blocks(before))
 
     # clang 21+ may extend the cursor extent to include an attribute-only line
@@ -271,7 +269,7 @@ def _get_attributes(cursor) -> List[str]:
             attrs.extend(_collect_attr_blocks(full_start))
 
     # Text after the cursor end on the same line (trailing attr)
-    after = lines[end_line - 1][end_col - 1:]
+    after = lines[end_line - 1][end_col - 1 :]
     attrs.extend(_collect_attr_blocks(after))
 
     # Previous line — only scan if it contains [[ and no statement terminators
@@ -391,11 +389,13 @@ def _parse_enum(cursor, namespace: str) -> IREnum:
     values = []
     for child in cursor.get_children():
         if child.kind == CursorKind.ENUM_CONSTANT_DECL:
-            values.append(IREnumValue(
-                name=child.spelling,
-                value=child.enum_value,
-                attributes=_get_attributes(child),
-            ))
+            values.append(
+                IREnumValue(
+                    name=child.spelling,
+                    value=child.enum_value,
+                    attributes=_get_attributes(child),
+                )
+            )
     return IREnum(
         name=name,
         qualified_name=qualified,
@@ -430,10 +430,12 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     # --- Bases ---
     for child in cursor.get_children():
         if child.kind == CursorKind.CXX_BASE_SPECIFIER:
-            ir_class.bases.append(IRBase(
-                qualified_name=child.type.get_canonical().spelling,
-                access=_access_str(child.access_specifier),
-            ))
+            ir_class.bases.append(
+                IRBase(
+                    qualified_name=child.type.get_canonical().spelling,
+                    access=_access_str(child.access_specifier),
+                )
+            )
 
     # --- Methods ---
     methods_by_name: Dict[str, list] = defaultdict(list)
@@ -445,7 +447,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         is_overload = len(cursors) > 1
         for m in cursors:
             params = _parse_parameters(m)
-            is_op = m.spelling.startswith("operator") and not m.spelling[len("operator"):].isalpha()
+            is_op = m.spelling.startswith("operator") and not m.spelling[len("operator") :].isalpha()
             op_type = _canonicalize_operator(m.spelling, len(params)) if is_op else None
             deprecated = _is_deprecated(m)
             is_varargs = m.type.is_function_variadic()
@@ -504,10 +506,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
             ir_class.methods.append(method)
 
     # --- Constructors ---
-    all_ctors = [
-        c for c in cursor.get_children()
-        if c.kind == CursorKind.CONSTRUCTOR
-    ]
+    all_ctors = [c for c in cursor.get_children() if c.kind == CursorKind.CONSTRUCTOR]
     # Detect deleted copy/move constructors for move-only type inference
     class_name_for_ctor = class_name
     for ctor in all_ctors:
@@ -515,8 +514,11 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         if len(params) == 1:
             t = params[0].type_spelling
             # Copy constructor: takes const ClassName& or ClassName const&
-            if (f"const {class_name_for_ctor} &" in t or f"{class_name_for_ctor} const &" in t
-                    or t.strip() == f"const {class_name_for_ctor} &"):
+            if (
+                f"const {class_name_for_ctor} &" in t
+                or f"{class_name_for_ctor} const &" in t
+                or t.strip() == f"const {class_name_for_ctor} &"
+            ):
                 if _is_deleted(ctor) or ctor.access_specifier != AccessSpecifier.PUBLIC:
                     ir_class.has_deleted_copy_constructor = True
             # Move constructor: takes ClassName&&
@@ -528,16 +530,18 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     is_ctor_overload = len(public_ctors) > 1
     for ctor in public_ctors:
         deprecated = _is_deprecated(ctor)
-        ir_class.constructors.append(IRConstructor(
-            parameters=_parse_parameters(ctor),
-            is_overload=is_ctor_overload,
-            is_noexcept=_is_noexcept(ctor),
-            is_explicit=_is_explicit(ctor),
-            is_varargs=ctor.type.is_function_variadic(),
-            is_deprecated=deprecated,
-            deprecation_message=_get_deprecation_message(ctor) if deprecated else None,
-            attributes=_get_attributes(ctor),
-        ))
+        ir_class.constructors.append(
+            IRConstructor(
+                parameters=_parse_parameters(ctor),
+                is_overload=is_ctor_overload,
+                is_noexcept=_is_noexcept(ctor),
+                is_explicit=_is_explicit(ctor),
+                is_varargs=ctor.type.is_function_variadic(),
+                is_deprecated=deprecated,
+                deprecation_message=_get_deprecation_message(ctor) if deprecated else None,
+                attributes=_get_attributes(ctor),
+            )
+        )
 
     # --- Virtual / abstract class flags ---
     ir_class.has_virtual_methods = any(m.is_virtual for m in ir_class.methods)
@@ -557,31 +561,33 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     # access level because they are derived straight from the `public:` /
     # `private:` / `protected:` keyword tokens.
     _default_access: object = (
-        AccessSpecifier.PRIVATE
-        if cursor.kind == CursorKind.CLASS_DECL
-        else AccessSpecifier.PUBLIC
+        AccessSpecifier.PRIVATE if cursor.kind == CursorKind.CLASS_DECL else AccessSpecifier.PUBLIC
     )
     _tracked_access: object = _default_access
     for child in cursor.get_children():
         if child.kind == CursorKind.CXX_ACCESS_SPEC_DECL:
             _tracked_access = child.access_specifier
         elif child.kind == CursorKind.FIELD_DECL and _tracked_access == AccessSpecifier.PUBLIC:
-            ir_class.fields.append(IRField(
-                name=child.spelling,
-                type_spelling=child.type.spelling,
-                is_const="const" in child.type.spelling,
-                is_static=False,
-                attributes=_get_attributes(child),
-            ))
+            ir_class.fields.append(
+                IRField(
+                    name=child.spelling,
+                    type_spelling=child.type.spelling,
+                    is_const="const" in child.type.spelling,
+                    is_static=False,
+                    attributes=_get_attributes(child),
+                )
+            )
         elif child.kind == CursorKind.VAR_DECL and _tracked_access == AccessSpecifier.PUBLIC:
             # Static member variables (class-level, not instance fields)
-            ir_class.fields.append(IRField(
-                name=child.spelling,
-                type_spelling=child.type.spelling,
-                is_const="const" in child.type.spelling,
-                is_static=True,
-                attributes=_get_attributes(child),
-            ))
+            ir_class.fields.append(
+                IRField(
+                    name=child.spelling,
+                    type_spelling=child.type.spelling,
+                    is_const="const" in child.type.spelling,
+                    is_static=True,
+                    attributes=_get_attributes(child),
+                )
+            )
 
     # --- Using declarations ---
     for child in cursor.get_children():
@@ -594,11 +600,13 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 if ch.kind == CursorKind.TYPE_REF:
                     base_qname = ch.type.get_canonical().spelling
                     break
-            ir_class.using_declarations.append(IRUsingDeclaration(
-                member_name=member_name,
-                base_qualified_name=base_qname,
-                access=access,
-            ))
+            ir_class.using_declarations.append(
+                IRUsingDeclaration(
+                    member_name=member_name,
+                    base_qualified_name=base_qname,
+                    access=access,
+                )
+            )
 
     # --- Nested enums ---
     for child in cursor.get_children():
@@ -607,8 +615,10 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
 
     # --- Inner classes ---
     for child in cursor.get_children():
-        if (child.kind in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL)
-                and child.access_specifier == AccessSpecifier.PUBLIC):
+        if (
+            child.kind in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL)
+            and child.access_specifier == AccessSpecifier.PUBLIC
+        ):
             ir_class.inner_classes.append(_parse_class(child, namespace, parent_name=qualified))
 
     return ir_class
@@ -751,25 +761,26 @@ def parse_translation_unit(
         for fn_cursor, scope_path in entries:
             qualified = f"{scope_path}::{fn_cursor.spelling}" if scope_path else fn_cursor.spelling
             fn_params = _parse_parameters(fn_cursor)
-            fn_is_op = (fn_cursor.spelling.startswith("operator")
-                        and not fn_cursor.spelling[len("operator"):].isalpha())
+            fn_is_op = fn_cursor.spelling.startswith("operator") and not fn_cursor.spelling[len("operator") :].isalpha()
             fn_op_type = _canonicalize_operator(fn_cursor.spelling, len(fn_params)) if fn_is_op else None
             fn_deprecated = _is_deprecated(fn_cursor)
-            module.functions.append(IRFunction(
-                name=fn_cursor.spelling,
-                qualified_name=qualified,
-                namespace=scope_path,
-                return_type=fn_cursor.result_type.spelling,
-                parameters=fn_params,
-                is_overload=is_overload,
-                is_noexcept=_is_noexcept(fn_cursor),
-                is_varargs=fn_cursor.type.is_function_variadic(),
-                is_operator=fn_is_op,
-                operator_type=fn_op_type,
-                is_deprecated=fn_deprecated,
-                deprecation_message=_get_deprecation_message(fn_cursor) if fn_deprecated else None,
-                attributes=_get_attributes(fn_cursor),
-            ))
+            module.functions.append(
+                IRFunction(
+                    name=fn_cursor.spelling,
+                    qualified_name=qualified,
+                    namespace=scope_path,
+                    return_type=fn_cursor.result_type.spelling,
+                    parameters=fn_params,
+                    is_overload=is_overload,
+                    is_noexcept=_is_noexcept(fn_cursor),
+                    is_varargs=fn_cursor.type.is_function_variadic(),
+                    is_operator=fn_is_op,
+                    operator_type=fn_op_type,
+                    is_deprecated=fn_deprecated,
+                    deprecation_message=_get_deprecation_message(fn_cursor) if fn_deprecated else None,
+                    attributes=_get_attributes(fn_cursor),
+                )
+            )
             if scope_path and scope_path not in module.namespaces:
                 module.namespaces.append(scope_path)
 

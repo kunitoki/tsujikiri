@@ -17,6 +17,7 @@ from tsujikiri.cli import build_parser, main
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run(*args: str, expected_exit: int | None = None) -> tuple[str, str]:
     """Run main() with given CLI args, capture stdout/stderr."""
     stdout, stderr = StringIO(), StringIO()
@@ -33,6 +34,7 @@ def _run(*args: str, expected_exit: int | None = None) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
+
 
 class TestBuildParser:
     def test_returns_parser(self):
@@ -58,11 +60,18 @@ class TestBuildParser:
 
     def test_multiple_targets(self):
         p = build_parser()
-        args = p.parse_args([
-            "--input", "foo.yml",
-            "--target", "luabridge3", "out.cpp",
-            "--target", "luals", "out.lua",
-        ])
+        args = p.parse_args(
+            [
+                "--input",
+                "foo.yml",
+                "--target",
+                "luabridge3",
+                "out.cpp",
+                "--target",
+                "luals",
+                "out.lua",
+            ]
+        )
         assert args.target == [["luabridge3", "out.cpp"], ["luals", "out.lua"]]
 
     def test_dry_run_flag(self):
@@ -90,10 +99,42 @@ class TestBuildParser:
         args = p.parse_args(["--input", "x.yml", "--validate-config"])
         assert args.validate_config is True
 
+    def test_pretty_flag_absent_is_none(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "foo.yml", "--target", "luabridge3", "-"])
+        assert args.pretty is None
+
+    def test_pretty_flag_no_args_is_empty_list(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "foo.yml", "--target", "luabridge3", "-", "--pretty"])
+        assert args.pretty == []
+
+    def test_pretty_flag_with_one_format(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "foo.yml", "--target", "luabridge3", "-", "--pretty", "luabridge3"])
+        assert args.pretty == ["luabridge3"]
+
+    def test_pretty_flag_with_multiple_formats(self):
+        p = build_parser()
+        args = p.parse_args(
+            [
+                "--input",
+                "foo.yml",
+                "--target",
+                "luabridge3",
+                "-",
+                "--pretty",
+                "luabridge3",
+                "pybind11",
+            ]
+        )
+        assert args.pretty == ["luabridge3", "pybind11"]
+
 
 # ---------------------------------------------------------------------------
 # --list-formats
 # ---------------------------------------------------------------------------
+
 
 class TestListFormats:
     def test_prints_builtin_formats(self):
@@ -118,19 +159,26 @@ class TestListFormats:
 # --dry-run
 # ---------------------------------------------------------------------------
 
+
 class TestDryRun:
     def test_dry_run_prints_summary(self, simple_input_yml):
         stdout, _ = _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", "-",
+            "--input",
+            str(simple_input_yml),
+            "--target",
+            "luabridge3",
+            "-",
             "--dry-run",
         )
         assert "Classes" in stdout
 
     def test_dry_run_no_binding_code(self, simple_input_yml):
         stdout, _ = _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", "-",
+            "--input",
+            str(simple_input_yml),
+            "--target",
+            "luabridge3",
+            "-",
             "--dry-run",
         )
         assert "getGlobalNamespace" not in stdout
@@ -141,6 +189,7 @@ class TestDryRun:
 # Normal generation
 # ---------------------------------------------------------------------------
 
+
 class TestGeneration:
     def test_luabridge3_output_to_stdout(self, simple_input_yml):
         stdout, _ = _run("--input", str(simple_input_yml), "--target", "luabridge3", "-")
@@ -150,8 +199,11 @@ class TestGeneration:
     def test_output_to_file(self, simple_input_yml, tmp_path):
         out_file = tmp_path / "bindings.cpp"
         _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", str(out_file),
+            "--input",
+            str(simple_input_yml),
+            "--target",
+            "luabridge3",
+            str(out_file),
         )
         assert out_file.exists()
         content = out_file.read_text(encoding="utf-8")
@@ -161,9 +213,14 @@ class TestGeneration:
         cpp_file = tmp_path / "bindings.cpp"
         lua_file = tmp_path / "bindings.lua"
         _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", str(cpp_file),
-            "--target", "luals", str(lua_file),
+            "--input",
+            str(simple_input_yml),
+            "--target",
+            "luabridge3",
+            str(cpp_file),
+            "--target",
+            "luals",
+            str(lua_file),
         )
         assert cpp_file.exists()
         assert lua_file.exists()
@@ -172,15 +229,13 @@ class TestGeneration:
 
     def test_custom_output_format_by_path(self, simple_input_yml, tmp_path):
         fmt = tmp_path / "noop.output.yml"
-        fmt.write_text(
-            "format_name: noop\n"
-            "template: |\n"
-            "  NOOP_START\n"
-            "  NOOP_END\n"
-        )
+        fmt.write_text("format_name: noop\ntemplate: |\n  NOOP_START\n  NOOP_END\n")
         stdout, _ = _run(
-            "--input", str(simple_input_yml),
-            "--target", str(fmt), "-",
+            "--input",
+            str(simple_input_yml),
+            "--target",
+            str(fmt),
+            "-",
         )
         assert "NOOP_START" in stdout
         assert "NOOP_END" in stdout
@@ -189,6 +244,7 @@ class TestGeneration:
 # ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
+
 
 class TestErrors:
     def test_missing_input_flag(self):
@@ -199,8 +255,11 @@ class TestErrors:
 
     def test_nonexistent_input_file(self, tmp_path):
         _, stderr = _run(
-            "--input", str(tmp_path / "nope.yml"),
-            "--target", "luabridge3", "-",
+            "--input",
+            str(tmp_path / "nope.yml"),
+            "--target",
+            "luabridge3",
+            "-",
         )
         assert "not found" in stderr.lower() or "error" in stderr.lower()
 
@@ -210,8 +269,11 @@ class TestErrors:
 
     def test_no_source_prints_error(self, no_source_input_yml):
         _, stderr = _run(
-            "--input", str(no_source_input_yml),
-            "--target", "luabridge3", "-",
+            "--input",
+            str(no_source_input_yml),
+            "--target",
+            "luabridge3",
+            "-",
         )
         assert "no source" in stderr.lower()
 
@@ -219,6 +281,7 @@ class TestErrors:
 # ---------------------------------------------------------------------------
 # Format-level overrides
 # ---------------------------------------------------------------------------
+
 
 class TestFormatOverrides:
     def test_format_filter_override(self, fmt_filters_input_yml):
@@ -239,28 +302,33 @@ class TestFormatOverrides:
 # Declared functions with parameters (cli.py lines 303-308)
 # ---------------------------------------------------------------------------
 
+
 class TestDeclaredFunctionsInjection:
     def test_declared_function_with_parameters_appears_in_output(self, tmp_path: Path) -> None:
         """cli.py lines 303-308: declared function parameters are built as IRParameter list."""
         hpp = tmp_path / "empty.hpp"
         hpp.write_text("// empty\n")
         cfg = tmp_path / "decl.input.yml"
-        cfg.write_text(yaml.dump({
-            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
-            "typesystem": {
-                "declared_functions": [
-                    {
-                        "name": "myWrapper",
-                        "namespace": "mylib",
-                        "return_type": "void",
-                        "parameters": [
-                            {"name": "x", "type": "int"},
-                            {"name": "y", "type": "float"},
-                        ],
-                    }
-                ]
-            },
-        }))
+        cfg.write_text(
+            yaml.dump(
+                {
+                    "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+                    "typesystem": {
+                        "declared_functions": [
+                            {
+                                "name": "myWrapper",
+                                "namespace": "mylib",
+                                "return_type": "void",
+                                "parameters": [
+                                    {"name": "x", "type": "int"},
+                                    {"name": "y", "type": "float"},
+                                ],
+                            }
+                        ]
+                    },
+                }
+            )
+        )
         stdout, _ = _run("--input", str(cfg), "--target", "luabridge3", "-")
         assert "myWrapper" in stdout
 
@@ -269,18 +337,22 @@ class TestDeclaredFunctionsInjection:
         hpp = tmp_path / "empty.hpp"
         hpp.write_text("// empty\n")
         cfg = tmp_path / "decl_no_ns.input.yml"
-        cfg.write_text(yaml.dump({
-            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
-            "typesystem": {
-                "declared_functions": [
-                    {
-                        "name": "bareFunc",
-                        "return_type": "int",
-                        "parameters": [{"name": "n", "type": "int"}],
-                    }
-                ]
-            },
-        }))
+        cfg.write_text(
+            yaml.dump(
+                {
+                    "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+                    "typesystem": {
+                        "declared_functions": [
+                            {
+                                "name": "bareFunc",
+                                "return_type": "int",
+                                "parameters": [{"name": "n", "type": "int"}],
+                            }
+                        ]
+                    },
+                }
+            )
+        )
         stdout, _ = _run("--input", str(cfg), "--target", "luabridge3", "-")
         assert "bareFunc" in stdout
 
@@ -289,11 +361,15 @@ class TestDeclaredFunctionsInjection:
 # Per-source generation.includes
 # ---------------------------------------------------------------------------
 
+
 class TestPerSourceGenerationIncludes:
     def test_source_generation_includes_in_output(self, multi_source_with_generation_yml):
         stdout, _ = _run(
-            "--input", str(multi_source_with_generation_yml),
-            "--target", "luabridge3", "-",
+            "--input",
+            str(multi_source_with_generation_yml),
+            "--target",
+            "luabridge3",
+            "-",
         )
         assert "<simple_extra.h>" in stdout
 
@@ -301,6 +377,7 @@ class TestPerSourceGenerationIncludes:
 # ---------------------------------------------------------------------------
 # --manifest-file / --check-compat / --embed-version
 # ---------------------------------------------------------------------------
+
 
 class TestManifestCompatibility:
     """End-to-end tests simulating API changes detected at generation time."""
@@ -322,9 +399,15 @@ class TestManifestCompatibility:
         hpp.write_text("namespace api { int compute(int x); }\n")
         manifest = tmp_path / "api.json"
 
-        _run("--input", str(self._input_yml(tmp_path, hpp)),
-             "--target", "luabridge3", "-",
-             "--manifest-file", str(manifest))
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, hpp)),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
 
         assert manifest.exists()
         data = json.loads(manifest.read_text(encoding="utf-8"))
@@ -337,12 +420,12 @@ class TestManifestCompatibility:
         input_yml = self._input_yml(tmp_path, hpp)
         manifest = tmp_path / "api.json"
 
-        _run("--input", str(input_yml), "--target", "luabridge3", "-",
-             "--manifest-file", str(manifest))
+        _run("--input", str(input_yml), "--target", "luabridge3", "-", "--manifest-file", str(manifest))
         v1_version = json.loads(manifest.read_text())["version"]
 
-        _, stderr = _run("--input", str(input_yml), "--target", "luabridge3", "-",
-                         "--manifest-file", str(manifest), "--check-compat")
+        _, stderr = _run(
+            "--input", str(input_yml), "--target", "luabridge3", "-", "--manifest-file", str(manifest), "--check-compat"
+        )
 
         assert "Breaking" not in stderr
         assert json.loads(manifest.read_text())["version"] == v1_version
@@ -357,9 +440,15 @@ class TestManifestCompatibility:
         v1_hpp.write_text("namespace api { int compute(int x); }\n")
         manifest = tmp_path / "api.json"
 
-        _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
-             "--target", "luabridge3", "-",
-             "--manifest-file", str(manifest))
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, v1_hpp, "v1")),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
         v1_version = json.loads(manifest.read_text())["version"]
 
         # v2: add a second parameter — breaking change
@@ -367,11 +456,20 @@ class TestManifestCompatibility:
         v2_hpp.write_text("namespace api { int compute(int x, double y); }\n")
 
         stdout_io, stderr_io = StringIO(), StringIO()
-        with patch("sys.argv", ["tsujikiri",
-                                "--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                                "--target", "luabridge3", "-",
-                                "--manifest-file", str(manifest),
-                                "--check-compat"]):
+        with patch(
+            "sys.argv",
+            [
+                "tsujikiri",
+                "--input",
+                str(self._input_yml(tmp_path, v2_hpp, "v2")),
+                "--target",
+                "luabridge3",
+                "-",
+                "--manifest-file",
+                str(manifest),
+                "--check-compat",
+            ],
+        ):
             with patch("sys.stdout", stdout_io), patch("sys.stderr", stderr_io):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -386,27 +484,38 @@ class TestManifestCompatibility:
     def test_breaking_change_method_on_class_exits_1(self, tmp_path):
         """Class method parameter count change is a breaking change."""
         v1_hpp = tmp_path / "v1.hpp"
-        v1_hpp.write_text(
-            "namespace api { class Calc { public: int add(int a, int b); }; }\n"
-        )
+        v1_hpp.write_text("namespace api { class Calc { public: int add(int a, int b); }; }\n")
         manifest = tmp_path / "api.json"
 
-        _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
-             "--target", "luabridge3", "-",
-             "--manifest-file", str(manifest))
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, v1_hpp, "v1")),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
         v1_version = json.loads(manifest.read_text())["version"]
 
         v2_hpp = tmp_path / "v2.hpp"
-        v2_hpp.write_text(
-            "namespace api { class Calc { public: int add(int a, int b, int c); }; }\n"
-        )
+        v2_hpp.write_text("namespace api { class Calc { public: int add(int a, int b, int c); }; }\n")
 
         stdout_io, stderr_io = StringIO(), StringIO()
-        with patch("sys.argv", ["tsujikiri",
-                                "--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                                "--target", "luabridge3", "-",
-                                "--manifest-file", str(manifest),
-                                "--check-compat"]):
+        with patch(
+            "sys.argv",
+            [
+                "tsujikiri",
+                "--input",
+                str(self._input_yml(tmp_path, v2_hpp, "v2")),
+                "--target",
+                "luabridge3",
+                "-",
+                "--manifest-file",
+                str(manifest),
+                "--check-compat",
+            ],
+        ):
             with patch("sys.stdout", stdout_io), patch("sys.stderr", stderr_io):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -423,16 +532,29 @@ class TestManifestCompatibility:
         v1_hpp.write_text("namespace api { int compute(int x); }\n")
         manifest = tmp_path / "api.json"
 
-        _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
-             "--target", "luabridge3", "-",
-             "--manifest-file", str(manifest))
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, v1_hpp, "v1")),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
 
         v2_hpp = tmp_path / "v2.hpp"
         v2_hpp.write_text("namespace api { int compute(int x); int reset(); }\n")
 
-        _, stderr = _run("--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                         "--target", "luabridge3", "-",
-                         "--manifest-file", str(manifest), "--check-compat")
+        _, stderr = _run(
+            "--input",
+            str(self._input_yml(tmp_path, v2_hpp, "v2")),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+            "--check-compat",
+        )
 
         assert "Breaking" not in stderr
         assert "WARNING" in stderr
@@ -444,16 +566,28 @@ class TestManifestCompatibility:
         v1_hpp.write_text("namespace api { int compute(int x); }\n")
         manifest = tmp_path / "api.json"
 
-        _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
-             "--target", "luabridge3", "-",
-             "--manifest-file", str(manifest))
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, v1_hpp, "v1")),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
 
         v2_hpp = tmp_path / "v2.hpp"
         v2_hpp.write_text("namespace api { int compute(int x, double y); }\n")
 
-        _, stderr = _run("--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                         "--target", "luabridge3", "-",
-                         "--manifest-file", str(manifest))  # no --check-compat
+        _, stderr = _run(
+            "--input",
+            str(self._input_yml(tmp_path, v2_hpp, "v2")),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )  # no --check-compat
 
         assert "Breaking" in stderr
         # Manifest IS updated to v2 (no --check-compat to block it)
@@ -466,10 +600,16 @@ class TestManifestCompatibility:
         manifest = tmp_path / "api.json"
         out = tmp_path / "bindings.cpp"
 
-        _run("--input", str(self._input_yml(tmp_path, hpp)),
-             "--target", "luabridge3", str(out),
-             "--manifest-file", str(manifest),
-             "--embed-version")
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, hpp)),
+            "--target",
+            "luabridge3",
+            str(out),
+            "--manifest-file",
+            str(manifest),
+            "--embed-version",
+        )
 
         version = json.loads(manifest.read_text())["version"]
         content = out.read_text(encoding="utf-8")
@@ -481,8 +621,7 @@ class TestManifestCompatibility:
         hpp.write_text("namespace api { int compute(int x); }\n")
         out = tmp_path / "bindings.cpp"
 
-        _run("--input", str(self._input_yml(tmp_path, hpp)),
-             "--target", "luabridge3", str(out))
+        _run("--input", str(self._input_yml(tmp_path, hpp)), "--target", "luabridge3", str(out))
 
         content = out.read_text(encoding="utf-8")
         assert "api_version" not in content
@@ -492,13 +631,9 @@ class TestManifestCompatibility:
         hpp = tmp_path / "api.hpp"
         hpp.write_text("namespace api { int compute(int x); }\n")
 
-        stdout, _ = _run("--input", str(self._input_yml(tmp_path, hpp)),
-                         "--target", "luabridge3", "-", "--dry-run")
+        stdout, _ = _run("--input", str(self._input_yml(tmp_path, hpp)), "--target", "luabridge3", "-", "--dry-run")
 
-        version_lines = [
-            line for line in stdout.splitlines()
-            if "Version" in line
-        ]
+        version_lines = [line for line in stdout.splitlines() if "Version" in line]
         assert len(version_lines) == 1
         assert version_lines[0].split(":")[-1].strip() == "0.0.0"
 
@@ -509,17 +644,29 @@ class TestManifestCompatibility:
         v1_hpp.write_text("namespace api { int compute(int x); }\n")
         manifest = tmp_path / "api.json"
 
-        _run("--input", str(self._input_yml(tmp_path, v1_hpp, "v1")),
-             "--target", "luabridge3", "-",
-             "--manifest-file", str(manifest))
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, v1_hpp, "v1")),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
 
         # v2: remove the function entirely
         v2_hpp = tmp_path / "v2.hpp"
         v2_hpp.write_text("namespace api { }\n")
 
-        _, stderr = _run("--input", str(self._input_yml(tmp_path, v2_hpp, "v2")),
-                         "--target", "luabridge3", "-",
-                         "--manifest-file", str(manifest))
+        _, stderr = _run(
+            "--input",
+            str(self._input_yml(tmp_path, v2_hpp, "v2")),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
 
         assert "Breaking" in stderr
         assert "WARNING" not in stderr
@@ -533,17 +680,25 @@ class TestManifestCompatibility:
 
         # Write a manifest with a non-semver version so suggest_version_bump returns None
         manifest.write_text(
-            json.dumps({
-                "version": "not-semver",
-                "module": "api",
-                "api": {"classes": [], "functions": [], "enums": []},
-            }),
+            json.dumps(
+                {
+                    "version": "not-semver",
+                    "module": "api",
+                    "api": {"classes": [], "functions": [], "enums": []},
+                }
+            ),
             encoding="utf-8",
         )
 
-        _, stderr = _run("--input", str(self._input_yml(tmp_path, hpp)),
-                         "--target", "luabridge3", "-",
-                         "--manifest-file", str(manifest))
+        _, stderr = _run(
+            "--input",
+            str(self._input_yml(tmp_path, hpp)),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
 
         assert "Suggested version bump" not in stderr
 
@@ -556,9 +711,15 @@ class TestManifestCompatibility:
         manifest = tmp_path / "api.json"
 
         # First run to get a correct manifest (correct uid + api section)
-        _run("--input", str(self._input_yml(tmp_path, hpp)),
-             "--target", "luabridge3", "-",
-             "--manifest-file", str(manifest))
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, hpp)),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
 
         # Tamper only the version so the next run sees version != new_version,
         # but the api content is identical → compare_manifests finds no changes
@@ -567,9 +728,15 @@ class TestManifestCompatibility:
         m["version"] = "2.0.0"
         manifest.write_text(json.dumps(m), encoding="utf-8")
 
-        _, stderr = _run("--input", str(self._input_yml(tmp_path, hpp)),
-                         "--target", "luabridge3", "-",
-                         "--manifest-file", str(manifest))
+        _, stderr = _run(
+            "--input",
+            str(self._input_yml(tmp_path, hpp)),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
 
         assert "Suggested version bump" not in stderr
 
@@ -580,9 +747,15 @@ class TestManifestCompatibility:
         manifest = tmp_path / "api.json"
 
         # First run to get a manifest with the correct uid
-        _run("--input", str(self._input_yml(tmp_path, hpp)),
-             "--target", "luabridge3", "-",
-             "--manifest-file", str(manifest))
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, hpp)),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
 
         # Remove the "version" key so the elif branch evaluates to False
         m = json.loads(manifest.read_text(encoding="utf-8"))
@@ -590,9 +763,15 @@ class TestManifestCompatibility:
         manifest.write_text(json.dumps(m), encoding="utf-8")
 
         # Second run — uid matches, no "version" key → elif is False
-        _, stderr = _run("--input", str(self._input_yml(tmp_path, hpp)),
-                         "--target", "luabridge3", "-",
-                         "--manifest-file", str(manifest))
+        _, stderr = _run(
+            "--input",
+            str(self._input_yml(tmp_path, hpp)),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+        )
 
         assert "Breaking" not in stderr
 
@@ -600,6 +779,7 @@ class TestManifestCompatibility:
 # ---------------------------------------------------------------------------
 # pretty / pretty_options
 # ---------------------------------------------------------------------------
+
 
 class TestPrettyPrinting:
     def test_pretty_false_by_default_skips_pretty_printer(self, simple_input_yml):
@@ -667,10 +847,49 @@ class TestPrettyPrinting:
         args, kwargs = mock_fmt.call_args
         assert args[2] == ["--style=Google"]
 
+    def test_pyi_pretty_language_is_python(self, tmp_path):
+        """pyi format has language=python, so pretty receives 'python'."""
+        data = {
+            "source": {
+                "path": str(Path(__file__).parent / "simple.hpp"),
+                "parse_args": ["-std=c++17"],
+            },
+            "filters": {"namespaces": ["simple"]},
+            "pretty": True,
+        }
+        p = tmp_path / "pyi_lang.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        with patch("tsujikiri.cli.pretty", return_value="# ok\n") as mock_fmt:
+            _run("--input", str(p), "--target", "pyi", "-")
+
+        args, kwargs = mock_fmt.call_args
+        assert args[1] == "python"
+
+    def test_pyi_real_ruff_formats_output(self, tmp_path):
+        """Integration test: pyi generation with pretty: true calls ruff and reformats."""
+        data = {
+            "source": {
+                "path": str(Path(__file__).parent / "simple.hpp"),
+                "parse_args": ["-std=c++17"],
+            },
+            "filters": {"namespaces": ["simple"], "constructors": {"include": True}},
+            "pretty": True,
+        }
+        p = tmp_path / "pyi_ruff.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        stdout, _ = _run("--input", str(p), "--target", "pyi", "-")
+
+        # ruff should have run — output is valid, well-formed Python
+        assert "class Widget:" in stdout
+        assert "def __init__" in stdout
+
 
 # ---------------------------------------------------------------------------
 # --trace-transforms
 # ---------------------------------------------------------------------------
+
 
 class TestTraceTransforms:
     def test_trace_transforms_outputs_to_stderr(self, tmp_path):
@@ -696,6 +915,7 @@ class TestTraceTransforms:
 # ---------------------------------------------------------------------------
 # --dump-ir
 # ---------------------------------------------------------------------------
+
 
 class TestDumpIR:
     def test_dump_ir_to_stdout(self, tmp_path):
@@ -735,6 +955,7 @@ class TestDumpIR:
 # --validate-config
 # ---------------------------------------------------------------------------
 
+
 class TestValidateConfig:
     def test_valid_config_exits_0(self, simple_input_yml):
         _, stderr = _run("--input", str(simple_input_yml), "--validate-config")
@@ -761,7 +982,8 @@ class TestValidateConfig:
 
     def test_nonexistent_input_exits_1(self, tmp_path):
         _, stderr = _run(
-            "--input", str(tmp_path / "nope.yml"),
+            "--input",
+            str(tmp_path / "nope.yml"),
             "--validate-config",
             expected_exit=1,
         )
@@ -791,11 +1013,13 @@ class TestValidateConfig:
         hpp = tmp_path / "api.hpp"
         hpp.write_text("namespace api { int x(); }\n")
         data = {
-            "sources": [{
-                "path": str(hpp),
-                "parse_args": ["-std=c++17"],
-                "transforms": [{"stage": "bad_stage_xyz"}],
-            }],
+            "sources": [
+                {
+                    "path": str(hpp),
+                    "parse_args": ["-std=c++17"],
+                    "transforms": [{"stage": "bad_stage_xyz"}],
+                }
+            ],
             "filters": {"namespaces": ["api"]},
         }
         p = tmp_path / "src_tf.input.yml"
@@ -833,8 +1057,11 @@ class TestValidateConfig:
         p.write_text(yaml.dump(data), encoding="utf-8")
 
         _, stderr = _run(
-            "--input", str(p),
-            "--target", "nonexistent_format_xyz", "-",
+            "--input",
+            str(p),
+            "--target",
+            "nonexistent_format_xyz",
+            "-",
             "--validate-config",
             expected_exit=1,
         )
@@ -879,12 +1106,162 @@ class TestValidateConfig:
 # --verbose (cli.py lines 235-244)
 # ---------------------------------------------------------------------------
 
+
 class TestVerbose:
     def test_verbose_emitted_line_printed(self, simple_input_yml: Path) -> None:
         """--verbose prints [filter] emitted line to stderr (lines 236-242)."""
         _, stderr = _run(
-            "--input", str(simple_input_yml),
-            "--target", "luabridge3", "-",
+            "--input",
+            str(simple_input_yml),
+            "--target",
+            "luabridge3",
+            "-",
             "--verbose",
         )
         assert "[filter] emitted:" in stderr
+
+
+# ---------------------------------------------------------------------------
+# --pretty CLI flag (global and per-format)
+# ---------------------------------------------------------------------------
+
+HERE_CLI = Path(__file__).parent
+
+
+def _make_input_yml(tmp_path: Path, **extra: object) -> Path:
+    """Write a minimal input.yml pointing at simple.hpp with optional extra fields."""
+    data: dict = {
+        "source": {
+            "path": str(HERE_CLI / "simple.hpp"),
+            "parse_args": ["-std=c++17"],
+        },
+        "filters": {"namespaces": ["simple"]},
+    }
+    data.update(extra)
+    p = tmp_path / "test.input.yml"
+    p.write_text(yaml.dump(data), encoding="utf-8")
+    return p
+
+
+class TestPrettyFlag:
+    def test_absent_uses_yaml_false(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=False)
+        with patch("tsujikiri.cli.pretty") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        mock_fmt.assert_not_called()
+
+    def test_absent_uses_yaml_true(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=True)
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        mock_fmt.assert_called_once()
+
+    def test_no_args_enables_all(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=False)
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty")
+        mock_fmt.assert_called_once()
+
+    def test_matching_format_enables(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=False)
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty", "luabridge3")
+        mock_fmt.assert_called_once()
+
+    def test_nonmatching_format_disables(self, tmp_path: Path) -> None:
+        # YAML says pretty: true but CLI --pretty pybind11 should disable for luabridge3
+        yml = _make_input_yml(tmp_path, pretty=True)
+        with patch("tsujikiri.cli.pretty") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty", "pybind11")
+        mock_fmt.assert_not_called()
+
+    def test_multiple_formats_in_one_run(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=False)
+        out_lua = tmp_path / "out.lua"
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run(
+                "--input",
+                str(yml),
+                "--target",
+                "luabridge3",
+                "-",
+                "--target",
+                "luals",
+                str(out_lua),
+                "--pretty",
+            )
+        assert mock_fmt.call_count == 2
+
+    def test_cli_enables_only_listed_format_in_multi_target(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty=False)
+        out_lua = tmp_path / "out.lua"
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run(
+                "--input",
+                str(yml),
+                "--target",
+                "luabridge3",
+                "-",
+                "--target",
+                "luals",
+                str(out_lua),
+                "--pretty",
+                "luabridge3",
+            )
+        assert mock_fmt.call_count == 1
+        assert mock_fmt.call_args[0][1] == "cpp"
+
+    def test_format_override_true_overrides_global_false(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(
+            tmp_path,
+            pretty=False,
+            format_overrides={"luabridge3": {"pretty": True}},
+        )
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        mock_fmt.assert_called_once()
+
+    def test_format_override_false_overrides_global_true(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(
+            tmp_path,
+            pretty=True,
+            format_overrides={"luabridge3": {"pretty": False}},
+        )
+        with patch("tsujikiri.cli.pretty") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        mock_fmt.assert_not_called()
+
+    def test_format_override_options_used_when_format_enables(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(
+            tmp_path,
+            format_overrides={"luabridge3": {"pretty": True, "pretty_options": ["--style=LLVM"]}},
+        )
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        assert mock_fmt.call_args[0][2] == ["--style=LLVM"]
+
+    def test_format_override_options_fallback_to_global(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(
+            tmp_path,
+            pretty=True,
+            pretty_options=["--style=Google"],
+            format_overrides={"luabridge3": {"pretty": True}},
+        )
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-")
+        assert mock_fmt.call_args[0][2] == ["--style=Google"]
+
+    def test_cli_enables_uses_format_override_options(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(
+            tmp_path,
+            format_overrides={"luabridge3": {"pretty_options": ["--style=LLVM"]}},
+        )
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty")
+        assert mock_fmt.call_args[0][2] == ["--style=LLVM"]
+
+    def test_cli_enables_falls_back_to_global_options_when_no_format_override(self, tmp_path: Path) -> None:
+        yml = _make_input_yml(tmp_path, pretty_options=["--style=Google"])
+        with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
+            _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty")
+        assert mock_fmt.call_args[0][2] == ["--style=Google"]

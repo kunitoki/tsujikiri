@@ -44,8 +44,10 @@ from tsujikiri.tir import (
 # Stage protocol and registry
 # ---------------------------------------------------------------------------
 
+
 class TransformStage:
     """Base class for all transform stages."""
+
     name: str = ""
     _matched: bool = False
 
@@ -68,6 +70,7 @@ def register_stage(name: str, cls: Type[TransformStage]) -> None:
 # Pipeline
 # ---------------------------------------------------------------------------
 
+
 class TransformPipeline:
     def __init__(self, stages: List[TransformStage]) -> None:
         self.stages = stages
@@ -86,8 +89,7 @@ def build_pipeline_from_config(specs: List[TransformSpec]) -> TransformPipeline:
     for spec in specs:
         cls = _REGISTRY.get(spec.stage)
         if cls is None:
-            raise ValueError(f"Unknown transform stage: '{spec.stage}'. "
-                             f"Available: {sorted(_REGISTRY)}")
+            raise ValueError(f"Unknown transform stage: '{spec.stage}'. Available: {sorted(_REGISTRY)}")
         stages.append(cls(**spec.kwargs))
     return TransformPipeline(stages)
 
@@ -95,6 +97,7 @@ def build_pipeline_from_config(specs: List[TransformSpec]) -> TransformPipeline:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_using_wrapper(cls_qualified_name: str, method: "TIRMethod") -> str:  # type: ignore[name-defined]
     """Build a C++ wrapper lambda for a method resolved via using-declaration.
@@ -139,6 +142,7 @@ def _find_classes(module: TIRModule, class_pattern: str, is_regex: bool = False)
 # Built-in stages
 # ---------------------------------------------------------------------------
 
+
 class RenameMethodStage(TransformStage):
     """Rename a method in a class for the binding output.
 
@@ -149,6 +153,7 @@ class RenameMethodStage(TransformStage):
       to: get
       is_regex: false      # optional, default false
     """
+
     name = "rename_method"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -174,6 +179,7 @@ class RenameClassStage(TransformStage):
       to: Helper
       is_regex: false
     """
+
     name = "rename_class"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -195,6 +201,7 @@ class SuppressMethodStage(TransformStage):
       pattern: "operator.*"
       is_regex: true
     """
+
     name = "suppress_method"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -219,6 +226,7 @@ class SuppressClassStage(TransformStage):
       pattern: ".*Detail$"
       is_regex: true
     """
+
     name = "suppress_class"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -244,6 +252,7 @@ class InjectMethodStage(TransformStage):
           type: int
       is_static: true
     """
+
     name = "inject_method"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -255,10 +264,7 @@ class InjectMethodStage(TransformStage):
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern):
-            params = [
-                TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
-                for p in self.parameters
-            ]
+            params = [TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", "")) for p in self.parameters]
             method = TIRMethod(
                 name=self.method_name,
                 spelling=self.method_name,
@@ -278,6 +284,7 @@ class AddTypeMappingStage(TransformStage):
       from: "juce::String"
       to: "std::string"
     """
+
     name = "add_type_mapping"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -322,6 +329,7 @@ class ModifyMethodStage(TransformStage):
       allow_thread: true                  # optional: hint for GIL release
       wrapper_code: "return self->v();"   # optional: emit lambda instead of &Class::method
     """
+
     name = "modify_method"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -371,6 +379,7 @@ class ModifyArgumentStage(TransformStage):
       default: "std::string{}"  # optional: override default expression
       ownership: "cpp"      # optional: "none" | "cpp" | "script"
     """
+
     name = "modify_argument"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -428,6 +437,7 @@ class ModifyFieldStage(TransformStage):
       remove: false       # optional: set emit=False
       read_only: true     # optional: force read-only in binding
     """
+
     name = "modify_field"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -465,6 +475,7 @@ class ModifyConstructorStage(TransformStage):
       signature: "int, float"   # comma+space joined param types; "" = default ctor
       remove: false             # optional: set emit=False
     """
+
     name = "modify_constructor"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -490,6 +501,7 @@ class RemoveOverloadStage(TransformStage):
       method: process
       signature: "int, float"   # comma+space joined param types
     """
+
     name = "remove_overload"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -520,6 +532,7 @@ class OverloadPriorityStage(TransformStage):
       signature: "int process()"   # "return_type method_name(param_types...)"
       priority: 0
     """
+
     name = "overload_priority"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -551,6 +564,7 @@ class ExceptionPolicyStage(TransformStage):
       function: myFunc      # optional, targets free functions
       policy: pass_through  # "none" | "pass_through" | "abort"
     """
+
     name = "exception_policy"
     _VALID_POLICIES = frozenset({"none", "pass_through", "abort"})
 
@@ -588,6 +602,7 @@ class InjectCodeStage(TransformStage):
       code: |
         // injected code here
     """
+
     name = "inject_code"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -633,6 +648,7 @@ class SetTypeHintStage(TransformStage):
       smart_pointer_kind: shared   # optional: "shared", "unique", or "weak"
       smart_pointer_managed_type: MyClass  # optional: inner type for smart pointer
     """
+
     name = "set_type_hint"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -668,6 +684,7 @@ class SetTypeHintStage(TransformStage):
 # Enum helper
 # ---------------------------------------------------------------------------
 
+
 def _find_enums(module: TIRModule, enum_pattern: str, is_regex: bool = False) -> List[TIREnum]:
     """Yield all enums (top-level and nested inside classes) matching the pattern."""
     result: List[TIREnum] = []
@@ -691,6 +708,7 @@ def _find_enums(module: TIRModule, enum_pattern: str, is_regex: bool = False) ->
 # Enum stages
 # ---------------------------------------------------------------------------
 
+
 class RenameEnumStage(TransformStage):
     """Rename an enum for the binding output.
 
@@ -700,6 +718,7 @@ class RenameEnumStage(TransformStage):
       to: Colour
       is_regex: false
     """
+
     name = "rename_enum"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -722,6 +741,7 @@ class RenameEnumValueStage(TransformStage):
       to: red
       is_regex: false
     """
+
     name = "rename_enum_value"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -746,6 +766,7 @@ class SuppressEnumStage(TransformStage):
       pattern: ".*Detail$"
       is_regex: true
     """
+
     name = "suppress_enum"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -766,6 +787,7 @@ class SuppressEnumValueStage(TransformStage):
       pattern: "Reserved.*"
       is_regex: true
     """
+
     name = "suppress_enum_value"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -791,6 +813,7 @@ class ModifyEnumStage(TransformStage):
       remove: false        # optional: set emit=False
       arithmetic: true     # optional: enable bitwise ops (py::arithmetic())
     """
+
     name = "modify_enum"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -814,6 +837,7 @@ class ModifyEnumStage(TransformStage):
 # Free-function stages
 # ---------------------------------------------------------------------------
 
+
 class RenameFunctionStage(TransformStage):
     """Rename a free function for the binding output.
 
@@ -823,6 +847,7 @@ class RenameFunctionStage(TransformStage):
       to: compute_area
       is_regex: false
     """
+
     name = "rename_function"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -844,6 +869,7 @@ class SuppressFunctionStage(TransformStage):
       pattern: "internal_.*"
       is_regex: true
     """
+
     name = "suppress_function"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -870,6 +896,7 @@ class ModifyFunctionStage(TransformStage):
       allow_thread: true         # optional: GIL-release hint
       wrapper_code: "return 0;"  # optional: emit lambda instead of &qualified_name
     """
+
     name = "modify_function"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -906,6 +933,7 @@ class ModifyFunctionStage(TransformStage):
 # Injection stages
 # ---------------------------------------------------------------------------
 
+
 class InjectConstructorStage(TransformStage):
     """Append a synthetic TIRConstructor to a class.
 
@@ -916,6 +944,7 @@ class InjectConstructorStage(TransformStage):
         - name: value
           type: int
     """
+
     name = "inject_constructor"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -925,10 +954,7 @@ class InjectConstructorStage(TransformStage):
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
-            params = [
-                TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
-                for p in self.parameters
-            ]
+            params = [TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", "")) for p in self.parameters]
             is_overload = len(cls.constructors) > 0
             if is_overload:
                 for existing in cls.constructors:
@@ -949,6 +975,7 @@ class InjectFunctionStage(TransformStage):
         - name: value
           type: int
     """
+
     name = "inject_function"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -958,10 +985,7 @@ class InjectFunctionStage(TransformStage):
         self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
 
     def apply(self, module: TIRModule) -> None:
-        params = [
-            TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""))
-            for p in self.parameters
-        ]
+        params = [TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", "")) for p in self.parameters]
         qualified = f"{self.namespace}::{self.fn_name}" if self.namespace else self.fn_name
         fn = TIRFunction(
             name=self.fn_name,
@@ -977,6 +1001,7 @@ class InjectFunctionStage(TransformStage):
 # Base-class suppression
 # ---------------------------------------------------------------------------
 
+
 class SuppressBaseStage(TransformStage):
     """Suppress a base class from appearing in the binding output.
 
@@ -986,6 +1011,7 @@ class SuppressBaseStage(TransformStage):
       base: ".*Protected"  # matches against the base's qualified_name
       is_regex: true
     """
+
     name = "suppress_base"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1012,6 +1038,7 @@ class InjectPropertyStage(TransformStage):
       setter: setArrivalMessage  # optional; omit for read-only
       type: "std::string"        # optional
     """
+
     name = "inject_property"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1024,17 +1051,20 @@ class InjectPropertyStage(TransformStage):
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
-            cls.properties.append(IRProperty(
-                name=self.prop_name,
-                getter=self.getter,
-                setter=self.setter,
-                type_spelling=self.type_spelling,
-            ))
+            cls.properties.append(
+                IRProperty(
+                    name=self.prop_name,
+                    getter=self.getter,
+                    setter=self.setter,
+                    type_spelling=self.type_spelling,
+                )
+            )
 
 
 # ---------------------------------------------------------------------------
 # Deprecation stage
 # ---------------------------------------------------------------------------
+
 
 class MarkDeprecatedStage(TransformStage):
     """Mark a class, method, function, or enum as deprecated.
@@ -1048,6 +1078,7 @@ class MarkDeprecatedStage(TransformStage):
       enum: OldEnum             # required for target "enum"
       message: "Use newMethod"  # optional deprecation message
     """
+
     name = "mark_deprecated"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1092,6 +1123,7 @@ class MarkDeprecatedStage(TransformStage):
 # Spaceship operator expansion stage
 # ---------------------------------------------------------------------------
 
+
 class ExpandSpaceshipStage(TransformStage):
     """Expand operator<=> into six comparison operator methods.
 
@@ -1104,6 +1136,7 @@ class ExpandSpaceshipStage(TransformStage):
       stage: expand_spaceship
       class: MyClass    # plain name, '*', or regex
     """
+
     name = "expand_spaceship"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1112,12 +1145,12 @@ class ExpandSpaceshipStage(TransformStage):
 
     def apply(self, module: TIRModule) -> None:
         _OPS: List[tuple] = [
-            ("operator<",  "__lt__",  "std::is_lt"),
-            ("operator<=", "__le__",  "std::is_lteq"),
-            ("operator>",  "__gt__",  "std::is_gt"),
-            ("operator>=", "__ge__",  "std::is_gteq"),
-            ("operator==", "__eq__",  "std::is_eq"),
-            ("operator!=", "__ne__",  "std::is_neq"),
+            ("operator<", "__lt__", "std::is_lt"),
+            ("operator<=", "__le__", "std::is_lteq"),
+            ("operator>", "__gt__", "std::is_gt"),
+            ("operator>=", "__ge__", "std::is_gteq"),
+            ("operator==", "__eq__", "std::is_eq"),
+            ("operator!=", "__ne__", "std::is_neq"),
         ]
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
             new_methods: List[TIRMethod] = []
@@ -1126,28 +1159,28 @@ class ExpandSpaceshipStage(TransformStage):
                     method.emit = False
                     qname = cls.qualified_name
                     for op_spelling, _dunder, std_fn in _OPS:
-                        wrapper = (
-                            f"[](const {qname}& a, const {qname}& b)"
-                            f" {{ return {std_fn}(a <=> b); }}"
+                        wrapper = f"[](const {qname}& a, const {qname}& b) {{ return {std_fn}(a <=> b); }}"
+                        new_methods.append(
+                            TIRMethod(
+                                name=op_spelling,
+                                spelling=op_spelling,
+                                qualified_name=f"{qname}::{op_spelling}",
+                                return_type="bool",
+                                parameters=list(method.parameters),
+                                is_static=False,
+                                is_const=method.is_const,
+                                is_operator=True,
+                                operator_type=op_spelling,
+                                wrapper_code=wrapper,
+                            )
                         )
-                        new_methods.append(TIRMethod(
-                            name=op_spelling,
-                            spelling=op_spelling,
-                            qualified_name=f"{qname}::{op_spelling}",
-                            return_type="bool",
-                            parameters=list(method.parameters),
-                            is_static=False,
-                            is_const=method.is_const,
-                            is_operator=True,
-                            operator_type=op_spelling,
-                            wrapper_code=wrapper,
-                        ))
             cls.methods.extend(new_methods)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
 # Protected member exposure stage (Gap 4)
 # ---------------------------------------------------------------------------
+
 
 class ExposeProtectedStage(TransformStage):
     """Expose protected methods for trampoline override in pybind11.
@@ -1163,6 +1196,7 @@ class ExposeProtectedStage(TransformStage):
       class_is_regex: false
       method_is_regex: false
     """
+
     name = "expose_protected"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1183,6 +1217,7 @@ class ExposeProtectedStage(TransformStage):
 # Using declaration resolution stage (Gap 14)
 # ---------------------------------------------------------------------------
 
+
 class ResolveUsingDeclarationsStage(TransformStage):
     """Copy methods from base classes into derived classes for using declarations.
 
@@ -1194,6 +1229,7 @@ class ResolveUsingDeclarationsStage(TransformStage):
       stage: resolve_using_declarations
       class: "*"   # optional: restrict to specific derived classes
     """
+
     name = "resolve_using_declarations"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1234,6 +1270,7 @@ class ResolveUsingDeclarationsStage(TransformStage):
 # Exception registration stage (Gap 12)
 # ---------------------------------------------------------------------------
 
+
 class RegisterExceptionStage(TransformStage):
     """Register a C++ exception type as a Python exception class.
 
@@ -1247,6 +1284,7 @@ class RegisterExceptionStage(TransformStage):
       target_name: "MyException"     # Python class name (defaults to cpp_type)
       base: "Exception"              # Python base class (defaults to "Exception")
     """
+
     name = "register_exception"
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1255,11 +1293,13 @@ class RegisterExceptionStage(TransformStage):
         self.base_target_exception: str = kwargs.get("base", "Exception")
 
     def apply(self, module: TIRModule) -> None:
-        module.exception_registrations.append(IRExceptionRegistration(
-            cpp_exception_type=self.cpp_exception_type,
-            target_exception_name=self.target_exception_name,
-            base_target_exception=self.base_target_exception,
-        ))
+        module.exception_registrations.append(
+            IRExceptionRegistration(
+                cpp_exception_type=self.cpp_exception_type,
+                target_exception_name=self.target_exception_name,
+                base_target_exception=self.base_target_exception,
+            )
+        )
 
 
 # ---------------------------------------------------------------------------

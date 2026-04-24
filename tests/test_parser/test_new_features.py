@@ -23,6 +23,7 @@ def new_features_module():
 # Scoped enums
 # ---------------------------------------------------------------------------
 
+
 class TestScopedEnum:
     def test_scoped_enum_detected(self, new_features_module):
         status = next(e for e in new_features_module.enums if e.name == "Status")
@@ -41,6 +42,7 @@ class TestScopedEnum:
 # ---------------------------------------------------------------------------
 # Anonymous enums
 # ---------------------------------------------------------------------------
+
 
 class TestAnonymousEnum:
     def test_anonymous_enum_detected(self, new_features_module):
@@ -61,6 +63,7 @@ class TestAnonymousEnum:
 # ---------------------------------------------------------------------------
 # Static member variables
 # ---------------------------------------------------------------------------
+
 
 class TestStaticMembers:
     def _config(self, mod):
@@ -95,20 +98,19 @@ class TestStaticMembers:
 # Conversion operators
 # ---------------------------------------------------------------------------
 
+
 class TestConversionOperators:
     def _wrapper(self, mod):
         return next(c for c in mod.classes if c.name == "Wrapper")
 
     def test_conversion_bool_detected(self, new_features_module):
         cls = self._wrapper(new_features_module)
-        conv = next((m for m in cls.methods if m.is_conversion_operator
-                     and "bool" in m.conversion_target_type), None)
+        conv = next((m for m in cls.methods if m.is_conversion_operator and "bool" in m.conversion_target_type), None)
         assert conv is not None
 
     def test_conversion_int_detected(self, new_features_module):
         cls = self._wrapper(new_features_module)
-        conv = next((m for m in cls.methods if m.is_conversion_operator
-                     and m.conversion_target_type == "int"), None)
+        conv = next((m for m in cls.methods if m.is_conversion_operator and m.conversion_target_type == "int"), None)
         assert conv is not None
 
     def test_conversion_is_operator(self, new_features_module):
@@ -118,14 +120,14 @@ class TestConversionOperators:
 
     def test_conversion_operator_type_spelling(self, new_features_module):
         cls = self._wrapper(new_features_module)
-        conv = next(m for m in cls.methods if m.is_conversion_operator
-                    and "bool" in m.conversion_target_type)
+        conv = next(m for m in cls.methods if m.is_conversion_operator and "bool" in m.conversion_target_type)
         assert "operator bool" in conv.operator_type
 
 
 # ---------------------------------------------------------------------------
 # Deprecated annotations
 # ---------------------------------------------------------------------------
+
 
 class TestDeprecatedAnnotations:
     def test_deprecated_function_no_message(self, new_features_module):
@@ -174,6 +176,7 @@ class TestDeprecatedAnnotations:
 # Move-only types (deleted copy constructor)
 # ---------------------------------------------------------------------------
 
+
 class TestMoveOnlyTypes:
     def test_deleted_copy_constructor_detected(self, new_features_module):
         cls = next(c for c in new_features_module.classes if c.name == "UniqueResource")
@@ -207,15 +210,14 @@ class TestMoveOnlyTypes:
 # Free-function operator<< detection in generator
 # ---------------------------------------------------------------------------
 
+
 class TestFreeFunctionOstream:
     def test_ostream_operator_parsed(self, new_features_module):
-        fn = next((f for f in new_features_module.functions
-                   if f.is_operator and f.operator_type == "operator<<"), None)
+        fn = next((f for f in new_features_module.functions if f.is_operator and f.operator_type == "operator<<"), None)
         assert fn is not None
 
     def test_ostream_operator_has_point_param(self, new_features_module):
-        fn = next(f for f in new_features_module.functions
-                  if f.is_operator and f.operator_type == "operator<<")
+        fn = next(f for f in new_features_module.functions if f.is_operator and f.operator_type == "operator<<")
         param_types = [p.type_spelling for p in fn.parameters]
         assert any("Point" in t for t in param_types)
 
@@ -224,6 +226,7 @@ class TestFreeFunctionOstream:
 # Varargs detection (Gap 16)
 # ---------------------------------------------------------------------------
 
+
 class TestVarargsDetection:
     def test_varargs_free_function_detected(self, new_features_module):
         fn = next((f for f in new_features_module.functions if f.name == "formatString"), None)
@@ -231,8 +234,7 @@ class TestVarargsDetection:
         assert fn.is_varargs is True
 
     def test_non_varargs_function_not_flagged(self, new_features_module):
-        fn = next((f for f in new_features_module.functions
-                   if f.is_operator and f.operator_type == "operator<<"), None)
+        fn = next((f for f in new_features_module.functions if f.is_operator and f.operator_type == "operator<<"), None)
         assert fn is not None
         assert fn.is_varargs is False
 
@@ -252,6 +254,7 @@ class TestVarargsDetection:
 # ---------------------------------------------------------------------------
 # Protected member collection (Gap 4)
 # ---------------------------------------------------------------------------
+
 
 class TestProtectedMemberCollection:
     def test_protected_method_in_methods_list(self, new_features_module):
@@ -282,6 +285,7 @@ class TestProtectedMemberCollection:
 # ---------------------------------------------------------------------------
 # Using declarations (Gap 14)
 # ---------------------------------------------------------------------------
+
 
 class TestUsingDeclarations:
     def test_using_declaration_parsed(self, new_features_module):

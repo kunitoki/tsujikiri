@@ -276,6 +276,7 @@ class TestNamespaceFiltering:
 # Unit tests for private helpers
 # ---------------------------------------------------------------------------
 
+
 class TestSourceFileHelper:
     def test_returns_none_when_no_file(self):
         cursor = MagicMock()
@@ -306,6 +307,7 @@ class TestParseTranslationUnitErrors:
 # ---------------------------------------------------------------------------
 # Nested classes and enums (nested_types.hpp)
 # ---------------------------------------------------------------------------
+
 
 class TestNestedTypes:
     def test_container_class_found(self, nested_parsed_module):
@@ -344,6 +346,7 @@ class TestNestedTypes:
 # ---------------------------------------------------------------------------
 # Unit tests for attribute-extraction helpers
 # ---------------------------------------------------------------------------
+
 
 class TestCollectAttrBlocks:
     def test_empty_string(self):
@@ -420,6 +423,7 @@ class TestGetAttributesHelpers:
 # Default parameter value extraction (defaults.hpp)
 # ---------------------------------------------------------------------------
 
+
 class TestGetDefaultValue:
     def test_no_tokens_returns_none(self):
         cursor = MagicMock()
@@ -487,6 +491,7 @@ class TestDefaultParameterValues:
 # Branch coverage: _parse_enum skips non-ENUM_CONSTANT_DECL children (183->182)
 # ---------------------------------------------------------------------------
 
+
 class TestParseEnumSkipsNonConstant:
     def test_non_enum_constant_child_is_ignored(self):
         """If a cursor child has a kind other than ENUM_CONSTANT_DECL it must be skipped."""
@@ -514,6 +519,7 @@ class TestParseEnumSkipsNonConstant:
 # Branch coverage: namespace not in filter is skipped (302->299)
 # ---------------------------------------------------------------------------
 
+
 class TestNamespaceNotInFilter:
     def test_unmatched_namespace_excluded(self, tmp_path: Path) -> None:
         """Parsing a file with two namespaces while filtering for only one must
@@ -521,8 +527,7 @@ class TestNamespaceNotInFilter:
         of ``if not namespaces or entry.spelling in namespaces``."""
         hpp = tmp_path / "multi_ns.hpp"
         hpp.write_text(
-            "namespace wanted { int foo(); }\n"
-            "namespace unwanted { int bar(); }\n",
+            "namespace wanted { int foo(); }\nnamespace unwanted { int bar(); }\n",
             encoding="utf-8",
         )
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
@@ -535,6 +540,7 @@ class TestNamespaceNotInFilter:
 # ---------------------------------------------------------------------------
 # Branch coverage: explicit -x flag not duplicated (319->322)
 # ---------------------------------------------------------------------------
+
 
 class TestExplicitXArgNotDuplicated:
     def test_parse_with_explicit_x_cpp(self, tmp_path: Path) -> None:
@@ -550,6 +556,7 @@ class TestExplicitXArgNotDuplicated:
 # ---------------------------------------------------------------------------
 # Branch coverage: bundled libcxx injection (715-719)
 # ---------------------------------------------------------------------------
+
 
 class TestBundledLibcxx:
     def test_bundled_dirs_absent_skips_block(self, tmp_path: Path) -> None:
@@ -601,6 +608,7 @@ class TestBundledLibcxx:
 # Integration path: parse_translation_unit → _parse_parameters →
 #   _type_from_tokens → IRParameter.type_spelling
 # ---------------------------------------------------------------------------
+
 
 class TestTypeFromTokens:
     """Verify _type_from_tokens yields correct type spellings via the full IR pipeline.
@@ -712,18 +720,14 @@ class TestTypeFromTokens:
     # ------------------------------------------------------------------
 
     def test_map_string_int(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "f_map_string_int") == [
-            "std::map<std::string, int>"
-        ]
+        assert self._fn_types(type_tokens_module, "f_map_string_int") == ["std::map<std::string, int>"]
 
     # ------------------------------------------------------------------
     # std::optional — affected by the bug
     # ------------------------------------------------------------------
 
     def test_optional_string(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "f_opt_string") == [
-            "std::optional<std::string>"
-        ]
+        assert self._fn_types(type_tokens_module, "f_opt_string") == ["std::optional<std::string>"]
 
     # ------------------------------------------------------------------
     # Nested templates — affected by the bug.
@@ -732,32 +736,24 @@ class TestTypeFromTokens:
 
     def test_nested_vector_pair(self, type_tokens_module: object) -> None:
         # tokens end with '>>' (single token).
-        assert self._fn_types(type_tokens_module, "f_nested") == [
-            "std::vector<std::pair<int, std::string>>"
-        ]
+        assert self._fn_types(type_tokens_module, "f_nested") == ["std::vector<std::pair<int, std::string>>"]
 
     # ------------------------------------------------------------------
     # std::function — NOT affected by the bug; token path still exercised
     # ------------------------------------------------------------------
 
     def test_function_void_int(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "f_fn_void_int") == [
-            "std::function<void (int)>"
-        ]
+        assert self._fn_types(type_tokens_module, "f_fn_void_int") == ["std::function<void (int)>"]
 
     def test_function_int_two_doubles(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "f_fn_int_two_doubles") == [
-            "std::function<int (double, double)>"
-        ]
+        assert self._fn_types(type_tokens_module, "f_fn_int_two_doubles") == ["std::function<int (double, double)>"]
 
     # ------------------------------------------------------------------
     # std::shared_ptr — NOT affected by the bug
     # ------------------------------------------------------------------
 
     def test_shared_ptr_obj(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "f_shared_obj") == [
-            "std::shared_ptr<Obj>"
-        ]
+        assert self._fn_types(type_tokens_module, "f_shared_obj") == ["std::shared_ptr<Obj>"]
 
     # ------------------------------------------------------------------
     # Multi-parameter function — verifies each positional slot is correct
@@ -847,9 +843,7 @@ class TestTypeFromTokens:
                 and loc.file is not None
                 and loc.file.name == hpp_path
             ):
-                parm_cursors.extend(
-                    c for c in cursor.get_children() if c.kind == CursorKind.PARM_DECL
-                )
+                parm_cursors.extend(c for c in cursor.get_children() if c.kind == CursorKind.PARM_DECL)
             for child in cursor.get_children():
                 _collect(child)
 
@@ -883,9 +877,7 @@ class TestTypeFromTokens:
 
         def _collect(cursor: object) -> None:
             if cursor.kind == CursorKind.FUNCTION_DECL and cursor.spelling == "f":
-                parm_cursors.extend(
-                    c for c in cursor.get_children() if c.kind == CursorKind.PARM_DECL
-                )
+                parm_cursors.extend(c for c in cursor.get_children() if c.kind == CursorKind.PARM_DECL)
             for child in cursor.get_children():
                 _collect(child)
 
@@ -902,6 +894,7 @@ class TestTypeFromTokens:
 # ---------------------------------------------------------------------------
 # Branch coverage: _type_from_tokens lines 73 and 76 (mock-based)
 # ---------------------------------------------------------------------------
+
 
 class TestTypeFromTokensBranches:
     """Cover the two remaining branches of _type_from_tokens using mocks."""
@@ -951,6 +944,7 @@ class TestTypeFromTokensBranches:
 #   • Cross-namespace combinations
 # ---------------------------------------------------------------------------
 
+
 class TestTypeFromTokensNamespaces:
     """Verify _type_from_tokens for global-qualifier and nested-namespace types."""
 
@@ -978,19 +972,13 @@ class TestTypeFromTokensNamespaces:
         assert self._fn_types(type_tokens_module, "g_vec_int") == ["::std::vector<int>"]
 
     def test_g_optional_string(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "g_optional_string") == [
-            "::std::optional<::std::string>"
-        ]
+        assert self._fn_types(type_tokens_module, "g_optional_string") == ["::std::optional<::std::string>"]
 
     def test_g_map_string_int(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "g_map_string_int") == [
-            "::std::map<::std::string, int>"
-        ]
+        assert self._fn_types(type_tokens_module, "g_map_string_int") == ["::std::map<::std::string, int>"]
 
     def test_g_function_void_string(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "g_function_void_string") == [
-            "::std::function<void (::std::string)>"
-        ]
+        assert self._fn_types(type_tokens_module, "g_function_void_string") == ["::std::function<void (::std::string)>"]
 
     # ------------------------------------------------------------------
     # Nested-namespace user types (outer::inner::Type)
@@ -1030,9 +1018,7 @@ class TestTypeFromTokensNamespaces:
         assert types[1] == "::std::string"
 
     def test_m_vec_nested(self, type_tokens_module: object) -> None:
-        assert self._fn_types(type_tokens_module, "m_vec_nested") == [
-            "::std::vector<outer::inner::Nested>"
-        ]
+        assert self._fn_types(type_tokens_module, "m_vec_nested") == ["::std::vector<outer::inner::Nested>"]
 
     def test_m_map_nested_string(self, type_tokens_module: object) -> None:
         assert self._fn_types(type_tokens_module, "m_map_nested_string") == [
@@ -1048,6 +1034,7 @@ class TestTypeFromTokensNamespaces:
 # ---------------------------------------------------------------------------
 # _canonicalize_operator
 # ---------------------------------------------------------------------------
+
 
 class TestCanonicalizeOperator:
     def test_binary_minus_unchanged(self) -> None:
@@ -1083,6 +1070,7 @@ class TestCanonicalizeOperator:
 # ---------------------------------------------------------------------------
 # Unit tests for _param_types_from_fn_tokens (parser.py lines 90-136)
 # ---------------------------------------------------------------------------
+
 
 def _tok(spelling: str) -> MagicMock:
     t: MagicMock = MagicMock()
@@ -1155,6 +1143,7 @@ class TestParamTypesFromFnTokens:
 # Unit test for _parse_parameters fallback path (parser.py line 158)
 # ---------------------------------------------------------------------------
 
+
 class TestParseParametersFallback:
     def test_unnamed_zero_extent_param_uses_fallback_type(self) -> None:
         mock_arg: MagicMock = MagicMock()
@@ -1176,6 +1165,7 @@ class TestParseParametersFallback:
 # ---------------------------------------------------------------------------
 # Unit tests for _get_deprecation_message edge cases (parser.py lines 208, 211)
 # ---------------------------------------------------------------------------
+
 
 class TestGetDeprecationMessageEdgeCases:
     def test_no_file_returns_none(self) -> None:
@@ -1225,6 +1215,7 @@ class TestGetDeprecationMessageEdgeCases:
 # Unit test for _is_scoped_enum with leading non-"enum" token (line 263->262)
 # ---------------------------------------------------------------------------
 
+
 class TestIsScopedEnumLeadingToken:
     def test_typedef_enum_not_scoped(self) -> None:
         """Tokens start with 'typedef' before 'enum' — exercises 263->262 False branch."""
@@ -1261,6 +1252,7 @@ class TestIsScopedEnumLeadingToken:
 # Unit test for _parse_class USING_DECLARATION with no TYPE_REF child (487->491)
 # ---------------------------------------------------------------------------
 
+
 class TestParseClassUsingDeclNoTypeRef:
     def test_using_decl_no_type_ref_child(self) -> None:
         """USING_DECLARATION child has no TYPE_REF child → loop exhausts (487->491 branch)."""
@@ -1283,5 +1275,3 @@ class TestParseClassUsingDeclNoTypeRef:
 
         assert len(ir_cls.using_declarations) == 1
         assert ir_cls.using_declarations[0].member_name == "process"
-
-

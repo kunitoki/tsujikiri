@@ -56,6 +56,7 @@ def _python_modules_dir(scenario: str) -> Path:
 # CMake helpers
 # ---------------------------------------------------------------------------
 
+
 def _fetch_all_deps() -> None:
     """Shallow-clone every FetchContent dependency into _deps/ if not already present.
 
@@ -76,9 +77,12 @@ def _fetch_all_deps() -> None:
         while returncode != 0 and retries > 0:
             result = subprocess.run(
                 [
-                    "git", "clone",
-                    "--depth", "1",
-                    "--branch", str(dep["tag"]),
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--branch",
+                    str(dep["tag"]),
                     "--single-branch",
                     str(dep["url"]),
                     str(src_dir),
@@ -107,16 +111,16 @@ def _cmake_configure(scenario: str) -> bool:
     build_dir = _build_dir(scenario)
     build_dir.mkdir(parents=True, exist_ok=True)
     build_system_present = (
-        (build_dir / "Makefile").exists()
-        or (build_dir / "build.ninja").exists()
-        or any(build_dir.glob("*.sln"))
+        (build_dir / "Makefile").exists() or (build_dir / "build.ninja").exists() or any(build_dir.glob("*.sln"))
     )
     if (build_dir / "CMakeCache.txt").exists() and build_system_present:
         return True
     cmake_args = [
         "cmake",
-        "-S", str(_scenario_dir(scenario)),
-        "-B", str(build_dir),
+        "-S",
+        str(_scenario_dir(scenario)),
+        "-B",
+        str(build_dir),
         f"-DFETCHCONTENT_BASE_DIR={_SHARED_DEPS_DIR}",
         "--no-warn-unused-cli",
         "-Wno-dev",
@@ -178,11 +182,7 @@ def _run_pybind11_verify(scenario: str) -> bool:
     """Run a scenario's pybind11_verify.py with PYTHONPATH pointing to its modules."""
     script = _scenario_dir(scenario) / "pybind11_verify.py"
     py_dir = _python_modules_dir(scenario)
-    dirs = [py_dir] + [
-        py_dir / cfg
-        for cfg in ("Release", "Debug")
-        if (py_dir / cfg).exists()
-    ]
+    dirs = [py_dir] + [py_dir / cfg for cfg in ("Release", "Debug") if (py_dir / cfg).exists()]
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(str(d) for d in dirs)}
     result = subprocess.run(
         [sys.executable, str(script)],
@@ -200,6 +200,7 @@ def _run_pybind11_verify(scenario: str) -> bool:
 # ---------------------------------------------------------------------------
 # CMake build + run tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(not CMAKE_AVAILABLE, reason="cmake not installed")
 @pytest.mark.xdist_group("cmake_build")

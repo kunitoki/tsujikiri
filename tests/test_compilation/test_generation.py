@@ -10,7 +10,8 @@ import copy
 import io
 from pathlib import Path
 
-from tsujikiri.configurations import CustomTypeEntry, PrimitiveTypeEntry, TransformSpec, TypesystemConfig
+from tsujikiri.configurations import TransformSpec
+from tsujikiri.typesystem import CustomTypeEntry, PrimitiveTypeEntry, TypesystemConfig
 from tsujikiri.generator import Generator
 from tsujikiri.transforms import build_pipeline_from_config
 
@@ -25,13 +26,16 @@ def _generate(module, output_config, generation=None) -> str:
 
 def _generate_with_options(module, output_config, generation=None, api_version: str = "", typesystem=None) -> str:
     buf = io.StringIO()
-    Generator(output_config, generation=generation, typesystem=typesystem).generate(module, buf, api_version=api_version)
+    Generator(output_config, generation=generation, typesystem=typesystem).generate(
+        module, buf, api_version=api_version
+    )
     return buf.getvalue()
 
 
 # ---------------------------------------------------------------------------
 # combined — original single-namespace, single-header (LuaBridge3)
 # ---------------------------------------------------------------------------
+
 
 class TestCombinedLuaBridge3Generation:
     """Fast generation tests for the original combined scenario."""
@@ -41,14 +45,15 @@ class TestCombinedLuaBridge3Generation:
         assert '.beginNamespace("Color")' in out
         assert '.beginClass<mylib::Shape>("Shape")' in out
         assert '.deriveClass<mylib::Circle, mylib::Shape>("Circle")' in out
-        assert 'addConstructor<void (*)()>' in out
-        assert 'luabridge::overload<int, int>(&mylib::Calculator::add)' in out
-        assert '.endNamespace()' in out
+        assert "addConstructor<void (*)()>" in out
+        assert "luabridge::overload<int, int>(&mylib::Calculator::add)" in out
+        assert ".endNamespace()" in out
 
 
 # ---------------------------------------------------------------------------
 # geo — multi-header, single namespace, Circle/Rectangle : Shape
 # ---------------------------------------------------------------------------
+
 
 class TestGeoLuaBridge3Generation:
     """Fast generation tests for the geo multi-header scenario."""
@@ -60,7 +65,9 @@ class TestGeoLuaBridge3Generation:
         assert '.deriveClass<geo::Circle, geo::Shape>("Circle")' in _generate(geo_module, luabridge3_output_config)
 
     def test_derive_class_rectangle(self, geo_module, luabridge3_output_config):
-        assert '.deriveClass<geo::Rectangle, geo::Shape>("Rectangle")' in _generate(geo_module, luabridge3_output_config)
+        assert '.deriveClass<geo::Rectangle, geo::Shape>("Rectangle")' in _generate(
+            geo_module, luabridge3_output_config
+        )
 
     def test_color_enum_registered(self, geo_module, luabridge3_output_config):
         out = _generate(geo_module, luabridge3_output_config)
@@ -88,7 +95,7 @@ class TestGeoLuaBridge3Generation:
     def test_no_duplicate_shape_class(self, geo_module, luabridge3_output_config):
         # Multi-source dedup: Shape must appear exactly once in the output
         out = _generate(geo_module, luabridge3_output_config)
-        assert out.count('beginClass<geo::Shape>') + out.count('deriveClass<geo::Shape') == 1
+        assert out.count("beginClass<geo::Shape>") + out.count("deriveClass<geo::Shape") == 1
 
 
 class TestGeoPybind11Generation:
@@ -117,12 +124,13 @@ class TestGeoPybind11Generation:
 
     def test_no_duplicate_shape(self, geo_module, pybind11_output_config):
         out = _generate(geo_module, pybind11_output_config)
-        assert out.count('py::class_<geo::Shape, PyShape>') == 1
+        assert out.count("py::class_<geo::Shape, PyShape>") == 1
 
 
 # ---------------------------------------------------------------------------
 # engine — multi-header, two namespaces (math + engine), cross-references
 # ---------------------------------------------------------------------------
+
 
 class TestEngineLuaBridge3Generation:
     """Fast generation tests for the engine multi-namespace scenario."""
@@ -158,7 +166,7 @@ class TestEngineLuaBridge3Generation:
 
     def test_no_duplicate_vec3(self, engine_module, luabridge3_output_config):
         out = _generate(engine_module, luabridge3_output_config)
-        assert out.count('beginClass<math::Vec3>') == 1
+        assert out.count("beginClass<math::Vec3>") == 1
 
 
 class TestEnginePybind11Generation:
@@ -168,19 +176,22 @@ class TestEnginePybind11Generation:
         assert 'py::class_<math::Vec3>(m, "Vec3")' in _generate(engine_module, pybind11_output_config)
 
     def test_player_derives_entity(self, engine_module, pybind11_output_config):
-        assert "py::class_<engine::Player, PyPlayer, engine::Entity>" in _generate(engine_module, pybind11_output_config)
+        assert "py::class_<engine::Player, PyPlayer, engine::Entity>" in _generate(
+            engine_module, pybind11_output_config
+        )
 
     def test_cross_namespace_binding(self, engine_module, pybind11_output_config):
         assert "&engine::Entity::setPosition" in _generate(engine_module, pybind11_output_config)
 
     def test_no_duplicate_vec3(self, engine_module, pybind11_output_config):
         out = _generate(engine_module, pybind11_output_config)
-        assert out.count('py::class_<math::Vec3>') == 1
+        assert out.count("py::class_<math::Vec3>") == 1
 
 
 # ---------------------------------------------------------------------------
 # audio — single header, 3-level deep inheritance chain
 # ---------------------------------------------------------------------------
+
 
 class TestAudioLuaBridge3Generation:
     """Fast generation tests for the audio 3-level hierarchy."""
@@ -189,16 +200,24 @@ class TestAudioLuaBridge3Generation:
         assert '.beginClass<audio::AudioNode>("AudioNode")' in _generate(audio_module, luabridge3_output_config)
 
     def test_audio_source_derives_node(self, audio_module, luabridge3_output_config):
-        assert '.deriveClass<audio::AudioSource, audio::AudioNode>("AudioSource")' in _generate(audio_module, luabridge3_output_config)
+        assert '.deriveClass<audio::AudioSource, audio::AudioNode>("AudioSource")' in _generate(
+            audio_module, luabridge3_output_config
+        )
 
     def test_audio_effect_derives_node(self, audio_module, luabridge3_output_config):
-        assert '.deriveClass<audio::AudioEffect, audio::AudioNode>("AudioEffect")' in _generate(audio_module, luabridge3_output_config)
+        assert '.deriveClass<audio::AudioEffect, audio::AudioNode>("AudioEffect")' in _generate(
+            audio_module, luabridge3_output_config
+        )
 
     def test_reverb_derives_effect(self, audio_module, luabridge3_output_config):
-        assert '.deriveClass<audio::Reverb, audio::AudioEffect>("Reverb")' in _generate(audio_module, luabridge3_output_config)
+        assert '.deriveClass<audio::Reverb, audio::AudioEffect>("Reverb")' in _generate(
+            audio_module, luabridge3_output_config
+        )
 
     def test_delay_derives_effect(self, audio_module, luabridge3_output_config):
-        assert '.deriveClass<audio::Delay, audio::AudioEffect>("Delay")' in _generate(audio_module, luabridge3_output_config)
+        assert '.deriveClass<audio::Delay, audio::AudioEffect>("Delay")' in _generate(
+            audio_module, luabridge3_output_config
+        )
 
     def test_reverb_static_factories(self, audio_module, luabridge3_output_config):
         out = _generate(audio_module, luabridge3_output_config)
@@ -220,13 +239,17 @@ class TestAudioPybind11Generation:
     """Fast generation tests for the audio scenario with pybind11."""
 
     def test_audio_node_class(self, audio_module, pybind11_output_config):
-        assert 'py::class_<audio::AudioNode, PyAudioNode>' in _generate(audio_module, pybind11_output_config)
+        assert "py::class_<audio::AudioNode, PyAudioNode>" in _generate(audio_module, pybind11_output_config)
 
     def test_reverb_deep_inheritance(self, audio_module, pybind11_output_config):
-        assert "py::class_<audio::Reverb, PyReverb, audio::AudioEffect>" in _generate(audio_module, pybind11_output_config)
+        assert "py::class_<audio::Reverb, PyReverb, audio::AudioEffect>" in _generate(
+            audio_module, pybind11_output_config
+        )
 
     def test_delay_deep_inheritance(self, audio_module, pybind11_output_config):
-        assert "py::class_<audio::Delay, PyDelay, audio::AudioEffect>" in _generate(audio_module, pybind11_output_config)
+        assert "py::class_<audio::Delay, PyDelay, audio::AudioEffect>" in _generate(
+            audio_module, pybind11_output_config
+        )
 
     def test_reverb_static_factories_pybind11(self, audio_module, pybind11_output_config):
         out = _generate(audio_module, pybind11_output_config)
@@ -235,12 +258,13 @@ class TestAudioPybind11Generation:
 
     def test_node_type_enum_pybind11(self, audio_module, pybind11_output_config):
         out = _generate(audio_module, pybind11_output_config)
-        assert 'py::enum_<audio::NodeType>' in out
+        assert "py::enum_<audio::NodeType>" in out
 
 
 # ---------------------------------------------------------------------------
 # samplebinding — virtual methods, trampolines, shared_ptr holder
 # ---------------------------------------------------------------------------
+
 
 class TestSamplebindingPybind11Generation:
     """Fast generation tests for the samplebinding scenario with pybind11."""
@@ -259,7 +283,7 @@ class TestSamplebindingPybind11Generation:
 
     def test_trampoline_override_clone(self, samplebinding_module, pybind11_output_config):
         out = _generate(samplebinding_module, pybind11_output_config)
-        assert 'PYBIND11_OVERRIDE_NAME(' in out
+        assert "PYBIND11_OVERRIDE_NAME(" in out
         assert 'sample::Icecream, "clone", clone' in out
 
     def test_icecream_class_with_trampoline_and_holder(self, samplebinding_module, pybind11_output_config):
@@ -279,6 +303,7 @@ class TestSamplebindingPybind11Generation:
 # ---------------------------------------------------------------------------
 # api_version — version gating and constant emission
 # ---------------------------------------------------------------------------
+
 
 class TestApiVersionGeneration:
     """Generator api_version parameter: constant emission and entity gating."""
@@ -391,6 +416,7 @@ class TestApiVersionGeneration:
 # typesystem — primitive_types and custom_types
 # ---------------------------------------------------------------------------
 
+
 class TestTypesystemScenarioLuaBridge3Generation:
     """Typesystem config integration with luabridge3 generation."""
 
@@ -438,7 +464,7 @@ class TestTypesystemScenarioPybind11Generation:
     """Typesystem config integration with pybind11 generation."""
 
     def test_typed_class_registered(self, typesystem_module, pybind11_output_config):
-        assert 'py::class_<types::TypedClass' in _generate(typesystem_module, pybind11_output_config)
+        assert "py::class_<types::TypedClass" in _generate(typesystem_module, pybind11_output_config)
 
     def test_getter_with_ostype_return_absent_by_default(self, typesystem_module, pybind11_output_config):
         # getTag returns OSType → filtered; pybind11 also uses unsupported_types
@@ -475,17 +501,23 @@ class TestTypesystemScenarioPybind11Generation:
 # Transform pipeline integration — overload_priority + exception_policy
 # ---------------------------------------------------------------------------
 
+
 class TestTransformPipelineIntegration:
     """overload_priority and exception_policy transforms via full parse → transform pipeline."""
 
     def test_overload_priority_sets_ir_field_on_parsed_overload(self, geo_module):
         module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="overload_priority", kwargs={
-            "class": "Circle",
-            "method": "resize",
-            "signature": "void resize(double, double)",
-            "priority": 0,
-        })]
+        specs = [
+            TransformSpec(
+                stage="overload_priority",
+                kwargs={
+                    "class": "Circle",
+                    "method": "resize",
+                    "signature": "void resize(double, double)",
+                    "priority": 0,
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(module)
         circle = next(c for c in module.classes if c.name == "Circle")
         matched = [m for m in circle.methods if m.name == "resize" and m.overload_priority == 0]
@@ -494,12 +526,17 @@ class TestTransformPipelineIntegration:
 
     def test_overload_priority_leaves_other_overload_unchanged(self, geo_module):
         module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="overload_priority", kwargs={
-            "class": "Circle",
-            "method": "resize",
-            "signature": "void resize(double, double)",
-            "priority": 0,
-        })]
+        specs = [
+            TransformSpec(
+                stage="overload_priority",
+                kwargs={
+                    "class": "Circle",
+                    "method": "resize",
+                    "signature": "void resize(double, double)",
+                    "priority": 0,
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(module)
         circle = next(c for c in module.classes if c.name == "Circle")
         single_param = [m for m in circle.methods if m.name == "resize" and len(m.parameters) == 1]
@@ -507,11 +544,16 @@ class TestTransformPipelineIntegration:
 
     def test_exception_policy_on_parsed_method(self, audio_module):
         module = copy.deepcopy(audio_module)
-        specs = [TransformSpec(stage="exception_policy", kwargs={
-            "class": "Reverb",
-            "method": "process",
-            "policy": "pass_through",
-        })]
+        specs = [
+            TransformSpec(
+                stage="exception_policy",
+                kwargs={
+                    "class": "Reverb",
+                    "method": "process",
+                    "policy": "pass_through",
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(module)
         reverb = next(c for c in module.classes if c.name == "Reverb")
         for m in reverb.methods:
@@ -520,9 +562,14 @@ class TestTransformPipelineIntegration:
 
     def test_exception_policy_wildcard_applies_to_all_classes(self, geo_module):
         module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="exception_policy", kwargs={
-            "policy": "abort",
-        })]
+        specs = [
+            TransformSpec(
+                stage="exception_policy",
+                kwargs={
+                    "policy": "abort",
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(module)
         for cls in module.classes:
             for m in cls.methods:
@@ -530,20 +577,30 @@ class TestTransformPipelineIntegration:
 
     def test_exception_policy_on_free_function(self, engine_module):
         module = copy.deepcopy(engine_module)
-        specs = [TransformSpec(stage="exception_policy", kwargs={
-            "function": "dot",
-            "policy": "none",
-        })]
+        specs = [
+            TransformSpec(
+                stage="exception_policy",
+                kwargs={
+                    "function": "dot",
+                    "policy": "none",
+                },
+            )
+        ]
         build_pipeline_from_config(specs).run(module)
         dot_fn = next(fn for fn in module.functions if fn.name == "dot")
         assert dot_fn.exception_policy == "none"
 
     def test_unmatched_stages_detected_after_transform(self, geo_module):
         module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="suppress_method", kwargs={
-            "class": "NonExistentClass",
-            "pattern": "nonExistentMethod",
-        })]
+        specs = [
+            TransformSpec(
+                stage="suppress_method",
+                kwargs={
+                    "class": "NonExistentClass",
+                    "pattern": "nonExistentMethod",
+                },
+            )
+        ]
         pipeline = build_pipeline_from_config(specs)
         pipeline.run(module)
         unmatched = pipeline.unmatched_stages()
@@ -552,10 +609,15 @@ class TestTransformPipelineIntegration:
 
     def test_matched_stage_not_in_unmatched(self, geo_module):
         module = copy.deepcopy(geo_module)
-        specs = [TransformSpec(stage="suppress_method", kwargs={
-            "class": "Circle",
-            "pattern": "getRadius",
-        })]
+        specs = [
+            TransformSpec(
+                stage="suppress_method",
+                kwargs={
+                    "class": "Circle",
+                    "pattern": "getRadius",
+                },
+            )
+        ]
         pipeline = build_pipeline_from_config(specs)
         pipeline.run(module)
         assert pipeline.unmatched_stages() == []
@@ -564,6 +626,7 @@ class TestTransformPipelineIntegration:
 # ---------------------------------------------------------------------------
 # transforms scenario — verifies every transform stage in generated output
 # ---------------------------------------------------------------------------
+
 
 class TestTransformsLuaBridge3Generation:
     """Generation tests for every transform stage — luabridge3 output."""

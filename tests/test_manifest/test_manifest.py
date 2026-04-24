@@ -33,6 +33,7 @@ from tsujikiri.manifest import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_module(
     classes=None,
     functions=None,
@@ -40,7 +41,7 @@ def _make_module(
     name="testmod",
 ) -> TIRModule:
     m = TIRModule(name=name)
-    for c in (classes or []):
+    for c in classes or []:
         m.classes.append(c)
         m.class_by_name[c.qualified_name] = c
     m.functions.extend(functions or [])
@@ -115,6 +116,7 @@ def _enum(name, values=None, emit=True) -> TIREnum:
 # compute_manifest: determinism
 # ---------------------------------------------------------------------------
 
+
 class TestComputeManifest:
     def test_module_name_in_manifest(self):
         mod = _make_module(name="mylib")
@@ -134,37 +136,55 @@ class TestComputeManifest:
         assert compute_manifest(mod_without)["api"]["classes"] == []
 
     def test_emit_false_method_excluded(self):
-        mod = _make_module(classes=[_cls(methods=[
-            _method("add", ["int"], emit=True),
-            _method("hidden", emit=False),
-        ])])
+        mod = _make_module(
+            classes=[
+                _cls(
+                    methods=[
+                        _method("add", ["int"], emit=True),
+                        _method("hidden", emit=False),
+                    ]
+                )
+            ]
+        )
         m = compute_manifest(mod)
         methods = m["api"]["classes"][0]["methods"]
         assert all(m["name"] == "add" for m in methods)
 
     def test_emit_false_field_excluded(self):
-        mod = _make_module(classes=[_cls(fields=[
-            _field("visible", emit=True),
-            _field("hidden", emit=False),
-        ])])
+        mod = _make_module(
+            classes=[
+                _cls(
+                    fields=[
+                        _field("visible", emit=True),
+                        _field("hidden", emit=False),
+                    ]
+                )
+            ]
+        )
         m = compute_manifest(mod)
         fields = m["api"]["classes"][0]["fields"]
         assert len(fields) == 1
         assert fields[0]["name"] == "visible"
 
     def test_emit_false_function_excluded(self):
-        mod = _make_module(functions=[
-            _fn("active", ["int"], "int", emit=True),
-            _fn("hidden", emit=False),
-        ])
+        mod = _make_module(
+            functions=[
+                _fn("active", ["int"], "int", emit=True),
+                _fn("hidden", emit=False),
+            ]
+        )
         m = compute_manifest(mod)
         assert len(m["api"]["functions"]) == 1
         assert m["api"]["functions"][0]["name"] == "active"
 
     def test_rename_used_as_binding_name(self):
         m = TIRMethod(
-            name="getX", spelling="getX", qualified_name="C::getX",
-            return_type="int", rename="x", emit=True,
+            name="getX",
+            spelling="getX",
+            qualified_name="C::getX",
+            return_type="int",
+            rename="x",
+            emit=True,
         )
         mod = _make_module(classes=[_cls(methods=[m])])
         manifest = compute_manifest(mod)
@@ -174,6 +194,7 @@ class TestComputeManifest:
 # ---------------------------------------------------------------------------
 # save_manifest / load_manifest
 # ---------------------------------------------------------------------------
+
 
 class TestSaveLoad:
     def test_round_trip(self, tmp_path):
@@ -197,6 +218,7 @@ class TestSaveLoad:
 # ---------------------------------------------------------------------------
 # compare_manifests: additive changes
 # ---------------------------------------------------------------------------
+
 
 class TestCompareManifoldsAdditive:
     def _compare(self, old_mod, new_mod) -> CompatibilityReport:
@@ -261,6 +283,7 @@ class TestCompareManifoldsAdditive:
 # ---------------------------------------------------------------------------
 # compare_manifests: breaking changes
 # ---------------------------------------------------------------------------
+
 
 class TestCompareManifoldBreaking:
     def _compare(self, old_mod, new_mod) -> CompatibilityReport:
@@ -345,11 +368,13 @@ class TestCompareManifoldBreaking:
 
     def test_enum_value_integer_changed_is_breaking(self):
         old_enum = TIREnum(
-            name="Color", qualified_name="testmod::Color",
+            name="Color",
+            qualified_name="testmod::Color",
             values=[TIREnumValue(name="Red", value=0), TIREnumValue(name="Green", value=1)],
         )
         new_enum = TIREnum(
-            name="Color", qualified_name="testmod::Color",
+            name="Color",
+            qualified_name="testmod::Color",
             values=[TIREnumValue(name="Red", value=0), TIREnumValue(name="Green", value=99)],
         )
         old = _make_module(enums=[old_enum])
@@ -402,6 +427,7 @@ class TestCompareManifoldBreaking:
 # is_semver
 # ---------------------------------------------------------------------------
 
+
 class TestIsSemver:
     def test_valid_semver(self):
         assert is_semver("1.0.0")
@@ -427,6 +453,7 @@ class TestIsSemver:
 # ---------------------------------------------------------------------------
 # bump_semver
 # ---------------------------------------------------------------------------
+
 
 class TestBumpSemver:
     def _report(self, breaking=None, additive=None) -> CompatibilityReport:
@@ -468,6 +495,7 @@ class TestBumpSemver:
 # ---------------------------------------------------------------------------
 # suggest_version_bump
 # ---------------------------------------------------------------------------
+
 
 class TestSuggestVersionBump:
     def _make_manifest(self, version=None) -> dict:

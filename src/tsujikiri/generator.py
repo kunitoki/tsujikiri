@@ -3,7 +3,7 @@
 Each output format defines a ``template:`` key in its ``.output.yml`` file
 or a ``template_file:`` key referencing an external file containing a full
 Jinja2 template with named ``{% block %}`` tags.  Users can extend a built-in
-format template using standard Jinja2 template inheritance 
+format template using standard Jinja2 template inheritance
 (``{% extends "luabridge3.tpl" %}``) and override specific blocks.
 
 The complete IR is serialised into a plain-data context dict before
@@ -24,7 +24,8 @@ from typing import Any, Dict, List, Optional
 
 import jinja2
 
-from tsujikiri.configurations import GenerationConfig, OutputConfig, TypesystemConfig, load_output_config
+from tsujikiri.configurations import GenerationConfig, OutputConfig, load_output_config
+from tsujikiri.typesystem import TypesystemConfig
 from tsujikiri.formats import _FORMATS_DIR
 from tsujikiri.generator_filters import camel_to_snake, snake_to_camel, code_at, param_name, param_pairs
 from tsujikiri.tir import (
@@ -175,14 +176,16 @@ class Generator:
             keep_trailing_newline=True,
         )
 
-        env.filters.update({
-            "map_type": self._map_type,
-            "param_name": param_name,
-            "param_pairs": param_pairs,
-            "camel_to_snake": camel_to_snake,
-            "snake_to_camel": snake_to_camel,
-            "code_at": code_at,
-        })
+        env.filters.update(
+            {
+                "map_type": self._map_type,
+                "param_name": param_name,
+                "param_pairs": param_pairs,
+                "camel_to_snake": camel_to_snake,
+                "snake_to_camel": snake_to_camel,
+                "code_at": code_at,
+            }
+        )
 
         if self.generation and self.generation.prefix:
             out.write(self.generation.prefix)
@@ -207,14 +210,8 @@ class Generator:
             if cls.emit and vir(api_version, cls.api_since, cls.api_until):
                 flat_classes.extend(self._flatten_class_ctx(cls, module.functions, api_version))
 
-        active_enums = [
-            e for e in module.enums
-            if e.emit and vir(api_version, e.api_since, e.api_until)
-        ]
-        active_fns = [
-            fn for fn in module.functions
-            if fn.emit and vir(api_version, fn.api_since, fn.api_until)
-        ]
+        active_enums = [e for e in module.enums if e.emit and vir(api_version, e.api_since, e.api_until)]
+        active_fns = [fn for fn in module.functions if fn.emit and vir(api_version, fn.api_since, fn.api_until)]
 
         return {
             "module_name": module.name,
@@ -243,7 +240,8 @@ class Generator:
                     }
                     for r in self._typesystem.conversion_rules
                 ]
-                if self._typesystem else []
+                if self._typesystem
+                else []
             ),
         }
 
@@ -275,7 +273,7 @@ class Generator:
         """
         ns_parts: list[str] = namespace.split("::") if namespace else []
         qn_parts: list[str] = qualified_name.split("::") if qualified_name else []
-        class_chain = qn_parts[len(ns_parts):-1]
+        class_chain = qn_parts[len(ns_parts) : -1]
         return qn_parts, ns_parts, (class_chain[-1] if class_chain else None)
 
     def _build_enum_ctx(self, enum: TIREnum, namespace: str = "") -> Dict[str, Any]:
@@ -289,16 +287,18 @@ class Generator:
                 continue
             value_qn = f"{enum.qualified_name}::{v.name}"
             v_parts, v_namespaces, v_parent_class = self._decompose(namespace, value_qn)
-            values.append({
-                "name": v.binding_name,
-                "original_name": v.name,
-                "parts": v_parts,
-                "namespaces": v_namespaces,
-                "parent_class": v_parent_class,
-                "number": str(v.value),
-                "doc": v.doc,
-                "attributes": list(v.attributes),
-            })
+            values.append(
+                {
+                    "name": v.binding_name,
+                    "original_name": v.name,
+                    "parts": v_parts,
+                    "namespaces": v_namespaces,
+                    "parent_class": v_parent_class,
+                    "number": str(v.value),
+                    "doc": v.doc,
+                    "attributes": list(v.attributes),
+                }
+            )
         return {
             "name": enum.binding_name,
             "qualified_name": enum.qualified_name,
@@ -336,55 +336,58 @@ class Generator:
                 is_last = i == len(group) - 1
                 eff_return = effective_return_fn(fn)
                 fn_parts, fn_namespaces, fn_parent_class = self._decompose(fn.namespace, fn.qualified_name)
-                fns.append({
-                    "name": fn.binding_name,
-                    "spelling": fn.qualified_name,
-                    "parts": fn_parts,
-                    "namespaces": fn_namespaces,
-                    "parent_class": fn_parent_class,
-                    "params": [
-                        {
-                            "name": p.binding_name,
-                            "original_name": p.name,
-                            "type": self._map_type(p.type_override or p.type_spelling),
-                            "raw_type": p.type_override or p.type_spelling,
-                            "ownership": p.ownership,
-                            "index": p.index,
-                            "default": p.default_override or p.default_value,
-                        }
-                        for p in fn.parameters
-                        if p.emit
-                    ],
-                    "return_type": self._map_type(eff_return),
-                    "raw_return_type": eff_return,
-                    "return_ownership": fn.return_ownership,
-                    "return_keep_alive": fn.return_keep_alive,
-                    "allow_thread": fn.allow_thread,
-                    "wrapper_code": fn.wrapper_code,
-                    "overload_kind": "overload",
-                    "overload_separator": "" if is_last else ",",
-                    "overload_index": i,
-                    "is_noexcept": fn.is_noexcept,
-                    "is_deprecated": fn.is_deprecated,
-                    "deprecation_message": fn.deprecation_message or "",
-                    "doc": fn.doc,
-                    "attributes": list(fn.attributes),
-                })
-            result.append({
-                "name": key,
-                "is_overloaded": is_overloaded,
-                "functions": fns,
-            })
+                fns.append(
+                    {
+                        "name": fn.binding_name,
+                        "spelling": fn.qualified_name,
+                        "parts": fn_parts,
+                        "namespaces": fn_namespaces,
+                        "parent_class": fn_parent_class,
+                        "params": [
+                            {
+                                "name": p.binding_name,
+                                "original_name": p.name,
+                                "type": self._map_type(p.type_override or p.type_spelling),
+                                "raw_type": p.type_override or p.type_spelling,
+                                "ownership": p.ownership,
+                                "index": p.index,
+                                "default": p.default_override or p.default_value,
+                            }
+                            for p in fn.parameters
+                            if p.emit
+                        ],
+                        "return_type": self._map_type(eff_return),
+                        "raw_return_type": eff_return,
+                        "return_ownership": fn.return_ownership,
+                        "return_keep_alive": fn.return_keep_alive,
+                        "allow_thread": fn.allow_thread,
+                        "wrapper_code": fn.wrapper_code,
+                        "overload_kind": "overload",
+                        "overload_separator": "" if is_last else ",",
+                        "overload_index": i,
+                        "is_noexcept": fn.is_noexcept,
+                        "is_deprecated": fn.is_deprecated,
+                        "deprecation_message": fn.deprecation_message or "",
+                        "doc": fn.doc,
+                        "attributes": list(fn.attributes),
+                    }
+                )
+            result.append(
+                {
+                    "name": key,
+                    "is_overloaded": is_overloaded,
+                    "functions": fns,
+                }
+            )
         return result
 
-    def _build_class_ctx(self, ir_class: TIRClass, module_functions: Optional[List[TIRFunction]] = None, api_version: str = "") -> Dict[str, Any]:
+    def _build_class_ctx(
+        self, ir_class: TIRClass, module_functions: Optional[List[TIRFunction]] = None, api_version: str = ""
+    ) -> Dict[str, Any]:
         name = ir_class.binding_name
 
         # Only emit=True public bases for deriveClass<> template usage
-        public_bases = [
-            b for b in ir_class.bases
-            if b.emit and b.access == "public"
-        ]
+        public_bases = [b for b in ir_class.bases if b.emit and b.access == "public"]
         base_name = public_bases[0].qualified_name if public_bases else ""
 
         # Virtual methods list for trampoline generation (ungrouped, each override individually)
@@ -394,22 +397,24 @@ class Generator:
             if m.is_virtual or m.is_pure_virtual:
                 if m.emit:
                     eff_rt = m.return_type_override or m.return_type
-                    virtual_methods_ctx.append({
-                        "name": m.spelling,
-                        "return_type": self._map_type(eff_rt),
-                        "raw_return_type": eff_rt,
-                        "is_const": m.is_const,
-                        "is_pure_virtual": m.is_pure_virtual,
-                        "params": [
-                            {
-                                "name": p.binding_name,
-                                "type": self._map_type(p.type_override or p.type_spelling),
-                                "raw_type": p.type_override or p.type_spelling,
-                            }
-                            for p in m.parameters
-                            if p.emit
-                        ],
-                    })
+                    virtual_methods_ctx.append(
+                        {
+                            "name": m.spelling,
+                            "return_type": self._map_type(eff_rt),
+                            "raw_return_type": eff_rt,
+                            "is_const": m.is_const,
+                            "is_pure_virtual": m.is_pure_virtual,
+                            "params": [
+                                {
+                                    "name": p.binding_name,
+                                    "type": self._map_type(p.type_override or p.type_spelling),
+                                    "raw_type": p.type_override or p.type_spelling,
+                                }
+                                for p in m.parameters
+                                if p.emit
+                            ],
+                        }
+                    )
             if m.access == "public_via_trampoline":
                 exposed_protected_ctx.append({"spelling": m.spelling})
 
@@ -446,7 +451,8 @@ class Generator:
         # Exclude public_via_trampoline: protected methods only accessible in trampoline, not as bound methods
         effective_return = lambda m: m.return_type_override or m.return_type  # noqa: E731
         methods = [
-            m for m in ir_class.methods
+            m
+            for m in ir_class.methods
             if m.emit
             and m.access != "public_via_trampoline"
             and not self._is_unsupported(effective_return(m))
@@ -470,56 +476,62 @@ class Generator:
             for i, m in enumerate(group):
                 is_last = i == len(group) - 1
                 m_parts, m_namespaces, m_parent_class = self._decompose(ir_class.namespace, m.qualified_name)
-                method_ctxs.append({
+                method_ctxs.append(
+                    {
+                        "name": group_name,
+                        "spelling": m.spelling,
+                        "parts": m_parts,
+                        "namespaces": m_namespaces,
+                        "parent_class": m_parent_class,
+                        "params": [
+                            {
+                                "name": p.binding_name,
+                                "original_name": p.name,
+                                "type": self._map_type(p.type_override or p.type_spelling),
+                                "raw_type": p.type_override or p.type_spelling,
+                                "ownership": p.ownership,
+                                "index": p.index,
+                                "default": p.default_override or p.default_value,
+                            }
+                            for p in m.parameters
+                            if p.emit
+                        ],
+                        "return_type": self._map_type(effective_return(m)),
+                        "raw_return_type": effective_return(m),
+                        "return_ownership": m.return_ownership,
+                        "return_keep_alive": m.return_keep_alive,
+                        "allow_thread": m.allow_thread,
+                        "wrapper_code": m.wrapper_code,
+                        "overload_kind": self._compute_overload_kind(group, m),
+                        "overload_separator": "" if is_last else ",",
+                        "is_const": m.is_const,
+                        "is_virtual": m.is_virtual,
+                        "is_pure_virtual": m.is_pure_virtual,
+                        "is_noexcept": m.is_noexcept,
+                        "access": m.access or "public",
+                        "is_operator": m.is_operator,
+                        "operator_type": m.operator_type or "",
+                        "operator_name": self.cfg.operator_mappings.get(m.operator_type or "", "")
+                        if m.is_operator
+                        else "",
+                        "is_conversion_operator": m.is_conversion_operator,
+                        "conversion_target_type": m.conversion_target_type or "",
+                        "overload_index": i,
+                        "is_deprecated": m.is_deprecated,
+                        "deprecation_message": m.deprecation_message or "",
+                        "doc": m.doc,
+                        "attributes": list(m.attributes),
+                        "code_injections": [{"position": c.position, "code": c.code} for c in m.code_injections],
+                    }
+                )
+            method_groups.append(
+                {
                     "name": group_name,
-                    "spelling": m.spelling,
-                    "parts": m_parts,
-                    "namespaces": m_namespaces,
-                    "parent_class": m_parent_class,
-                    "params": [
-                        {
-                            "name": p.binding_name,
-                            "original_name": p.name,
-                            "type": self._map_type(p.type_override or p.type_spelling),
-                            "raw_type": p.type_override or p.type_spelling,
-                            "ownership": p.ownership,
-                            "index": p.index,
-                            "default": p.default_override or p.default_value,
-                        }
-                        for p in m.parameters
-                        if p.emit
-                    ],
-                    "return_type": self._map_type(effective_return(m)),
-                    "raw_return_type": effective_return(m),
-                    "return_ownership": m.return_ownership,
-                    "return_keep_alive": m.return_keep_alive,
-                    "allow_thread": m.allow_thread,
-                    "wrapper_code": m.wrapper_code,
-                    "overload_kind": self._compute_overload_kind(group, m),
-                    "overload_separator": "" if is_last else ",",
-                    "is_const": m.is_const,
-                    "is_virtual": m.is_virtual,
-                    "is_pure_virtual": m.is_pure_virtual,
-                    "is_noexcept": m.is_noexcept,
-                    "access": m.access or "public",
-                    "is_operator": m.is_operator,
-                    "operator_type": m.operator_type or "",
-                    "operator_name": self.cfg.operator_mappings.get(m.operator_type or "", "") if m.is_operator else "",
-                    "is_conversion_operator": m.is_conversion_operator,
-                    "conversion_target_type": m.conversion_target_type or "",
-                    "overload_index": i,
-                    "is_deprecated": m.is_deprecated,
-                    "deprecation_message": m.deprecation_message or "",
-                    "doc": m.doc,
-                    "attributes": list(m.attributes),
-                    "code_injections": [{"position": c.position, "code": c.code} for c in m.code_injections],
-                })
-            method_groups.append({
-                "name": group_name,
-                "is_overloaded": is_overloaded,
-                "is_static": is_static,
-                "methods": method_ctxs,
-            })
+                    "is_overloaded": is_overloaded,
+                    "is_static": is_static,
+                    "methods": method_ctxs,
+                }
+            )
 
         # Fields (excluding unsupported types and emit=False)
         fields = []
@@ -529,19 +541,21 @@ class Generator:
             f_parts, f_namespaces, f_parent_class = self._decompose(
                 ir_class.namespace, f"{ir_class.qualified_name}::{f.name}"
             )
-            fields.append({
-                "name": f.binding_name,
-                "original_name": f.name,
-                "parts": f_parts,
-                "namespaces": f_namespaces,
-                "parent_class": f_parent_class,
-                "type": self._map_type(f.type_override or f.type_spelling),
-                "raw_type": f.type_override or f.type_spelling,
-                "is_const": f.is_const,
-                "is_static": f.is_static,
-                "read_only": f.read_only or f.is_const,
-                "doc": f.doc,
-            })
+            fields.append(
+                {
+                    "name": f.binding_name,
+                    "original_name": f.name,
+                    "parts": f_parts,
+                    "namespaces": f_namespaces,
+                    "parent_class": f_parent_class,
+                    "type": self._map_type(f.type_override or f.type_spelling),
+                    "raw_type": f.type_override or f.type_spelling,
+                    "is_const": f.is_const,
+                    "is_static": f.is_static,
+                    "read_only": f.read_only or f.is_const,
+                    "doc": f.doc,
+                }
+            )
 
         # Synthetic getter/setter properties
         properties = [
@@ -585,10 +599,7 @@ class Generator:
             "has_deleted_move_constructor": ir_class.has_deleted_move_constructor,
             "generate_hash": ir_class.generate_hash,
             "has_free_ostream_op": has_free_ostream_op,
-            "bases": [
-                {"qualified_name": b.qualified_name, "access": b.access, "emit": b.emit}
-                for b in ir_class.bases
-            ],
+            "bases": [{"qualified_name": b.qualified_name, "access": b.access, "emit": b.emit} for b in ir_class.bases],
             "public_bases": [
                 {
                     "qualified_name": b.qualified_name,
@@ -615,11 +626,16 @@ class Generator:
             "properties": properties,
             "enums": [self._build_enum_ctx(e, ir_class.namespace) for e in ir_class.enums if e.emit],
             "code_injections": [{"position": c.position, "code": c.code} for c in ir_class.code_injections],
-            "declaration_injections": [{"position": c.position, "code": c.code} for c in ir_class.code_injections if c.position == "declaration"],
+            "declaration_injections": [
+                {"position": c.position, "code": c.code}
+                for c in ir_class.code_injections
+                if c.position == "declaration"
+            ],
         }
 
     def _compute_overload_kind(self, group: List[TIRMethod], method: TIRMethod) -> str:
         """Return 'const', 'nonconst', or 'overload' for the cast type of this method."""
+
         def _eff_args(m: TIRMethod) -> str:
             return ", ".join((p.type_override or p.type_spelling) for p in m.parameters if p.emit)
 
@@ -651,6 +667,7 @@ class Generator:
             return True
         try:
             from packaging.version import Version
+
             v = Version(api_version)
             if api_since and v < Version(api_since):
                 return False
@@ -683,7 +700,7 @@ class Generator:
                     return pt.target_name
             for tt in self._typesystem.typedef_types:
                 if tt.cpp_name == type_spelling:
-                    return tt.source
+                    return tt.target_name
         return type_spelling
 
     def _is_unsupported(self, type_spelling: str) -> bool:

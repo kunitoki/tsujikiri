@@ -30,13 +30,11 @@ from tsujikiri.transforms import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _module_with_class(methods=None, enums=None) -> TIRModule:
-    cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
-                  methods=methods or [], enums=enums or [])
-    enum = TIREnum(name="Color", qualified_name="ns::Color",
-                  values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)])
-    fn = TIRFunction(name="helper", qualified_name="ns::helper", namespace="ns",
-                    return_type="void")
+    cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns", methods=methods or [], enums=enums or [])
+    enum = TIREnum(name="Color", qualified_name="ns::Color", values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)])
+    fn = TIRFunction(name="helper", qualified_name="ns::helper", namespace="ns", return_type="void")
     mod = TIRModule(name="m", classes=[cls], enums=[enum], functions=[fn])
     mod.class_by_name["Foo"] = cls
     return mod
@@ -46,46 +44,49 @@ def _module_with_class(methods=None, enums=None) -> TIRModule:
 # MarkDeprecatedStage
 # ---------------------------------------------------------------------------
 
+
 class TestMarkDeprecatedStage:
     def test_mark_method_deprecated(self):
-        mod = _module_with_class(methods=[
-            TIRMethod(name="oldMethod", spelling="oldMethod",
-                     qualified_name="ns::Foo::oldMethod", return_type="void"),
-        ])
-        MarkDeprecatedStage(target="method", **{"class": "Foo", "method": "oldMethod",
-                                                 "message": "use newMethod"}).apply(mod)
+        mod = _module_with_class(
+            methods=[
+                TIRMethod(
+                    name="oldMethod", spelling="oldMethod", qualified_name="ns::Foo::oldMethod", return_type="void"
+                ),
+            ]
+        )
+        MarkDeprecatedStage(
+            target="method", **{"class": "Foo", "method": "oldMethod", "message": "use newMethod"}
+        ).apply(mod)
         m = next(m for m in mod.classes[0].methods if m.name == "oldMethod")
         assert m.is_deprecated is True
         assert m.deprecation_message == "use newMethod"
 
     def test_mark_class_deprecated(self):
         mod = _module_with_class()
-        MarkDeprecatedStage(target="class", **{"class": "Foo",
-                                                "message": "use NewFoo"}).apply(mod)
+        MarkDeprecatedStage(target="class", **{"class": "Foo", "message": "use NewFoo"}).apply(mod)
         assert mod.classes[0].is_deprecated is True
         assert mod.classes[0].deprecation_message == "use NewFoo"
 
     def test_mark_function_deprecated(self):
         mod = _module_with_class()
-        MarkDeprecatedStage(target="function", function="helper",
-                            message="use betterHelper").apply(mod)
+        MarkDeprecatedStage(target="function", function="helper", message="use betterHelper").apply(mod)
         fn = next(f for f in mod.functions if f.name == "helper")
         assert fn.is_deprecated is True
         assert fn.deprecation_message == "use betterHelper"
 
     def test_mark_enum_deprecated(self):
         mod = _module_with_class()
-        MarkDeprecatedStage(target="enum", enum="Color",
-                            message="use NewColor").apply(mod)
+        MarkDeprecatedStage(target="enum", enum="Color", message="use NewColor").apply(mod)
         enum = next(e for e in mod.enums if e.name == "Color")
         assert enum.is_deprecated is True
         assert enum.deprecation_message == "use NewColor"
 
     def test_mark_without_message(self):
-        mod = _module_with_class(methods=[
-            TIRMethod(name="m", spelling="m", qualified_name="ns::Foo::m",
-                     return_type="void"),
-        ])
+        mod = _module_with_class(
+            methods=[
+                TIRMethod(name="m", spelling="m", qualified_name="ns::Foo::m", return_type="void"),
+            ]
+        )
         MarkDeprecatedStage(target="method", **{"class": "Foo", "method": "m"}).apply(mod)
         method = mod.classes[0].methods[0]
         assert method.is_deprecated is True
@@ -113,10 +114,11 @@ class TestMarkDeprecatedStage:
 
     def test_mark_method_no_match(self):
         """Method pattern doesn't match — no method is marked deprecated (978->977 branch)."""
-        mod = _module_with_class(methods=[
-            TIRMethod(name="keep", spelling="keep", qualified_name="ns::Foo::keep",
-                     return_type="void"),
-        ])
+        mod = _module_with_class(
+            methods=[
+                TIRMethod(name="keep", spelling="keep", qualified_name="ns::Foo::keep", return_type="void"),
+            ]
+        )
         MarkDeprecatedStage(target="method", **{"class": "Foo", "method": "nonexistent"}).apply(mod)
         assert mod.classes[0].methods[0].is_deprecated is False
 
@@ -138,17 +140,20 @@ class TestMarkDeprecatedStage:
 # ExpandSpaceshipStage
 # ---------------------------------------------------------------------------
 
+
 class TestExpandSpaceshipStage:
     def _spaceship_module(self):
         spaceship = TIRMethod(
-            name="operator<=>", spelling="operator<=>",
+            name="operator<=>",
+            spelling="operator<=>",
             qualified_name="ns::Foo::operator<=>",
             return_type="auto",
             parameters=[TIRParameter(name="rhs", type_spelling="const ns::Foo &")],
-            is_operator=True, operator_type="operator<=>", is_const=True,
+            is_operator=True,
+            operator_type="operator<=>",
+            is_const=True,
         )
-        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
-                      methods=[spaceship])
+        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns", methods=[spaceship])
         mod = TIRModule(name="m", classes=[cls])
         mod.class_by_name["Foo"] = cls
         return mod
@@ -169,34 +174,35 @@ class TestExpandSpaceshipStage:
     def test_original_spaceship_suppressed(self):
         mod = self._spaceship_module()
         ExpandSpaceshipStage(**{"class": "Foo"}).apply(mod)
-        original = next(m for m in mod.classes[0].methods
-                        if m.operator_type == "operator<=>")
+        original = next(m for m in mod.classes[0].methods if m.operator_type == "operator<=>")
         assert original.emit is False
 
     def test_synthesized_use_wrapper_code(self):
         mod = self._spaceship_module()
         ExpandSpaceshipStage(**{"class": "Foo"}).apply(mod)
-        lt = next(m for m in mod.classes[0].methods
-                  if m.operator_type == "operator<" and m.emit)
+        lt = next(m for m in mod.classes[0].methods if m.operator_type == "operator<" and m.emit)
         assert lt.wrapper_code is not None
         assert "std::is_lt" in lt.wrapper_code
 
     def test_mixed_class_non_spaceship_method_unchanged(self):
         """Regular methods in a class with spaceship should be left emit=True."""
         spaceship = TIRMethod(
-            name="operator<=>", spelling="operator<=>",
+            name="operator<=>",
+            spelling="operator<=>",
             qualified_name="ns::Foo::operator<=>",
             return_type="auto",
             parameters=[TIRParameter(name="rhs", type_spelling="const ns::Foo &")],
-            is_operator=True, operator_type="operator<=>", is_const=True,
+            is_operator=True,
+            operator_type="operator<=>",
+            is_const=True,
         )
         regular = TIRMethod(
-            name="getValue", spelling="getValue",
+            name="getValue",
+            spelling="getValue",
             qualified_name="ns::Foo::getValue",
             return_type="int",
         )
-        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
-                      methods=[spaceship, regular])
+        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns", methods=[spaceship, regular])
         mod = TIRModule(name="m", classes=[cls])
         mod.class_by_name["Foo"] = cls
         ExpandSpaceshipStage(**{"class": "Foo"}).apply(mod)
@@ -207,6 +213,7 @@ class TestExpandSpaceshipStage:
 # ---------------------------------------------------------------------------
 # ModifyEnumStage: arithmetic extension
 # ---------------------------------------------------------------------------
+
 
 class TestModifyEnumArithmetic:
     def test_set_arithmetic_true(self):
@@ -233,6 +240,7 @@ class TestModifyEnumArithmetic:
 # SetTypeHintStage: new fields
 # ---------------------------------------------------------------------------
 
+
 class TestSetTypeHintExtended:
     def test_generate_hash(self):
         mod = _module_with_class()
@@ -246,9 +254,9 @@ class TestSetTypeHintExtended:
 
     def test_smart_pointer_managed_type(self):
         mod = _module_with_class()
-        SetTypeHintStage(**{"class": "Foo",
-                            "smart_pointer_kind": "unique",
-                            "smart_pointer_managed_type": "ns::Foo"}).apply(mod)
+        SetTypeHintStage(
+            **{"class": "Foo", "smart_pointer_kind": "unique", "smart_pointer_managed_type": "ns::Foo"}
+        ).apply(mod)
         assert mod.classes[0].smart_pointer_managed_type == "ns::Foo"
 
     def test_existing_hints_unchanged_when_not_specified(self):
@@ -262,20 +270,26 @@ class TestSetTypeHintExtended:
 # ExposeProtectedStage (Gap 4)
 # ---------------------------------------------------------------------------
 
+
 class TestExposeProtectedStage:
     def _module_with_protected(self) -> TIRModule:
         protected = TIRMethod(
-            name="helper", spelling="helper",
+            name="helper",
+            spelling="helper",
             qualified_name="ns::Foo::helper",
-            return_type="void", access="protected", emit=False,
+            return_type="void",
+            access="protected",
+            emit=False,
         )
         public = TIRMethod(
-            name="doWork", spelling="doWork",
+            name="doWork",
+            spelling="doWork",
             qualified_name="ns::Foo::doWork",
-            return_type="void", access="public", emit=True,
+            return_type="void",
+            access="public",
+            emit=True,
         )
-        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns",
-                      methods=[protected, public])
+        cls = TIRClass(name="Foo", qualified_name="ns::Foo", namespace="ns", methods=[protected, public])
         mod = TIRModule(name="m", classes=[cls])
         mod.class_by_name["Foo"] = cls
         return mod
@@ -311,17 +325,22 @@ class TestExposeProtectedStage:
 # ResolveUsingDeclarationsStage (Gap 14)
 # ---------------------------------------------------------------------------
 
+
 class TestResolveUsingDeclarationsStage:
     def _module(self) -> TIRModule:
         base_method = TIRMethod(
-            name="compute", spelling="compute",
+            name="compute",
+            spelling="compute",
             qualified_name="ns::Base::compute",
-            return_type="int", access="public", emit=True,
+            return_type="int",
+            access="public",
+            emit=True,
         )
-        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
-                       methods=[base_method])
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns", methods=[base_method])
         derived = TIRClass(
-            name="Derived", qualified_name="ns::Derived", namespace="ns",
+            name="Derived",
+            qualified_name="ns::Derived",
+            namespace="ns",
             bases=[TIRBase(qualified_name="ns::Base", access="public")],
             using_declarations=[
                 TIRUsingDeclaration(member_name="compute", base_qualified_name="ns::Base"),
@@ -351,11 +370,14 @@ class TestResolveUsingDeclarationsStage:
         mod = self._module()
         # Pre-populate derived with the method
         derived = next(c for c in mod.classes if c.name == "Derived")
-        derived.methods.append(TIRMethod(
-            name="compute", spelling="compute",
-            qualified_name="ns::Derived::compute",
-            return_type="int",
-        ))
+        derived.methods.append(
+            TIRMethod(
+                name="compute",
+                spelling="compute",
+                qualified_name="ns::Derived::compute",
+                return_type="int",
+            )
+        )
         ResolveUsingDeclarationsStage().apply(mod)
         count = sum(1 for m in derived.methods if m.name == "compute")
         assert count == 1  # should not duplicate
@@ -363,7 +385,9 @@ class TestResolveUsingDeclarationsStage:
     def test_unknown_base_graceful(self):
         """Should not raise when base class is not in the module."""
         derived = TIRClass(
-            name="Derived", qualified_name="ns::Derived", namespace="ns",
+            name="Derived",
+            qualified_name="ns::Derived",
+            namespace="ns",
             using_declarations=[
                 TIRUsingDeclaration(member_name="foo", base_qualified_name="ns::Unknown"),
             ],
@@ -375,14 +399,18 @@ class TestResolveUsingDeclarationsStage:
     def test_suppressed_using_declaration_skipped(self):
         """TIRUsingDeclaration with emit=False should not trigger resolution."""
         base_method = TIRMethod(
-            name="compute", spelling="compute",
+            name="compute",
+            spelling="compute",
             qualified_name="ns::Base::compute",
-            return_type="int", access="public", emit=True,
+            return_type="int",
+            access="public",
+            emit=True,
         )
-        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
-                       methods=[base_method])
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns", methods=[base_method])
         derived = TIRClass(
-            name="Derived", qualified_name="ns::Derived", namespace="ns",
+            name="Derived",
+            qualified_name="ns::Derived",
+            namespace="ns",
             bases=[TIRBase(qualified_name="ns::Base", access="public")],
             using_declarations=[
                 TIRUsingDeclaration(member_name="compute", base_qualified_name="ns::Base", emit=False),
@@ -399,14 +427,18 @@ class TestResolveUsingDeclarationsStage:
     def test_fallback_base_search_when_qname_empty(self):
         """When base_qualified_name is empty, stage falls back to searching bases."""
         base_method = TIRMethod(
-            name="compute", spelling="compute",
+            name="compute",
+            spelling="compute",
             qualified_name="ns::Base::compute",
-            return_type="int", access="public", emit=True,
+            return_type="int",
+            access="public",
+            emit=True,
         )
-        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
-                       methods=[base_method])
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns", methods=[base_method])
         derived = TIRClass(
-            name="Derived", qualified_name="ns::Derived", namespace="ns",
+            name="Derived",
+            qualified_name="ns::Derived",
+            namespace="ns",
             bases=[TIRBase(qualified_name="ns::Base", access="public")],
             using_declarations=[
                 # empty base_qualified_name → triggers fallback search
@@ -422,10 +454,11 @@ class TestResolveUsingDeclarationsStage:
 
     def test_fallback_no_match_in_base(self):
         """Fallback search when no base has matching method name."""
-        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns",
-                       methods=[])  # no matching method
+        base = TIRClass(name="Base", qualified_name="ns::Base", namespace="ns", methods=[])  # no matching method
         derived = TIRClass(
-            name="Derived", qualified_name="ns::Derived", namespace="ns",
+            name="Derived",
+            qualified_name="ns::Derived",
+            namespace="ns",
             bases=[TIRBase(qualified_name="ns::Base", access="public")],
             using_declarations=[
                 TIRUsingDeclaration(member_name="compute", base_qualified_name=""),
@@ -442,7 +475,9 @@ class TestResolveUsingDeclarationsStage:
     def test_fallback_base_not_in_module(self):
         """Base class listed in cls.bases but NOT in module.classes → candidate is None."""
         derived = TIRClass(
-            name="Derived", qualified_name="ns::Derived", namespace="ns",
+            name="Derived",
+            qualified_name="ns::Derived",
+            namespace="ns",
             bases=[TIRBase(qualified_name="ns::ExternalBase", access="public")],
             using_declarations=[
                 TIRUsingDeclaration(member_name="compute", base_qualified_name=""),
@@ -459,6 +494,7 @@ class TestResolveUsingDeclarationsStage:
 # ---------------------------------------------------------------------------
 # RegisterExceptionStage (Gap 12)
 # ---------------------------------------------------------------------------
+
 
 class TestRegisterExceptionStage:
     def test_registers_exception(self):

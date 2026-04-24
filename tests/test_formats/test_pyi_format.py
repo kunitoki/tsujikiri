@@ -25,10 +25,12 @@ from tsujikiri.tir import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def pyi_output_config():
     from tsujikiri.configurations import load_output_config
     from tsujikiri.formats import resolve_format_path
+
     return load_output_config(resolve_format_path("pyi"))
 
 
@@ -61,6 +63,7 @@ def _simple_class(
 # ---------------------------------------------------------------------------
 # Module-level prologue
 # ---------------------------------------------------------------------------
+
 
 class TestPrologue:
     def test_auto_generated_comment(self, pyi_output_config):
@@ -96,25 +99,27 @@ class TestPrologue:
 # Enum binding
 # ---------------------------------------------------------------------------
 
+
 class TestEnumBinding:
     def test_enum_class_inherits_int(self, pyi_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color",
-                      values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)])
+        enum = TIREnum(
+            name="Color", qualified_name="ns::Color", values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)]
+        )
         mod = TIRModule(name="m", enums=[enum])
         out = _gen(mod, pyi_output_config)
         assert "class Color(int):" in out
 
     def test_enum_values_as_class_attrs(self, pyi_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color",
-                      values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)])
+        enum = TIREnum(
+            name="Color", qualified_name="ns::Color", values=[TIREnumValue("Red", 0), TIREnumValue("Green", 1)]
+        )
         mod = TIRModule(name="m", enums=[enum])
         out = _gen(mod, pyi_output_config)
         assert "Red: Color" in out
         assert "Green: Color" in out
 
     def test_enum_doc(self, pyi_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color", doc="Color options",
-                      values=[TIREnumValue("Red", 0)])
+        enum = TIREnum(name="Color", qualified_name="ns::Color", doc="Color options", values=[TIREnumValue("Red", 0)])
         mod = TIRModule(name="m", enums=[enum])
         out = _gen(mod, pyi_output_config)
         assert '"""Color options"""' in out
@@ -129,8 +134,7 @@ class TestEnumBinding:
     def test_suppressed_enum_value_excluded(self, pyi_output_config):
         val = TIREnumValue("Reserved", 99)
         val.emit = False
-        enum = TIREnum(name="Color", qualified_name="ns::Color",
-                      values=[TIREnumValue("Red", 0), val])
+        enum = TIREnum(name="Color", qualified_name="ns::Color", values=[TIREnumValue("Red", 0), val])
         mod = TIRModule(name="m", enums=[enum])
         out = _gen(mod, pyi_output_config)
         assert "Reserved" not in out
@@ -148,62 +152,72 @@ class TestEnumBinding:
 # Free function binding
 # ---------------------------------------------------------------------------
 
+
 class TestFunctionBinding:
     def test_simple_function(self, pyi_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="int")
+        fn = TIRFunction(name="compute", qualified_name="ns::compute", namespace="ns", return_type="int")
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pyi_output_config)
         assert "def compute() -> int: ..." in out
 
     def test_function_type_mapping(self, pyi_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="double")
+        fn = TIRFunction(name="compute", qualified_name="ns::compute", namespace="ns", return_type="double")
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pyi_output_config)
         assert "-> float: ..." in out
 
     def test_function_with_arg(self, pyi_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="int",
-                        parameters=[TIRParameter("x", "double")])
+        fn = TIRFunction(
+            name="compute",
+            qualified_name="ns::compute",
+            namespace="ns",
+            return_type="int",
+            parameters=[TIRParameter("x", "double")],
+        )
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pyi_output_config)
         assert "def compute(x: float) -> int: ..." in out
 
     def test_function_with_default(self, pyi_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="int",
-                        parameters=[TIRParameter("x", "double", default_value="1.0")])
+        fn = TIRFunction(
+            name="compute",
+            qualified_name="ns::compute",
+            namespace="ns",
+            return_type="int",
+            parameters=[TIRParameter("x", "double", default_value="1.0")],
+        )
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pyi_output_config)
         assert "def compute(x: float = 1.0) -> int: ..." in out
 
     def test_function_doc(self, pyi_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="int", doc="Computes something")
+        fn = TIRFunction(
+            name="compute", qualified_name="ns::compute", namespace="ns", return_type="int", doc="Computes something"
+        )
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pyi_output_config)
         assert '"""Computes something"""' in out
 
     def test_camel_to_snake_function_name(self, pyi_output_config):
-        fn = TIRFunction(name="computeArea", qualified_name="ns::computeArea",
-                        namespace="ns", return_type="int")
+        fn = TIRFunction(name="computeArea", qualified_name="ns::computeArea", namespace="ns", return_type="int")
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pyi_output_config)
         assert "def compute_area()" in out
 
     def test_void_return_maps_to_none(self, pyi_output_config):
-        fn = TIRFunction(name="reset", qualified_name="ns::reset",
-                        namespace="ns", return_type="void")
+        fn = TIRFunction(name="reset", qualified_name="ns::reset", namespace="ns", return_type="void")
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pyi_output_config)
         assert "-> None: ..." in out
 
     def test_function_multiple_params(self, pyi_output_config):
-        fn = TIRFunction(name="add", qualified_name="ns::add",
-                        namespace="ns", return_type="int",
-                        parameters=[TIRParameter("x", "int"), TIRParameter("y", "int")])
+        fn = TIRFunction(
+            name="add",
+            qualified_name="ns::add",
+            namespace="ns",
+            return_type="int",
+            parameters=[TIRParameter("x", "int"), TIRParameter("y", "int")],
+        )
         mod = TIRModule(name="m", functions=[fn])
         out = _gen(mod, pyi_output_config)
         assert "def add(x: int, y: int) -> int: ..." in out
@@ -212,6 +226,7 @@ class TestFunctionBinding:
 # ---------------------------------------------------------------------------
 # Class binding
 # ---------------------------------------------------------------------------
+
 
 class TestClassBinding:
     def test_simple_class(self, pyi_output_config):
@@ -276,34 +291,40 @@ class TestClassBinding:
         assert "__init__" not in out
 
     def test_method(self, pyi_output_config):
-        method = TIRMethod(name="getValue", spelling="getValue",
-                          qualified_name="ns::Foo::getValue", return_type="int", is_const=True)
+        method = TIRMethod(
+            name="getValue", spelling="getValue", qualified_name="ns::Foo::getValue", return_type="int", is_const=True
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pyi_output_config)
         assert "def get_value(self) -> int: ..." in out
 
     def test_method_type_mapping(self, pyi_output_config):
-        method = TIRMethod(name="getLabel", spelling="getLabel",
-                          qualified_name="ns::Foo::getLabel", return_type="std::string")
+        method = TIRMethod(
+            name="getLabel", spelling="getLabel", qualified_name="ns::Foo::getLabel", return_type="std::string"
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pyi_output_config)
         assert "-> str: ..." in out
 
     def test_method_doc(self, pyi_output_config):
-        method = TIRMethod(name="getValue", spelling="getValue",
-                          qualified_name="ns::Foo::getValue", return_type="int",
-                          doc="Gets the value")
+        method = TIRMethod(
+            name="getValue",
+            spelling="getValue",
+            qualified_name="ns::Foo::getValue",
+            return_type="int",
+            doc="Gets the value",
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pyi_output_config)
         assert '"""Gets the value"""' in out
 
     def test_static_method(self, pyi_output_config):
-        method = TIRMethod(name="create", spelling="create",
-                          qualified_name="ns::Foo::create", return_type="ns::Foo*",
-                          is_static=True)
+        method = TIRMethod(
+            name="create", spelling="create", qualified_name="ns::Foo::create", return_type="ns::Foo*", is_static=True
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pyi_output_config)
@@ -311,10 +332,14 @@ class TestClassBinding:
         assert "def create()" in out
 
     def test_static_method_no_self(self, pyi_output_config):
-        method = TIRMethod(name="create", spelling="create",
-                          qualified_name="ns::Foo::create", return_type="ns::Foo*",
-                          is_static=True,
-                          parameters=[TIRParameter("x", "int")])
+        method = TIRMethod(
+            name="create",
+            spelling="create",
+            qualified_name="ns::Foo::create",
+            return_type="ns::Foo*",
+            is_static=True,
+            parameters=[TIRParameter("x", "int")],
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pyi_output_config)
@@ -353,21 +378,29 @@ class TestClassBinding:
 
     def test_method_with_default_arg(self, pyi_output_config):
         p = TIRParameter("x", "int", default_value="0")
-        method = TIRMethod(name="compute", spelling="compute",
-                          qualified_name="ns::Foo::compute", return_type="int",
-                          parameters=[p])
+        method = TIRMethod(
+            name="compute", spelling="compute", qualified_name="ns::Foo::compute", return_type="int", parameters=[p]
+        )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pyi_output_config)
         assert "def compute(self, x: int = 0) -> int: ..." in out
 
     def test_overloaded_methods(self, pyi_output_config):
-        m1 = TIRMethod(name="process", spelling="process",
-                      qualified_name="ns::Foo::process", return_type="int",
-                      parameters=[TIRParameter("x", "int")])
-        m2 = TIRMethod(name="process", spelling="process",
-                      qualified_name="ns::Foo::process", return_type="float",
-                      parameters=[TIRParameter("x", "double")])
+        m1 = TIRMethod(
+            name="process",
+            spelling="process",
+            qualified_name="ns::Foo::process",
+            return_type="int",
+            parameters=[TIRParameter("x", "int")],
+        )
+        m2 = TIRMethod(
+            name="process",
+            spelling="process",
+            qualified_name="ns::Foo::process",
+            return_type="float",
+            parameters=[TIRParameter("x", "double")],
+        )
         cls = _simple_class(methods=[m1, m2])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pyi_output_config)
@@ -376,12 +409,22 @@ class TestClassBinding:
         assert "def process(self, x: float) -> float: ..." in out
 
     def test_overloaded_static_methods(self, pyi_output_config):
-        m1 = TIRMethod(name="make", spelling="make",
-                      qualified_name="ns::Foo::make", return_type="ns::Foo*",
-                      is_static=True, parameters=[TIRParameter("x", "int")])
-        m2 = TIRMethod(name="make", spelling="make",
-                      qualified_name="ns::Foo::make", return_type="ns::Foo*",
-                      is_static=True, parameters=[TIRParameter("x", "double")])
+        m1 = TIRMethod(
+            name="make",
+            spelling="make",
+            qualified_name="ns::Foo::make",
+            return_type="ns::Foo*",
+            is_static=True,
+            parameters=[TIRParameter("x", "int")],
+        )
+        m2 = TIRMethod(
+            name="make",
+            spelling="make",
+            qualified_name="ns::Foo::make",
+            return_type="ns::Foo*",
+            is_static=True,
+            parameters=[TIRParameter("x", "double")],
+        )
         cls = _simple_class(methods=[m1, m2])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
         out = _gen(mod, pyi_output_config)
@@ -395,9 +438,11 @@ class TestClassBinding:
 # Format discovery
 # ---------------------------------------------------------------------------
 
+
 class TestPyiFormatDiscovery:
     def test_pyi_in_list_formats(self):
         from tsujikiri.formats import list_builtin_formats
+
         fmts = list_builtin_formats()
         assert "pyi" in fmts
 
@@ -417,6 +462,7 @@ class TestPyiFormatDiscovery:
 # ---------------------------------------------------------------------------
 # Free-function deprecated annotation
 # ---------------------------------------------------------------------------
+
 
 class TestPyiFreeFunctionDeprecated:
     def _mod(self, fn: TIRFunction) -> TIRModule:

@@ -239,6 +239,7 @@ tsujikiri [OPTIONS]
 | `--validate-config` | | | Validate input config (regex patterns, stage names) and exit |
 | `--verbose` | `-v` | | Enable verbose Clang diagnostic output during parsing |
 | `--api-version` | | `VERSION` | Override the API version string used for `--embed-version` and `api_since`/`api_until` semver filtering |
+| `--pretty` | | `[FORMAT...]` | Enable pretty printing. No FORMAT args = all targets; with FORMAT names = only those targets. Overrides `pretty` in input YAML. |
 | `--help` | `-h` | | Show help and exit |
 
 ### Common Patterns
@@ -289,6 +290,19 @@ tsujikiri -i project.input.yml --target luabridge3 - --dump-ir ir.json
 **Validate config without generating:**
 ```bash
 tsujikiri -i project.input.yml --validate-config
+```
+
+**Enable pretty printing for all targets (overrides YAML):**
+```bash
+tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp --pretty
+```
+
+**Enable pretty printing for specific targets only:**
+```bash
+tsujikiri -i project.input.yml \
+  --target luabridge3 src/bindings.cpp \
+  --target luals      types/myproject.lua \
+  --pretty luabridge3
 ```
 
 **List all known formats (including custom directories):**

@@ -48,13 +48,16 @@ def _simple_class(
 # Generator context: parameter emit filtering
 # ---------------------------------------------------------------------------
 
+
 class TestParameterEmitFilter:
     def test_removed_param_absent_from_context(self, luabridge3_output_config):
         param_kept = TIRParameter("a", "int")
         param_removed = TIRParameter("b", "float")
         param_removed.emit = False
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
             return_type="void",
             parameters=[param_kept, param_removed],
         )
@@ -70,7 +73,9 @@ class TestParameterEmitFilter:
 
     def test_all_params_included_when_emit_true(self, luabridge3_output_config):
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
             return_type="void",
             parameters=[TIRParameter("a", "int"), TIRParameter("b", "float")],
         )
@@ -87,13 +92,17 @@ class TestParameterEmitFilter:
 # Generator context: parameter rename
 # ---------------------------------------------------------------------------
 
+
 class TestParameterRenameInContext:
     def test_renamed_param_uses_new_name(self, luabridge3_output_config):
         param = TIRParameter("rawName", "int")
         param.rename = "niceName"
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
-            return_type="void", parameters=[param],
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
+            return_type="void",
+            parameters=[param],
         )
         cls = _simple_class(methods=[method])
 
@@ -107,8 +116,11 @@ class TestParameterRenameInContext:
         param = TIRParameter("x", "int")
         param.type_override = "double"
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
-            return_type="void", parameters=[param],
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
+            return_type="void",
+            parameters=[param],
         )
         cls = _simple_class(methods=[method])
 
@@ -123,11 +135,15 @@ class TestParameterRenameInContext:
 # Generator context: method new fields
 # ---------------------------------------------------------------------------
 
+
 class TestMethodNewFieldsInContext:
     def test_return_type_override(self, luabridge3_output_config):
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
-            return_type="int", return_type_override="double",
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
+            return_type="int",
+            return_type_override="double",
         )
         cls = _simple_class(methods=[method])
         gen = Generator(luabridge3_output_config)
@@ -137,8 +153,11 @@ class TestMethodNewFieldsInContext:
 
     def test_return_ownership_in_context(self, luabridge3_output_config):
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
-            return_type="int", return_ownership="cpp",
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
+            return_type="int",
+            return_ownership="cpp",
         )
         cls = _simple_class(methods=[method])
         gen = Generator(luabridge3_output_config)
@@ -148,8 +167,11 @@ class TestMethodNewFieldsInContext:
 
     def test_allow_thread_in_context(self, luabridge3_output_config):
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
-            return_type="void", allow_thread=True,
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
+            return_type="void",
+            allow_thread=True,
         )
         cls = _simple_class(methods=[method])
         gen = Generator(luabridge3_output_config)
@@ -159,8 +181,11 @@ class TestMethodNewFieldsInContext:
 
     def test_wrapper_code_in_context(self, luabridge3_output_config):
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
-            return_type="int", wrapper_code="+[]() { return 42; }",
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
+            return_type="int",
+            wrapper_code="+[]() { return 42; }",
         )
         cls = _simple_class(methods=[method])
         gen = Generator(luabridge3_output_config)
@@ -170,7 +195,9 @@ class TestMethodNewFieldsInContext:
 
     def test_method_code_injections_in_context(self, luabridge3_output_config):
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
             return_type="void",
             code_injections=[IRCodeInjection("beginning", "// injected")],
         )
@@ -184,6 +211,7 @@ class TestMethodNewFieldsInContext:
 # ---------------------------------------------------------------------------
 # Generator context: field read_only
 # ---------------------------------------------------------------------------
+
 
 class TestFieldReadOnlyInContext:
     def test_read_only_from_is_const(self, luabridge3_output_config):
@@ -211,6 +239,7 @@ class TestFieldReadOnlyInContext:
 # ---------------------------------------------------------------------------
 # Generator context: class new fields
 # ---------------------------------------------------------------------------
+
 
 class TestClassNewFieldsInContext:
     def test_force_abstract_in_context(self, luabridge3_output_config):
@@ -255,11 +284,14 @@ class TestClassNewFieldsInContext:
 # Generator context: module code_injections
 # ---------------------------------------------------------------------------
 
+
 class TestModuleCodeInjectionsInContext:
     def test_module_code_injections_in_context(self, luabridge3_output_config):
         cls = _simple_class()
         mod = TIRModule(
-            name="m", classes=[cls], class_by_name={"MyClass": cls},
+            name="m",
+            classes=[cls],
+            class_by_name={"MyClass": cls},
             code_injections=[IRCodeInjection("beginning", "// global start")],
         )
         gen = Generator(luabridge3_output_config)
@@ -278,50 +310,62 @@ class TestModuleCodeInjectionsInContext:
 # Template rendering: wrapper_code
 # ---------------------------------------------------------------------------
 
+
 class TestWrapperCodeRendering:
     def test_wrapper_code_replaces_function_pointer_luabridge3(self, luabridge3_output_config):
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
-            return_type="int", wrapper_code="+[]() { return 42; }",
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
+            return_type="int",
+            wrapper_code="+[]() { return 42; }",
         )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
         out = _generate(mod, luabridge3_output_config)
-        assert '+[]() { return 42; }' in out
-        assert '&ns::MyClass::foo' not in out
+        assert "+[]() { return 42; }" in out
+        assert "&ns::MyClass::foo" not in out
 
     def test_without_wrapper_code_uses_function_pointer(self, luabridge3_output_config):
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
             return_type="int",
         )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
         out = _generate(mod, luabridge3_output_config)
-        assert '&ns::MyClass::foo' in out
+        assert "&ns::MyClass::foo" in out
 
     def test_static_wrapper_code_replaces_function_pointer(self, luabridge3_output_config):
         method = TIRMethod(
-            name="create", spelling="create", qualified_name="ns::MyClass::create",
-            return_type="int", is_static=True,
+            name="create",
+            spelling="create",
+            qualified_name="ns::MyClass::create",
+            return_type="int",
+            is_static=True,
             wrapper_code="+[]() { return MyClass::create(); }",
         )
         cls = _simple_class(methods=[method])
         mod = TIRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
         out = _generate(mod, luabridge3_output_config)
-        assert '+[]() { return MyClass::create(); }' in out
-        assert '&ns::MyClass::create' not in out
+        assert "+[]() { return MyClass::create(); }" in out
+        assert "&ns::MyClass::create" not in out
 
 
 # ---------------------------------------------------------------------------
 # Template rendering: code injections
 # ---------------------------------------------------------------------------
 
+
 class TestCodeInjectionRendering:
     def test_module_beginning_injection_luabridge3(self, luabridge3_output_config):
         cls = _simple_class()
         mod = TIRModule(
-            name="m", classes=[cls], class_by_name={"MyClass": cls},
+            name="m",
+            classes=[cls],
+            class_by_name={"MyClass": cls},
             code_injections=[IRCodeInjection("beginning", "// MODULE_BEGINNING")],
         )
         out = _generate(mod, luabridge3_output_config)
@@ -330,7 +374,9 @@ class TestCodeInjectionRendering:
     def test_module_end_injection_luabridge3(self, luabridge3_output_config):
         cls = _simple_class()
         mod = TIRModule(
-            name="m", classes=[cls], class_by_name={"MyClass": cls},
+            name="m",
+            classes=[cls],
+            class_by_name={"MyClass": cls},
             code_injections=[IRCodeInjection("end", "// MODULE_END")],
         )
         out = _generate(mod, luabridge3_output_config)
@@ -353,7 +399,9 @@ class TestCodeInjectionRendering:
     def test_module_beginning_injection_luals(self, luals_output_config):
         cls = _simple_class()
         mod = TIRModule(
-            name="m", classes=[cls], class_by_name={"MyClass": cls},
+            name="m",
+            classes=[cls],
+            class_by_name={"MyClass": cls},
             code_injections=[IRCodeInjection("beginning", "-- MODULE_BEGIN")],
         )
         out = _generate(mod, luals_output_config)
@@ -370,6 +418,7 @@ class TestCodeInjectionRendering:
 # ---------------------------------------------------------------------------
 # Template rendering: force_abstract
 # ---------------------------------------------------------------------------
+
 
 class TestForceAbstractRendering:
     def test_force_abstract_suppresses_constructor_luabridge3(self, luabridge3_output_config):
@@ -406,6 +455,7 @@ class TestForceAbstractRendering:
 # ---------------------------------------------------------------------------
 # Template rendering: read_only field
 # ---------------------------------------------------------------------------
+
 
 class TestReadOnlyFieldRendering:
     def test_read_only_true_emits_nullptr_setter_luabridge3(self, luabridge3_output_config):
@@ -448,6 +498,7 @@ class TestReadOnlyFieldRendering:
 # Generator context: field original_name (rename support)
 # ---------------------------------------------------------------------------
 
+
 class TestFieldOriginalNameInContext:
     def test_original_name_present_without_rename(self, luabridge3_output_config):
         field = TIRField(name="myField", type_spelling="int")
@@ -469,6 +520,7 @@ class TestFieldOriginalNameInContext:
 # ---------------------------------------------------------------------------
 # Generator context: parts / namespaces / parent_class decomposition
 # ---------------------------------------------------------------------------
+
 
 class TestDecompose:
     def test_basic_namespace_and_class(self):
@@ -537,7 +589,8 @@ class TestPartsInContext:
 
     def test_method_parts_namespaces_parent_class(self, luabridge3_output_config):
         method = TIRMethod(
-            name="doWork", spelling="doWork",
+            name="doWork",
+            spelling="doWork",
             qualified_name="a::b::c::d::doWork",
             return_type="void",
         )
@@ -551,8 +604,7 @@ class TestPartsInContext:
         assert m["parent_class"] == "d"
 
     def test_top_level_enum_parts_namespaces(self, luabridge3_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color",
-                       values=[TIREnumValue("Red", 0)])
+        enum = TIREnum(name="Color", qualified_name="ns::Color", values=[TIREnumValue("Red", 0)])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_enum_ctx(enum)
         assert ctx["parts"] == ["ns", "Color"]
@@ -561,8 +613,7 @@ class TestPartsInContext:
 
     def test_nested_enum_has_parent_class(self, luabridge3_output_config):
         value = TIREnumValue("Red", 0)
-        enum = TIREnum(name="Color", qualified_name="ns::MyClass::Color",
-                       values=[value])
+        enum = TIREnum(name="Color", qualified_name="ns::MyClass::Color", values=[value])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_enum_ctx(enum, namespace="ns")
         assert ctx["parts"] == ["ns", "MyClass", "Color"]
@@ -580,8 +631,7 @@ class TestPartsInContext:
         assert v["parent_class"] == "Color"
 
     def test_free_function_parts_no_parent_class(self, luabridge3_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                         namespace="ns", return_type="void")
+        fn = TIRFunction(name="compute", qualified_name="ns::compute", namespace="ns", return_type="void")
         mod = TIRModule(name="m", functions=[fn])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_ir_context(mod)
@@ -607,6 +657,7 @@ class TestPartsInContext:
 # ---------------------------------------------------------------------------
 # Template rendering: field rename — binding name vs C++ member pointer
 # ---------------------------------------------------------------------------
+
 
 class TestFieldRenameRendering:
     def test_renamed_field_uses_binding_name_as_string_luabridge3(self, luabridge3_output_config):
@@ -665,6 +716,7 @@ class TestFieldRenameRendering:
 # Template rendering: enum value rename — C++ reference uses original name
 # ---------------------------------------------------------------------------
 
+
 class TestEnumValueRenameRendering:
     def test_renamed_enum_value_uses_binding_name_as_string_luabridge3(self, luabridge3_output_config):
         value = TIREnumValue(name="kRed", value=0)
@@ -686,8 +738,7 @@ class TestEnumValueRenameRendering:
     def test_renamed_class_enum_value_uses_original_name_for_cpp_ref_luabridge3(self, luabridge3_output_config):
         value = TIREnumValue(name="kBlue", value=1)
         value.rename = "Blue"
-        enum = TIREnum(name="Status", qualified_name="ns::MyClass::Status",
-                       values=[value])
+        enum = TIREnum(name="Status", qualified_name="ns::MyClass::Status", values=[value])
         cls = _simple_class()
         cls.enums = [enum]
         mod = TIRModule(name="m", classes=[cls], class_by_name={"MyClass": cls})
@@ -708,6 +759,7 @@ class TestEnumValueRenameRendering:
 # Generator context: doc fields
 # ---------------------------------------------------------------------------
 
+
 class TestDocInContext:
     def test_class_doc_in_context(self, luabridge3_output_config):
         cls = _simple_class()
@@ -724,8 +776,11 @@ class TestDocInContext:
 
     def test_method_doc_in_context(self, luabridge3_output_config):
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
-            return_type="void", doc="Does foo",
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
+            return_type="void",
+            doc="Does foo",
         )
         cls = _simple_class(methods=[method])
         gen = Generator(luabridge3_output_config)
@@ -747,8 +802,9 @@ class TestDocInContext:
         assert ctx["constructor_group"]["constructors"][0]["doc"] == "Default ctor"
 
     def test_enum_doc_in_context(self, luabridge3_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color", doc="Color enum",
-                      values=[TIREnumValue("Red", 0, doc="The red")])
+        enum = TIREnum(
+            name="Color", qualified_name="ns::Color", doc="Color enum", values=[TIREnumValue("Red", 0, doc="The red")]
+        )
         mod = TIRModule(name="m", enums=[enum])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_ir_context(mod)
@@ -757,8 +813,9 @@ class TestDocInContext:
         assert enum_ctx["values"][0]["doc"] == "The red"
 
     def test_function_doc_in_context(self, luabridge3_output_config):
-        fn = TIRFunction(name="compute", qualified_name="ns::compute",
-                        namespace="ns", return_type="void", doc="Computes")
+        fn = TIRFunction(
+            name="compute", qualified_name="ns::compute", namespace="ns", return_type="void", doc="Computes"
+        )
         mod = TIRModule(name="m", functions=[fn])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_ir_context(mod)
@@ -769,10 +826,10 @@ class TestDocInContext:
 # Generator context: enum rename
 # ---------------------------------------------------------------------------
 
+
 class TestEnumRenameInContext:
     def test_enum_rename_used_in_context(self, luabridge3_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color", rename="Colour",
-                      values=[TIREnumValue("Red", 0)])
+        enum = TIREnum(name="Color", qualified_name="ns::Color", rename="Colour", values=[TIREnumValue("Red", 0)])
         mod = TIRModule(name="m", enums=[enum])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_ir_context(mod)
@@ -790,6 +847,7 @@ class TestEnumRenameInContext:
 # ---------------------------------------------------------------------------
 # Generator context: public_bases
 # ---------------------------------------------------------------------------
+
 
 class TestPublicBasesInContext:
     def test_only_public_emit_bases_in_public_bases(self, luabridge3_output_config):
@@ -826,11 +884,11 @@ class TestPublicBasesInContext:
 # Generator context: default_value fallback
 # ---------------------------------------------------------------------------
 
+
 class TestDefaultValueFallbackInContext:
     def test_default_override_takes_priority(self, luabridge3_output_config):
         p = TIRParameter("x", "int", default_value="1", default_override="0")
-        method = TIRMethod(name="f", spelling="f", qualified_name="ns::C::f",
-                          return_type="void", parameters=[p])
+        method = TIRMethod(name="f", spelling="f", qualified_name="ns::C::f", return_type="void", parameters=[p])
         cls = _simple_class(methods=[method])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_class_ctx(cls)
@@ -838,8 +896,7 @@ class TestDefaultValueFallbackInContext:
 
     def test_default_value_used_when_no_override(self, luabridge3_output_config):
         p = TIRParameter("x", "int", default_value="42")
-        method = TIRMethod(name="f", spelling="f", qualified_name="ns::C::f",
-                          return_type="void", parameters=[p])
+        method = TIRMethod(name="f", spelling="f", qualified_name="ns::C::f", return_type="void", parameters=[p])
         cls = _simple_class(methods=[method])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_class_ctx(cls)
@@ -847,8 +904,7 @@ class TestDefaultValueFallbackInContext:
 
     def test_no_default_is_none(self, luabridge3_output_config):
         p = TIRParameter("x", "int")
-        method = TIRMethod(name="f", spelling="f", qualified_name="ns::C::f",
-                          return_type="void", parameters=[p])
+        method = TIRMethod(name="f", spelling="f", qualified_name="ns::C::f", return_type="void", parameters=[p])
         cls = _simple_class(methods=[method])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_class_ctx(cls)
@@ -859,10 +915,12 @@ class TestDefaultValueFallbackInContext:
 # Generator context: function extended fields
 # ---------------------------------------------------------------------------
 
+
 class TestFunctionExtendedContextFields:
     def test_return_type_override_in_function_ctx(self, luabridge3_output_config):
-        fn = TIRFunction(name="f", qualified_name="ns::f", namespace="ns",
-                        return_type="int", return_type_override="double")
+        fn = TIRFunction(
+            name="f", qualified_name="ns::f", namespace="ns", return_type="int", return_type_override="double"
+        )
         mod = TIRModule(name="m", functions=[fn])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_ir_context(mod)
@@ -871,16 +929,14 @@ class TestFunctionExtendedContextFields:
         assert fn_ctx["raw_return_type"] == "double"
 
     def test_allow_thread_in_function_ctx(self, luabridge3_output_config):
-        fn = TIRFunction(name="f", qualified_name="ns::f", namespace="ns",
-                        return_type="void", allow_thread=True)
+        fn = TIRFunction(name="f", qualified_name="ns::f", namespace="ns", return_type="void", allow_thread=True)
         mod = TIRModule(name="m", functions=[fn])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_ir_context(mod)
         assert ctx["function_groups"][0]["functions"][0]["allow_thread"] is True
 
     def test_wrapper_code_in_function_ctx(self, luabridge3_output_config):
-        fn = TIRFunction(name="f", qualified_name="ns::f", namespace="ns",
-                        return_type="void", wrapper_code="+[](){}")
+        fn = TIRFunction(name="f", qualified_name="ns::f", namespace="ns", return_type="void", wrapper_code="+[](){}")
         mod = TIRModule(name="m", functions=[fn])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_ir_context(mod)
@@ -889,8 +945,7 @@ class TestFunctionExtendedContextFields:
     def test_function_param_rename_in_context(self, luabridge3_output_config):
         p = TIRParameter("rawName", "int")
         p.rename = "nice"
-        fn = TIRFunction(name="f", qualified_name="ns::f", namespace="ns",
-                        return_type="void", parameters=[p])
+        fn = TIRFunction(name="f", qualified_name="ns::f", namespace="ns", return_type="void", parameters=[p])
         mod = TIRModule(name="m", functions=[fn])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_ir_context(mod)
@@ -899,8 +954,7 @@ class TestFunctionExtendedContextFields:
         assert param_ctx["original_name"] == "rawName"
 
     def test_field_type_override_in_context(self, luabridge3_output_config):
-        field = TIRField(name="label", type_spelling="juce::String",
-                        type_override="std::string")
+        field = TIRField(name="label", type_spelling="juce::String", type_override="std::string")
         cls = _simple_class(fields=[field])
         gen = Generator(luabridge3_output_config)
         ctx = gen._build_class_ctx(cls)
@@ -911,6 +965,7 @@ class TestFunctionExtendedContextFields:
 # ---------------------------------------------------------------------------
 # Template rendering: multiple inheritance (luabridge3)
 # ---------------------------------------------------------------------------
+
 
 class TestMultipleInheritanceLuaBridge3:
     def test_single_public_base_uses_derive_class(self, luabridge3_output_config):
@@ -949,6 +1004,7 @@ class TestMultipleInheritanceLuaBridge3:
 # Template rendering: doc strings (luals)
 # ---------------------------------------------------------------------------
 
+
 class TestDocStringLuaLS:
     def test_class_doc_emitted(self, luals_output_config):
         cls = _simple_class()
@@ -965,8 +1021,7 @@ class TestDocStringLuaLS:
         assert "---The x coordinate" in out
 
     def test_enum_doc_emitted(self, luals_output_config):
-        enum = TIREnum(name="Color", qualified_name="ns::Color", doc="Color options",
-                      values=[TIREnumValue("Red", 0)])
+        enum = TIREnum(name="Color", qualified_name="ns::Color", doc="Color options", values=[TIREnumValue("Red", 0)])
         mod = TIRModule(name="m", enums=[enum])
         out = _generate(mod, luals_output_config)
         assert "---Color options" in out
@@ -987,8 +1042,7 @@ class TestApiVersionGating:
         return buf.getvalue()
 
     def test_method_excluded_before_since_version(self, pybind11_output_config) -> None:
-        m = TIRMethod(name="newOp", spelling="newOp", qualified_name="Cls::newOp",
-                     return_type="void", api_since="2.0")
+        m = TIRMethod(name="newOp", spelling="newOp", qualified_name="Cls::newOp", return_type="void", api_since="2.0")
         cls = _simple_class()
         cls.methods = [m]
         mod = TIRModule(name="t", classes=[cls], class_by_name={"MyClass": cls})
@@ -996,8 +1050,7 @@ class TestApiVersionGating:
         assert "newOp" not in out
 
     def test_method_included_at_since_version(self, pybind11_output_config) -> None:
-        m = TIRMethod(name="newOp", spelling="newOp", qualified_name="Cls::newOp",
-                     return_type="void", api_since="2.0")
+        m = TIRMethod(name="newOp", spelling="newOp", qualified_name="Cls::newOp", return_type="void", api_since="2.0")
         cls = _simple_class()
         cls.methods = [m]
         mod = TIRModule(name="t", classes=[cls], class_by_name={"MyClass": cls})
@@ -1005,8 +1058,7 @@ class TestApiVersionGating:
         assert "newOp" in out
 
     def test_method_excluded_at_or_after_until_version(self, pybind11_output_config) -> None:
-        m = TIRMethod(name="oldOp", spelling="oldOp", qualified_name="Cls::oldOp",
-                     return_type="void", api_until="2.0")
+        m = TIRMethod(name="oldOp", spelling="oldOp", qualified_name="Cls::oldOp", return_type="void", api_until="2.0")
         cls = _simple_class()
         cls.methods = [m]
         mod = TIRModule(name="t", classes=[cls], class_by_name={"MyClass": cls})
@@ -1014,15 +1066,17 @@ class TestApiVersionGating:
         assert "oldOp" not in out
 
     def test_function_excluded_before_since_version(self, pybind11_output_config) -> None:
-        fn = TIRFunction(name="futureFunc", qualified_name="futureFunc",
-                        namespace="", return_type="void", api_since="3.0")
+        fn = TIRFunction(
+            name="futureFunc", qualified_name="futureFunc", namespace="", return_type="void", api_since="3.0"
+        )
         mod = TIRModule(name="t", functions=[fn])
         out = self._gen(mod, pybind11_output_config, api_version="2.0")
         assert "futureFunc" not in out
 
     def test_no_api_version_includes_all(self, pybind11_output_config) -> None:
-        m = TIRMethod(name="withSince", spelling="withSince", qualified_name="Cls::withSince",
-                     return_type="void", api_since="5.0")
+        m = TIRMethod(
+            name="withSince", spelling="withSince", qualified_name="Cls::withSince", return_type="void", api_since="5.0"
+        )
         cls = _simple_class()
         cls.methods = [m]
         mod = TIRModule(name="t", classes=[cls], class_by_name={"MyClass": cls})
@@ -1036,12 +1090,14 @@ class TestVersionInRangeBranches:
     def test_unparseable_api_version_includes_by_default(self) -> None:
         """Lines 536-537: invalid semver string → exception → return True (include)."""
         from tsujikiri.generator import Generator
+
         result = Generator._version_in_range("not-a-version!!", "1.0", None)
         assert result is True
 
     def test_unparseable_since_includes_by_default(self) -> None:
         """Lines 536-537: invalid since string → exception → return True."""
         from tsujikiri.generator import Generator
+
         result = Generator._version_in_range("1.0", "not-valid-since!!!", None)
         assert result is True
 
@@ -1051,8 +1107,9 @@ class TestTypesystemTypeMappingBranches:
 
     def test_primitive_type_loop_continues_past_non_match(self) -> None:
         """Branch 550->549: primitive_types has entries but first doesn't match — loop continues."""
-        from tsujikiri.configurations import TypesystemConfig, PrimitiveTypeEntry
+        from tsujikiri.typesystem import TypesystemConfig, PrimitiveTypeEntry
         from tsujikiri.configurations import OutputConfig
+
         ts = TypesystemConfig(
             primitive_types=[
                 PrimitiveTypeEntry(cpp_name="int64_t", target_name="int"),
@@ -1066,12 +1123,13 @@ class TestTypesystemTypeMappingBranches:
 
     def test_typedef_type_loop_continues_past_non_match(self) -> None:
         """Branch 553->552: typedef_types has entries but first doesn't match — loop continues."""
-        from tsujikiri.configurations import TypesystemConfig, TypedefTypeEntry
+        from tsujikiri.typesystem import TypesystemConfig, TypedefTypeEntry
         from tsujikiri.configurations import OutputConfig
+
         ts = TypesystemConfig(
             typedef_types=[
-                TypedefTypeEntry(cpp_name="MyString", source="std::string"),
-                TypedefTypeEntry(cpp_name="MyBuffer", source="std::vector<uint8_t>"),
+                TypedefTypeEntry(cpp_name="MyString", target_name="std::string"),
+                TypedefTypeEntry(cpp_name="MyBuffer", target_name="std::vector<uint8_t>"),
             ]
         )
         cfg = OutputConfig(format_name="test", template="")
@@ -1081,8 +1139,9 @@ class TestTypesystemTypeMappingBranches:
 
     def test_custom_type_loop_continues_past_non_match(self) -> None:
         """Branch 565->564: custom_types has entries but first doesn't match — loop continues."""
-        from tsujikiri.configurations import TypesystemConfig, CustomTypeEntry
+        from tsujikiri.typesystem import TypesystemConfig, CustomTypeEntry
         from tsujikiri.configurations import OutputConfig
+
         ts = TypesystemConfig(
             custom_types=[
                 CustomTypeEntry(cpp_name="QObject"),
@@ -1103,10 +1162,13 @@ class TestTypesystemTypeMappingBranches:
 # Generator context: parameter index field
 # ---------------------------------------------------------------------------
 
+
 class TestParameterIndexInContext:
     def test_method_param_has_index(self, luabridge3_output_config):
         method = TIRMethod(
-            name="foo", spelling="foo", qualified_name="ns::MyClass::foo",
+            name="foo",
+            spelling="foo",
+            qualified_name="ns::MyClass::foo",
             return_type="void",
             parameters=[TIRParameter("a", "int", index=0), TIRParameter("b", "float", index=1)],
         )
@@ -1130,8 +1192,10 @@ class TestParameterIndexInContext:
 
     def test_function_param_has_index(self, luabridge3_output_config):
         fn = TIRFunction(
-            name="compute", qualified_name="ns::compute",
-            namespace="ns", return_type="void",
+            name="compute",
+            qualified_name="ns::compute",
+            namespace="ns",
+            return_type="void",
             parameters=[TIRParameter("a", "int", index=0), TIRParameter("b", "float", index=1)],
         )
         gen = Generator(luabridge3_output_config)
