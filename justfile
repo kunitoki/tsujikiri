@@ -34,6 +34,12 @@ check: sync format
     uv run mypy
     uv run ruff check src/tsujikiri/*.py tests/**/*.py
 
+# Build HTML documentation locally (mirrors ReadTheDocs build).
+docs:
+    uv sync --extra dev --extra docs
+    uv run sphinx-build -T -W --keep-going -j auto -b html -d docs/_build/doctrees -D language=en docs docs/_build/html
+    @echo "Docs built at docs/_build/html/index.html"
+
 # Build wheel and source distribution.
 wheel: sync stubs format check
     uv build
@@ -48,3 +54,4 @@ clean:
     rm -rf dist build .venv src/*.egg-info src/**/__pycache__ tests/**/__pycache__
     rm -rf src/**/.pytest_cache .pytest_cache .mypy_cache .coverage htmlcov
     rm -rf tests/test_compilation/_deps tests/test_compilation/**/build
+    rm -rf docs/_build

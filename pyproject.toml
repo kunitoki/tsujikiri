@@ -50,6 +50,11 @@ dev = [
   "mypy>=1.10",
   "types-PyYAML>=6.0",
 ]
+docs = [
+  "sphinx",
+  "myst-parser",
+  "sphinx-rtd-theme",
+]
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -95,5 +100,3 @@ target-version = "py312"
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
-
-

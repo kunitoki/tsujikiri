@@ -354,6 +354,7 @@ format_overrides:
 
 ---
 
+(override-precedence)=
 ## Override Precedence
 
 When a value can come from multiple places, this is the resolution order (highest priority wins):
