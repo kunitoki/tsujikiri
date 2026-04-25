@@ -61,7 +61,7 @@ uv pip install tsujikiri
 
 ### Clang Version
 
-By default tsujikiri installs `libclang-ng>=19`, which resolves to the latest available version. To pin a specific Clang release use an extra:
+By default tsujikiri installs `libclang-ng>=19`, which resolves to the latest available version (see https://github.com/kunitoki/libclang-ng for more information). To pin a specific Clang release use an extra:
 
 ```bash
 # pip
