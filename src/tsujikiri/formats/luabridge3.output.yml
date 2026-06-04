@@ -2,6 +2,7 @@ format_name: luabridge3
 format_version: "1.0"
 description: "LuaBridge3 C++ to Lua binding templates"
 language: cpp
+extension: .cpp
 
 # Types that force a method/function/field to be excluded from output
 unsupported_types:

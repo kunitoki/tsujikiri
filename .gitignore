@@ -75,6 +75,10 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# claude
+.claude/
+/docs/superpowers
+
 # mypy
 .mypy_cache/
 .dmypy.json

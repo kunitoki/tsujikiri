@@ -2,6 +2,7 @@ format_name: luals
 format_version: "1.0"
 description: "Lua Language Server (LuaLS) type annotation stubs — use alongside LuaBridge3 bindings"
 language: lua
+extension: .lua
 
 unsupported_types:
   - CFStringRef

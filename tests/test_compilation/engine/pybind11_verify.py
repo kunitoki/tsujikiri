@@ -8,6 +8,7 @@ pybind11 converts Python str to a temporary const char* whose lifetime is
 limited to the call — storing that pointer (as entity/audio classes do) is
 unsafe. We test only numeric/boolean API surface.
 """
+
 from __future__ import annotations
 
 import sys

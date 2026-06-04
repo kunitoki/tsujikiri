@@ -3,6 +3,7 @@
 Run with: python pybind11_verify.py
 Requires PYTHONPATH to contain the directory with the built geo extension module.
 """
+
 from __future__ import annotations
 
 import sys

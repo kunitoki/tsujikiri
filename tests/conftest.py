@@ -14,10 +14,12 @@ TESTS_DIR = Path(__file__).parent
 # Shared output-config fixtures (built-in formats)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="session")
 def luabridge3_output_config():
     from tsujikiri.configurations import load_output_config
     from tsujikiri.formats import resolve_format_path
+
     return load_output_config(resolve_format_path("luabridge3"))
 
 
@@ -25,6 +27,7 @@ def luabridge3_output_config():
 def pybind11_output_config():
     from tsujikiri.configurations import load_output_config
     from tsujikiri.formats import resolve_format_path
+
     return load_output_config(resolve_format_path("pybind11"))
 
 
@@ -32,45 +35,58 @@ def pybind11_output_config():
 def luals_output_config():
     from tsujikiri.configurations import load_output_config
     from tsujikiri.formats import resolve_format_path
-    return load_output_config(resolve_format_path("luals"))
 
+    return load_output_config(resolve_format_path("luals"))
 
 
 # ---------------------------------------------------------------------------
 # IR builder helpers (used by multiple test modules)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def make_ir_module():
     """Factory: build a self-contained TIRModule for generator / filter tests."""
     from tsujikiri.ir import (
-        IRClass, IRConstructor, IREnum, IREnumValue, IRField,
-        IRFunction, IRMethod, IRModule, IRParameter,
+        IRClass,
+        IRConstructor,
+        IREnum,
+        IREnumValue,
+        IRField,
+        IRFunction,
+        IRMethod,
+        IRModule,
+        IRParameter,
     )
     from tsujikiri.tir import upgrade_module
 
     def _build(name: str = "testmod"):
         method = IRMethod(
-            name="getValue", spelling="getValue",
+            name="getValue",
+            spelling="getValue",
             qualified_name="mylib::MyClass::getValue",
-            return_type="int", is_const=True,
+            return_type="int",
+            is_const=True,
         )
         add_int = IRMethod(
-            name="add", spelling="add",
+            name="add",
+            spelling="add",
             qualified_name="mylib::MyClass::add",
             return_type="int",
             parameters=[IRParameter("a", "int"), IRParameter("b", "int")],
             is_overload=True,
         )
         add_dbl = IRMethod(
-            name="add", spelling="add",
+            name="add",
+            spelling="add",
             qualified_name="mylib::MyClass::add",
             return_type="double",
             parameters=[IRParameter("a", "double"), IRParameter("b", "double")],
             is_overload=True,
         )
         static_m = IRMethod(
-            name="create", spelling="create",
+            name="create",
+            spelling="create",
             qualified_name="mylib::MyClass::create",
             return_type="int",
             parameters=[IRParameter("v", "int")],
@@ -81,11 +97,14 @@ def make_ir_module():
         field = IRField(name="value_", type_spelling="int")
         const_field = IRField(name="max_", type_spelling="const int", is_const=True)
         nested_enum = IREnum(
-            name="State", qualified_name="mylib::MyClass::State",
+            name="State",
+            qualified_name="mylib::MyClass::State",
             values=[IREnumValue("Off", 0), IREnumValue("On", 1)],
         )
         cls = IRClass(
-            name="MyClass", qualified_name="mylib::MyClass", namespace="mylib",
+            name="MyClass",
+            qualified_name="mylib::MyClass",
+            namespace="mylib",
             variable_name="classMyClass",
             constructors=[ctor0, ctor1],
             methods=[method, add_int, add_dbl, static_m],
@@ -93,17 +112,22 @@ def make_ir_module():
             enums=[nested_enum],
         )
         color = IREnum(
-            name="Color", qualified_name="mylib::Color",
+            name="Color",
+            qualified_name="mylib::Color",
             values=[IREnumValue("Red", 0), IREnumValue("Green", 1)],
         )
         fn = IRFunction(
-            name="compute", qualified_name="mylib::compute",
-            namespace="mylib", return_type="double",
+            name="compute",
+            qualified_name="mylib::compute",
+            namespace="mylib",
+            return_type="double",
             parameters=[IRParameter("x", "double")],
         )
         ir_mod = IRModule(
             name=name,
-            classes=[cls], enums=[color], functions=[fn],
+            classes=[cls],
+            enums=[color],
+            functions=[fn],
             class_by_name={"MyClass": cls},
         )
         return upgrade_module(ir_mod)
