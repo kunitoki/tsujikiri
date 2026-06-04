@@ -984,8 +984,8 @@ class TestOutputGroupsLoading:
         resolved_a = cfg.resolve_group_sources(cfg.output_groups[0])
         resolved_b = cfg.resolve_group_sources(cfg.output_groups[1])
 
-        assert resolved_a[0].source.path.endswith("a/utils.hpp")
-        assert resolved_b[0].source.path.endswith("b/utils.hpp")
+        assert Path(resolved_a[0].source.path).parts[-2:] == ("a", "utils.hpp")
+        assert Path(resolved_b[0].source.path).parts[-2:] == ("b", "utils.hpp")
 
     def test_ambiguous_output_source_raises(self, tmp_path):
         import yaml
