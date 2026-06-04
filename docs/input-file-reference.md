@@ -13,6 +13,7 @@ An **input file** (conventionally named `*.input.yml`) is the primary configurat
 | `loads` | list of strings | no | `[]` | Other input config files to merge in as defaults (resolved relative to this file) |
 | `source` | mapping | one of `source`/`sources` | — | Single C++ source to parse |
 | `sources` | list | one of `source`/`sources` | — | Multiple C++ sources to parse |
+| `outputs` | list | no | — | Named output groups; produces one file per group per target format |
 | `filters` | mapping | no | (all included) | Default filtering rules |
 | `transforms` | list | no | `[]` | Default transform pipeline |
 | `generation` | mapping | no | (empty) | Output generation settings |
@@ -153,6 +154,59 @@ When a source entry provides `filters`, `transforms`, or `generation`, these **r
 If a source entry omits a key, the top-level value is used.
 
 > **Tip:** Use per-source overrides when headers from different subsystems need different namespace restrictions or clang flags. Use top-level filters for policies that apply to all sources.
+
+---
+
+## `outputs` — Multi-Output Groups
+
+Use `outputs` when you need to produce **one output file per group** per target format. This is an alternative to `source`/`sources` — they are mutually exclusive.
+
+Each group names a subset of source files. When every `--target` path ends with `/`, the CLI writes `{outdir}/{group.name}{ext}` for every group × target combination. The directory is created automatically if it doesn't exist.
+
+```yaml
+sources:
+  - path: "math/matrix.hpp"
+    parse_args: ["-std=c++17"]
+  - path: "math/vector.hpp"
+    parse_args: ["-std=c++17"]
+  - path: "types.hpp"
+    parse_args: ["-std=c++20"]
+
+filters:
+  namespaces: ["myproject"]
+
+outputs:
+  - name: math_bindings
+    sources: ["matrix.hpp", "vector.hpp"]
+  - name: types_bindings
+    sources: ["types.hpp"]
+```
+
+With `--target luabridge3 out/` the above produces:
+- `out/math_bindings.cpp` — contains only `matrix.hpp` and `vector.hpp` symbols
+- `out/types_bindings.cpp` — contains only `types.hpp` symbols
+
+Each group entry has two fields:
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `name` | string | yes | Output filename stem — written as `{name}{ext}` where `ext` comes from the format's `extension:` field |
+| `sources` | list of strings | yes | Filenames or absolute paths referencing source files; matched against the top-level `sources:` by basename or full path. If no match is found, a source entry with the given path and no extra flags is used |
+
+### Matching sources to groups
+
+When both a top-level `sources:` list and `outputs:` are present, each path in a group's `sources:` list is resolved relative to the input YAML directory and then looked up in the global sources table. The match inherits the full `SourceEntry` configuration (including `parse_args`, `include_paths`, `defines`, per-source `filters`, and `transforms`).
+
+If no matching global source entry is found, a bare source entry (path only) is created for that path. This lets you use `outputs:` without a top-level `sources:` key when you only need simple path-based groups with no extra clang flags.
+
+### Manifest
+
+When `--manifest-file` is used, the API manifest is computed from the **merged IR of all groups combined**. Version tracking stays unified across all output files, regardless of how sources are split into groups.
+
+### Requirements
+
+- Every `--target` path **must end with `/`** (a directory, not a file).
+- All targets must be directory paths — mixing file and directory targets with `outputs:` is an error.
 
 ---
 

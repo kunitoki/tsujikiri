@@ -7,6 +7,7 @@ Exercises:
   - setValue/getValue for regular int
   - computeId free function overloads
 """
+
 from __future__ import annotations
 
 import sys

@@ -2,6 +2,7 @@ format_name: pybind11
 format_version: "1.0"
 description: "pybind11 C++ to Python binding templates"
 language: cpp
+extension: .cpp
 
 # Types that force a method/function/field to be excluded from output
 unsupported_types:

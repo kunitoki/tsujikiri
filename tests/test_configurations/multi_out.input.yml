@@ -1,0 +1,16 @@
+sources:
+  - path: "matrix.hpp"
+    parse_args: ["-std=c++17"]
+  - path: "vector.hpp"
+    parse_args: ["-std=c++17"]
+  - path: "types.hpp"
+    parse_args: ["-std=c++20"]
+
+filters:
+  namespaces: ["myns"]
+
+outputs:
+  - name: math_bindings
+    sources: ["matrix.hpp", "vector.hpp"]
+  - name: types_bindings
+    sources: ["types.hpp"]

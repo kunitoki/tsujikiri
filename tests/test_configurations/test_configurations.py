@@ -116,6 +116,28 @@ class TestOutputConfigLoading:
         cfg = load_output_config(yml)
         assert cfg.language == ""
 
+    def test_luabridge3_extension_is_cpp(self):
+        cfg = load_output_config(resolve_format_path("luabridge3"))
+        assert cfg.extension == ".cpp"
+
+    def test_luals_extension_is_lua(self):
+        cfg = load_output_config(resolve_format_path("luals"))
+        assert cfg.extension == ".lua"
+
+    def test_pybind11_extension_is_cpp(self):
+        cfg = load_output_config(resolve_format_path("pybind11"))
+        assert cfg.extension == ".cpp"
+
+    def test_pyi_extension_is_pyi(self):
+        cfg = load_output_config(resolve_format_path("pyi"))
+        assert cfg.extension == ".pyi"
+
+    def test_extension_defaults_to_empty_string(self, tmp_path):
+        yml = tmp_path / "noext.output.yml"
+        yml.write_text("format_name: noext\ntemplate: |\n  NOOP\n", encoding="utf-8")
+        cfg = load_output_config(yml)
+        assert cfg.extension == ""
+
     def test_template_file_relative_path(self, tmp_path):
         tpl = tmp_path / "my.tpl"
         tpl.write_text("TEMPLATE_CONTENT\n", encoding="utf-8")
@@ -758,3 +780,104 @@ class TestConfigLoads:
         child.write_text(f"loads:\n  - {base}\nsource:\n  path: c.hpp\n", encoding="utf-8")
         cfg = load_input_config(child)
         assert cfg.custom_data["abs"] is True
+
+
+class TestOutputGroupsLoading:
+    @pytest.fixture(scope="class")
+    def cfg(self):
+        return load_input_config(HERE / "multi_out.input.yml")
+
+    def test_output_groups_count(self, cfg):
+        assert len(cfg.output_groups) == 2
+
+    def test_first_group_name(self, cfg):
+        assert cfg.output_groups[0].name == "math_bindings"
+
+    def test_first_group_sources(self, cfg):
+        assert len(cfg.output_groups[0].sources) == 2
+
+    def test_second_group_name(self, cfg):
+        assert cfg.output_groups[1].name == "types_bindings"
+
+    def test_second_group_sources(self, cfg):
+        assert len(cfg.output_groups[1].sources) == 1
+
+    def test_sources_are_strings(self, cfg):
+        # Group sources are raw YAML path strings — no resolution at load time
+        assert all(isinstance(s, str) for s in cfg.output_groups[0].sources)
+        assert cfg.output_groups[0].sources[0] == "matrix.hpp"
+
+    def test_get_source_entries_returns_all(self, cfg):
+        entries = cfg.get_source_entries()
+        assert len(entries) == 3  # 2 from math_bindings + 1 from types_bindings
+
+    def test_sources_kept_as_lookup_pool_when_outputs_present(self, cfg):
+        assert cfg.source is None
+        # sources is kept populated as the resolution pool for resolve_group_sources()
+        assert len(cfg.sources) == 3
+
+    def test_parse_args_preserved(self, cfg):
+        # resolve_group_sources() matches by basename and returns the SourceEntry with its parse_args
+        resolved = cfg.resolve_group_sources(cfg.output_groups[0])
+        assert "-std=c++17" in resolved[0].source.parse_args
+
+    def test_fallback_creates_simple_entry(self, tmp_path):
+        # Source in outputs: with no matching global sources: entry → stored as raw string,
+        # resolve_group_sources() creates a bare SourceEntry for it.
+        import yaml
+
+        data = {
+            "outputs": [{"name": "standalone", "sources": [str(tmp_path / "standalone.hpp")]}],
+            "filters": {"namespaces": ["foo"]},
+        }
+        p = tmp_path / "fallback.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+        cfg = load_input_config(p)
+        assert len(cfg.output_groups) == 1
+        assert len(cfg.output_groups[0].sources) == 1
+        # The path string is stored as-is (raw YAML value)
+        assert cfg.output_groups[0].sources[0] == str(tmp_path / "standalone.hpp")
+        # resolve_group_sources() creates a bare SourceEntry for unmatched paths
+        resolved = cfg.resolve_group_sources(cfg.output_groups[0])
+        assert resolved[0].source.path == str(tmp_path / "standalone.hpp")
+
+    def test_basename_collision_first_entry_wins(self, tmp_path):
+        # Two sources with the same basename: the first one wins in the basename slot.
+        import yaml
+
+        data = {
+            "sources": [
+                {"path": "a/utils.hpp"},
+                {"path": "b/utils.hpp"},
+            ],
+            "outputs": [
+                {"name": "group_a", "sources": ["a/utils.hpp"]},
+                {"name": "group_b", "sources": ["b/utils.hpp"]},
+            ],
+        }
+        p = tmp_path / "collision.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+        cfg = load_input_config(p)
+        # basename "utils.hpp" → first entry (a/utils.hpp) wins the slot
+        resolved_a = cfg.resolve_group_sources(cfg.output_groups[0])
+        resolved_b = cfg.resolve_group_sources(cfg.output_groups[1])
+        # group_a matched by full path (a/utils.hpp resolved); group_b falls back to basename slot
+        assert resolved_a[0].source.path.endswith("a/utils.hpp") or resolved_a[0].source.path.endswith("utils.hpp")
+        assert len(resolved_b) == 1
+
+    def test_get_source_entries_deduplicates_shared_source(self, tmp_path):
+        # Same source in two groups → get_source_entries() returns it only once.
+        import yaml
+
+        data = {
+            "sources": [{"path": "shared.hpp"}],
+            "outputs": [
+                {"name": "group1", "sources": ["shared.hpp"]},
+                {"name": "group2", "sources": ["shared.hpp"]},
+            ],
+        }
+        p = tmp_path / "dedup.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+        cfg = load_input_config(p)
+        entries = cfg.get_source_entries()
+        assert len(entries) == 1

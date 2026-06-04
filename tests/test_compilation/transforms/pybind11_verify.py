@@ -3,6 +3,7 @@
 Run with: python pybind11_verify.py
 Requires PYTHONPATH to contain the directory with the built transforms extension module.
 """
+
 from __future__ import annotations
 
 import sys
@@ -13,6 +14,7 @@ import transforms as trf  # type: ignore  # noqa: E402
 # ---------------------------------------------------------------------------
 # rename_class
 # ---------------------------------------------------------------------------
+
 
 def test_rename_class() -> None:
     assert hasattr(trf, "Manager"), "rename_class: Manager present"
@@ -25,6 +27,7 @@ def test_rename_class() -> None:
 # suppress_class
 # ---------------------------------------------------------------------------
 
+
 def test_suppress_class() -> None:
     assert not hasattr(trf, "WidgetInternal"), "suppress_class: WidgetInternal absent"
 
@@ -32,6 +35,7 @@ def test_suppress_class() -> None:
 # ---------------------------------------------------------------------------
 # rename_method / suppress_method / inject_method
 # ---------------------------------------------------------------------------
+
 
 def test_method_transforms() -> None:
     w = trf.Widget(5)
@@ -44,6 +48,7 @@ def test_method_transforms() -> None:
 # ---------------------------------------------------------------------------
 # modify_method / modify_argument / exception_policy
 # ---------------------------------------------------------------------------
+
 
 def test_modify_method() -> None:
     w = trf.Widget(10)
@@ -62,6 +67,7 @@ def test_modify_argument() -> None:
 # remove_overload
 # ---------------------------------------------------------------------------
 
+
 def test_remove_overload() -> None:
     w = trf.Widget()
     w.update(7)
@@ -74,6 +80,7 @@ def test_remove_overload() -> None:
 # overload_priority
 # ---------------------------------------------------------------------------
 
+
 def test_overload_priority() -> None:
     w = trf.Widget()
     assert abs(w.compute(3) - 9.0) < 0.001, "overload_priority: compute(int) = 9"
@@ -83,6 +90,7 @@ def test_overload_priority() -> None:
 # ---------------------------------------------------------------------------
 # inject_property
 # ---------------------------------------------------------------------------
+
 
 def test_inject_property() -> None:
     w = trf.Widget(0)
@@ -95,6 +103,7 @@ def test_inject_property() -> None:
 # modify_constructor / inject_constructor
 # ---------------------------------------------------------------------------
 
+
 def test_constructor_transforms() -> None:
     w = trf.Widget(1, 2)
     assert w.get_id() == 3, "inject_constructor: Widget(1,2).id == 1+2 == 3"
@@ -103,6 +112,7 @@ def test_constructor_transforms() -> None:
 # ---------------------------------------------------------------------------
 # modify_field (rename + remove)
 # ---------------------------------------------------------------------------
+
 
 def test_modify_field() -> None:
     w = trf.Widget(99)
@@ -116,6 +126,7 @@ def test_modify_field() -> None:
 # rename_enum / rename_enum_value / suppress_enum / suppress_enum_value
 # ---------------------------------------------------------------------------
 
+
 def test_enum_transforms() -> None:
     assert hasattr(trf, "Color"), "rename_enum: Color present"
     assert not hasattr(trf, "OldColor"), "rename_enum: OldColor absent"
@@ -128,6 +139,7 @@ def test_enum_transforms() -> None:
 # ---------------------------------------------------------------------------
 # rename_function / suppress_function / inject_function / modify_function
 # ---------------------------------------------------------------------------
+
 
 def test_function_transforms() -> None:
     assert hasattr(trf, "compute_score"), "rename_function: compute_score present"
@@ -148,6 +160,7 @@ def test_function_transforms() -> None:
 # suppress_base
 # ---------------------------------------------------------------------------
 
+
 def test_suppress_base() -> None:
     dw = trf.DerivedWidget(3)
     assert dw.get_id() == 3, "suppress_base: DerivedWidget inherits Widget methods"
@@ -157,6 +170,7 @@ def test_suppress_base() -> None:
 # ---------------------------------------------------------------------------
 # set_type_hint: SharedNode with shared_ptr holder
 # ---------------------------------------------------------------------------
+
 
 def test_set_type_hint() -> None:
     n = trf.SharedNode(10)
@@ -168,6 +182,7 @@ def test_set_type_hint() -> None:
 # ---------------------------------------------------------------------------
 # expose_protected: Widget.on_render callable from Python subclass
 # ---------------------------------------------------------------------------
+
 
 def test_expose_protected_widget() -> None:
     class MyWidget(trf.Widget):
@@ -184,6 +199,7 @@ def test_expose_protected_widget() -> None:
 # expose_protected: SharedNode.compute_value callable from Python subclass
 # ---------------------------------------------------------------------------
 
+
 def test_expose_protected_shared_node() -> None:
     class MyNode(trf.SharedNode):
         def compute_value(self) -> int:
@@ -196,6 +212,7 @@ def test_expose_protected_shared_node() -> None:
 # ---------------------------------------------------------------------------
 # resolve_using_declarations
 # ---------------------------------------------------------------------------
+
 
 def test_resolve_using_declarations() -> None:
     ew = trf.ExtendedWidget()
@@ -210,6 +227,7 @@ def test_resolve_using_declarations() -> None:
 # mark_deprecated: increment still callable (metadata only)
 # ---------------------------------------------------------------------------
 
+
 def test_mark_deprecated() -> None:
     m = trf.Manager()
     m.increment()
@@ -219,6 +237,7 @@ def test_mark_deprecated() -> None:
 # ---------------------------------------------------------------------------
 # register_exception: TransformError catchable as Python exception
 # ---------------------------------------------------------------------------
+
 
 def test_register_exception() -> None:
     assert hasattr(trf, "TransformError"), "register_exception: TransformError class present"
@@ -232,6 +251,7 @@ def test_register_exception() -> None:
 # ---------------------------------------------------------------------------
 # expand_spaceship: Score comparison operators via __lt__, __le__, __eq__, etc.
 # ---------------------------------------------------------------------------
+
 
 def test_expand_spaceship() -> None:
     s1 = trf.Score(1)

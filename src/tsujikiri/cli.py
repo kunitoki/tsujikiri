@@ -30,6 +30,10 @@ from tsujikiri.parser import parse_translation_unit
 from tsujikiri.transforms import _REGISTRY, build_pipeline_from_config
 
 
+def _is_directory_target(path: str) -> bool:
+    return path != "-" and path.endswith("/")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="tsujikiri",
@@ -335,10 +339,31 @@ def main() -> None:
 
     source_entries = input_config.get_source_entries()
     if not source_entries:
-        print("tsujikiri: error: no source defined (add 'source:' or 'sources:' to input YAML)", file=sys.stderr)
+        print(
+            "tsujikiri: error: no source defined (add 'source:', 'sources:', or 'outputs:' to input YAML)",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     trace_stream: Optional[IO] = sys.stderr if args.trace_transforms else None
+
+    has_output_groups = bool(input_config.output_groups)
+    dir_flags = [_is_directory_target(outfile) for _, outfile in args.target]
+    any_dir_target = any(dir_flags)
+    all_dir_targets = all(dir_flags)
+
+    if any_dir_target and not has_output_groups:
+        print(
+            "tsujikiri: error: directory output (paths ending with /) requires 'outputs:' groups in input YAML",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if has_output_groups and not all_dir_targets:
+        print(
+            "tsujikiri: error: 'outputs:' groups require all targets to be directory paths (paths ending with /)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Load the first target's output config for manifest computation and dry-run.
     first_fmt, _ = args.target[0]
@@ -423,48 +448,16 @@ def main() -> None:
 
     # --- Generate for each target ---
     for target_idx, (fmt, outfile) in enumerate(args.target):
-        # For the first target we already processed sources above.
-        # For subsequent targets, re-process with format-specific overrides.
         if target_idx == 0:
             output_config = first_output_config
-            target_merged = merged
-            target_includes = all_includes
         else:
             fmt_path = resolve_format_path(fmt, extra_dirs=extra_dirs)
             output_config = apply_format_inheritance(load_output_config(fmt_path), extra_dirs=extra_dirs)
-            target_merged, target_includes = _process_sources(
-                input_config,
-                source_entries,
-                output_config,
-                module_name,
-                trace_stream,
-                verbose=args.verbose,
-            )
 
         fmt_override = input_config.format_overrides.get(output_config.format_name)
         template_extends = fmt_override.template_extends if fmt_override else ""
         extra_unsupported = fmt_override.unsupported_types if fmt_override else []
         fmt_generation = fmt_override.generation if fmt_override else None
-
-        if fmt_generation:
-            effective_gen_includes = list(target_includes) + list(fmt_generation.includes)
-            prefix = fmt_generation.prefix or base_gen.prefix
-            postfix = fmt_generation.postfix or base_gen.postfix
-            ev = fmt_generation.embed_version or base_gen.embed_version
-        else:
-            effective_gen_includes = list(target_includes)
-            prefix = base_gen.prefix
-            postfix = base_gen.postfix
-            ev = base_gen.embed_version
-
-        target_api_version = args.api_version or (manifest["version"] if (args.embed_version or ev) else "")
-
-        effective_generation = GenerationConfig(
-            includes=effective_gen_includes,
-            prefix=prefix,
-            postfix=postfix,
-            embed_version=ev,
-        )
 
         effective_typesystem = (
             merge_typesystems(fmt_override.typesystem, input_config.typesystem)
@@ -472,30 +465,126 @@ def main() -> None:
             else input_config.typesystem
         )
 
-        gen = Generator(
-            output_config,
-            generation=effective_generation,
-            extra_unsupported_types=extra_unsupported,
-            template_extends=template_extends,
-            typesystem=effective_typesystem,
-            extra_dirs=extra_dirs,
-            custom_data=input_config.custom_data,
-        )
+        if has_output_groups:
+            outdir = Path(outfile)
+            outdir.mkdir(parents=True, exist_ok=True)
+            if not output_config.extension:
+                print(
+                    f"tsujikiri: error: format '{output_config.format_name}' has no 'extension:' set in its output YAML",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            ext = output_config.extension
+            do_pretty, pretty_opts = _resolve_pretty(output_config.format_name, fmt_override, input_config, args.pretty)
 
-        buf = StringIO()
-        gen.generate(target_merged, buf, api_version=target_api_version)
-        content = buf.getvalue()
+            for group in input_config.output_groups:
+                group_merged, group_includes = _process_sources(
+                    input_config,
+                    input_config.resolve_group_sources(group),
+                    output_config,
+                    module_name,
+                    trace_stream,
+                    verbose=args.verbose,
+                )
 
-        do_pretty, pretty_opts = _resolve_pretty(output_config.format_name, fmt_override, input_config, args.pretty)
-        if do_pretty:
-            content = pretty(content, output_config.language, pretty_opts)
+                if fmt_generation:
+                    effective_gen_includes = list(group_includes) + list(fmt_generation.includes)
+                    prefix = fmt_generation.prefix or base_gen.prefix
+                    postfix = fmt_generation.postfix or base_gen.postfix
+                    ev = fmt_generation.embed_version or base_gen.embed_version
+                else:
+                    effective_gen_includes = list(group_includes)
+                    prefix = base_gen.prefix
+                    postfix = base_gen.postfix
+                    ev = base_gen.embed_version
 
-        if outfile == "-":
-            sys.stdout.write(content)
+                group_api_version = args.api_version or (manifest["version"] if (args.embed_version or ev) else "")
+                effective_generation = GenerationConfig(
+                    includes=effective_gen_includes,
+                    prefix=prefix,
+                    postfix=postfix,
+                    embed_version=ev,
+                )
+
+                gen = Generator(
+                    output_config,
+                    generation=effective_generation,
+                    extra_unsupported_types=extra_unsupported,
+                    template_extends=template_extends,
+                    typesystem=effective_typesystem,
+                    extra_dirs=extra_dirs,
+                    custom_data=input_config.custom_data,
+                )
+
+                buf = StringIO()
+                gen.generate(group_merged, buf, api_version=group_api_version)
+                content = buf.getvalue()
+
+                if do_pretty:
+                    content = pretty(content, output_config.language, pretty_opts)
+
+                out_path = outdir / f"{group.name}{ext}"
+                out_path.write_text(content, encoding="utf-8")
+                print(f"Written to {out_path}", file=sys.stderr)
+
         else:
-            out_path = Path(outfile)
-            out_path.write_text(content, encoding="utf-8")
-            print(f"Written to {out_path}", file=sys.stderr)
+            # Single-output mode (unchanged behaviour)
+            if target_idx == 0:
+                target_merged = merged
+                target_includes = all_includes
+            else:
+                target_merged, target_includes = _process_sources(
+                    input_config,
+                    source_entries,
+                    output_config,
+                    module_name,
+                    trace_stream,
+                    verbose=args.verbose,
+                )
+
+            if fmt_generation:
+                effective_gen_includes = list(target_includes) + list(fmt_generation.includes)
+                prefix = fmt_generation.prefix or base_gen.prefix
+                postfix = fmt_generation.postfix or base_gen.postfix
+                ev = fmt_generation.embed_version or base_gen.embed_version
+            else:
+                effective_gen_includes = list(target_includes)
+                prefix = base_gen.prefix
+                postfix = base_gen.postfix
+                ev = base_gen.embed_version
+
+            target_api_version = args.api_version or (manifest["version"] if (args.embed_version or ev) else "")
+            effective_generation = GenerationConfig(
+                includes=effective_gen_includes,
+                prefix=prefix,
+                postfix=postfix,
+                embed_version=ev,
+            )
+
+            gen = Generator(
+                output_config,
+                generation=effective_generation,
+                extra_unsupported_types=extra_unsupported,
+                template_extends=template_extends,
+                typesystem=effective_typesystem,
+                extra_dirs=extra_dirs,
+                custom_data=input_config.custom_data,
+            )
+
+            buf = StringIO()
+            gen.generate(target_merged, buf, api_version=target_api_version)
+            content = buf.getvalue()
+
+            do_pretty, pretty_opts = _resolve_pretty(output_config.format_name, fmt_override, input_config, args.pretty)
+            if do_pretty:
+                content = pretty(content, output_config.language, pretty_opts)
+
+            if outfile == "-":
+                sys.stdout.write(content)
+            else:
+                out_path = Path(outfile)
+                out_path.write_text(content, encoding="utf-8")
+                print(f"Written to {out_path}", file=sys.stderr)
 
     # Write manifest only when there are no breaking changes (or compat check is off).
     if args.manifest_file and not has_breaking:

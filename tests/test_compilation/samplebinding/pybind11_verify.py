@@ -6,6 +6,7 @@ Demonstrates:
   - Ownership transfer: Truck.add_flavor() takes ownership of Icecream
   - shared_ptr holder type
 """
+
 from __future__ import annotations
 
 import sys
@@ -33,13 +34,9 @@ def test_python_subclass_overrides_virtual() -> None:
             return c
 
     ice = ChocolateIcecream()
-    assert ice.get_flavor() == "double-chocolate", (
-        f"Expected 'double-chocolate', got '{ice.get_flavor()}'"
-    )
+    assert ice.get_flavor() == "double-chocolate", f"Expected 'double-chocolate', got '{ice.get_flavor()}'"
     clone = ice.clone()
-    assert clone.get_flavor() == "double-chocolate", (
-        f"Clone flavor mismatch: {clone.get_flavor()}"
-    )
+    assert clone.get_flavor() == "double-chocolate", f"Clone flavor mismatch: {clone.get_flavor()}"
 
 
 def test_truck_holds_flavors() -> None:
@@ -68,9 +65,7 @@ def test_truck_with_python_subclass_flavor() -> None:
     truck.add_flavor(ice)
     assert truck.flavor_count() == 1
     # The truck calls getFlavor() via virtual dispatch — should hit Python override
-    assert truck.flavor_at(0) == "vanilla-bean", (
-        f"Virtual dispatch through Truck: {truck.flavor_at(0)}"
-    )
+    assert truck.flavor_at(0) == "vanilla-bean", f"Virtual dispatch through Truck: {truck.flavor_at(0)}"
 
 
 def test_truck_is_leaving_flag() -> None:

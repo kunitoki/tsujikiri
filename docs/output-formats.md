@@ -15,6 +15,7 @@ format_name: myformat
 format_version: "1.0"
 description: "Human-readable description"
 language: cpp                   # informational only
+extension: .cpp                 # output file extension used in multi-output mode
 
 # Substring-matched types that cause methods/fields to be excluded
 unsupported_types:
@@ -34,6 +35,21 @@ template: |
 # Or alternatively a reference to an external template Jinja2 file
 template_file: "myformat.output.tpl"
 ```
+
+### `extension`
+
+The file extension (including the leading `.`) that tsujikiri appends to group names when running in **multi-output mode** (`outputs:` key in the input YAML). For example, a format with `extension: .cpp` and a group named `math_bindings` produces `math_bindings.cpp`.
+
+This field is required when the format is used with `outputs:` groups. It is ignored in single-file mode.
+
+All four built-in formats declare their extension:
+
+| Format | `extension` |
+|--------|------------|
+| `luabridge3` | `.cpp` |
+| `luals` | `.lua` |
+| `pybind11` | `.cpp` |
+| `pyi` | `.pyi` |
 
 ### `unsupported_types`
 
@@ -897,6 +913,7 @@ format_name: myformat
 format_version: "1.0"
 description: "My custom binding format"
 language: cpp
+extension: .cpp   # required when using this format in multi-output mode
 
 unsupported_types:
   - CFStringRef

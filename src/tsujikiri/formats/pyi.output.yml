@@ -2,6 +2,7 @@ format_name: pyi
 format_version: "1.0"
 description: "Python type stub (.pyi) annotations — use alongside pybind11 bindings"
 language: python
+extension: .pyi
 
 unsupported_types:
   - CFStringRef

@@ -271,6 +271,21 @@ tsujikiri -i project.input.yml --target luabridge3 - -c Vec3
 tsujikiri -i project.input.yml --target myfmt out/bindings.cpp -f ./my_formats/
 ```
 
+**Multi-output groups — produce one file per group (requires `outputs:` in YAML):**
+```bash
+tsujikiri -i project.input.yml --target luabridge3 out/
+# writes: out/math_bindings.cpp, out/types_bindings.cpp, ...
+```
+
+**Multi-output with multiple formats:**
+```bash
+tsujikiri -i project.input.yml \
+  --target luabridge3 out/cpp/ \
+  --target luals      out/lua/
+# writes: out/cpp/math_bindings.cpp  out/cpp/types_bindings.cpp
+#         out/lua/math_bindings.lua  out/lua/types_bindings.lua
+```
+
 **API versioning — save manifest and fail on breaking changes:**
 ```bash
 tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \

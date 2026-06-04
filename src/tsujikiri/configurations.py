@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import yaml
 
@@ -144,6 +144,14 @@ class SourceEntry:
 
 
 @dataclass
+class OutputGroupEntry:
+    """A named group of source files that produce one output file."""
+
+    name: str
+    sources: List[str]  # raw path strings from YAML; resolved via InputConfig.resolve_group_sources()
+
+
+@dataclass
 class FormatOverrideConfig:
     """Per-format configuration overrides.
 
@@ -194,6 +202,9 @@ class InputConfig:
     source: Optional[SourceConfig] = None
     # New multi-source list; takes precedence over ``source`` when non-empty.
     sources: List[SourceEntry] = field(default_factory=list)
+    # Named output groups; sources in each group are raw YAML path strings resolved
+    # against self.sources at processing time via resolve_group_sources().
+    output_groups: List[OutputGroupEntry] = field(default_factory=list)
     filters: FilterConfig = field(default_factory=FilterConfig)
     transforms: List[TransformSpec] = field(default_factory=list)
     tweaks: Dict[str, ClassTweak] = field(default_factory=dict)
@@ -210,8 +221,34 @@ class InputConfig:
     # Arbitrary user-defined data passed verbatim into the template context as ``custom_data``.
     custom_data: Dict[str, Any] = field(default_factory=dict)
 
+    def resolve_group_sources(self, group: "OutputGroupEntry") -> List[SourceEntry]:
+        """Resolve a group's path strings to SourceEntry objects using self.sources as lookup.
+
+        Matching is first by absolute path, then by basename. Unmatched paths
+        produce a bare SourceEntry (path only, no extra clang flags).
+        """
+        by_path: Dict[str, SourceEntry] = {}
+        for entry in self.sources:
+            by_path[entry.source.path] = entry
+            basename = Path(entry.source.path).name
+            if basename not in by_path:
+                by_path[basename] = entry
+        return [
+            by_path.get(p) or by_path.get(Path(p).name) or SourceEntry(source=SourceConfig(path=p))
+            for p in group.sources
+        ]
+
     def get_source_entries(self) -> List[SourceEntry]:
         """Return all source entries, normalising a bare ``source:`` key into the list."""
+        if self.output_groups:
+            seen: Set[str] = set()
+            result: List[SourceEntry] = []
+            for group in self.output_groups:
+                for entry in self.resolve_group_sources(group):
+                    if entry.source.path not in seen:
+                        seen.add(entry.source.path)
+                        result.append(entry)
+            return result
         if self.sources:
             return self.sources
         if self.source:
@@ -230,6 +267,7 @@ class OutputConfig:
     format_version: str = "1.0"
     description: str = ""
     language: str = ""  # target language, e.g. "cpp" or "lua"
+    extension: str = ""  # output file extension, e.g. ".cpp" or ".lua"
     extends: str = ""  # name of base format to inherit from (e.g. "luabridge3")
     type_mappings: Dict[str, str] = field(default_factory=dict)
     operator_mappings: Dict[str, str] = field(default_factory=dict)  # C++ operator → binding name
@@ -425,6 +463,11 @@ def load_input_config(config_file: Path) -> InputConfig:
     # --- Multiple sources ---
     sources: List[SourceEntry] = [_parse_source_entry(entry_raw, config_dir) for entry_raw in data.get("sources", [])]
 
+    output_groups: List[OutputGroupEntry] = [
+        OutputGroupEntry(name=group_raw.get("name", ""), sources=group_raw.get("sources", []))
+        for group_raw in data.get("outputs", [])
+    ]
+
     # --- Filters / transforms / generation (top-level defaults) ---
     filters = _parse_filter_config(data.get("filters", {}))
     transforms = _parse_transforms_list(data.get("transforms", []))
@@ -498,6 +541,7 @@ def load_input_config(config_file: Path) -> InputConfig:
     return InputConfig(
         source=source,
         sources=sources,
+        output_groups=output_groups,
         filters=filters,
         transforms=transforms,
         tweaks=tweaks,
@@ -529,6 +573,7 @@ def load_output_config(config_file: Path) -> OutputConfig:
         format_version=str(data.get("format_version", "1.0")),
         description=data.get("description", ""),
         language=data.get("language", ""),
+        extension=data.get("extension", "") or "",
         extends=data.get("extends", "") or "",
         type_mappings=data.get("type_mappings", {}),
         operator_mappings=data.get("operator_mappings", {}),

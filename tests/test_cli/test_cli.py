@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from tsujikiri.cli import build_parser, main
+from tsujikiri.cli import _is_directory_target, build_parser, main
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +129,28 @@ class TestBuildParser:
             ]
         )
         assert args.pretty == ["luabridge3", "pybind11"]
+
+
+# ---------------------------------------------------------------------------
+# _is_directory_target
+# ---------------------------------------------------------------------------
+
+
+class TestIsDirectoryTarget:
+    def test_trailing_slash_is_dir(self):
+        assert _is_directory_target("out/") is True
+
+    def test_nested_trailing_slash(self):
+        assert _is_directory_target("generated/cpp/") is True
+
+    def test_plain_file_is_not_dir(self):
+        assert _is_directory_target("out.cpp") is False
+
+    def test_stdout_is_not_dir(self):
+        assert _is_directory_target("-") is False
+
+    def test_file_in_subdir_is_not_dir(self):
+        assert _is_directory_target("generated/out.cpp") is False
 
 
 # ---------------------------------------------------------------------------
@@ -1265,3 +1287,187 @@ class TestPrettyFlag:
         with patch("tsujikiri.cli.pretty", return_value="// ok\n") as mock_fmt:
             _run("--input", str(yml), "--target", "luabridge3", "-", "--pretty")
         assert mock_fmt.call_args[0][2] == ["--style=Google"]
+
+
+# ---------------------------------------------------------------------------
+# Multi-output generation
+# ---------------------------------------------------------------------------
+
+
+class TestMultiOutputGeneration:
+    def test_two_files_created(self, multi_output_input_yml, tmp_path):
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+        _run("-i", str(multi_output_input_yml), "--target", "luabridge3", str(outdir) + "/")
+        assert (outdir / "foo_bindings.cpp").exists()
+        assert (outdir / "bar_bindings.cpp").exists()
+
+    def test_foo_bindings_contains_foo_not_bar(self, multi_output_input_yml, tmp_path):
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+        _run("-i", str(multi_output_input_yml), "--target", "luabridge3", str(outdir) + "/")
+        content = (outdir / "foo_bindings.cpp").read_text()
+        assert "Foo" in content
+        assert "Bar" not in content
+
+    def test_bar_bindings_contains_bar_not_foo(self, multi_output_input_yml, tmp_path):
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+        _run("-i", str(multi_output_input_yml), "--target", "luabridge3", str(outdir) + "/")
+        content = (outdir / "bar_bindings.cpp").read_text()
+        assert "Bar" in content
+        assert "Foo" not in content
+
+    def test_multiple_formats_produce_correct_extensions(self, multi_output_input_yml, tmp_path):
+        cpp_dir = tmp_path / "cpp"
+        lua_dir = tmp_path / "lua"
+        cpp_dir.mkdir()
+        lua_dir.mkdir()
+        _run(
+            "-i",
+            str(multi_output_input_yml),
+            "--target",
+            "luabridge3",
+            str(cpp_dir) + "/",
+            "--target",
+            "luals",
+            str(lua_dir) + "/",
+        )
+        assert (cpp_dir / "foo_bindings.cpp").exists()
+        assert (cpp_dir / "bar_bindings.cpp").exists()
+        assert (lua_dir / "foo_bindings.lua").exists()
+        assert (lua_dir / "bar_bindings.lua").exists()
+
+    def test_single_manifest_written(self, multi_output_input_yml, tmp_path):
+        outdir = tmp_path / "out"
+        manifest_path = tmp_path / "api.manifest.json"
+        outdir.mkdir()
+        _run(
+            "-i",
+            str(multi_output_input_yml),
+            "--target",
+            "luabridge3",
+            str(outdir) + "/",
+            "--manifest-file",
+            str(manifest_path),
+        )
+        assert manifest_path.exists()
+        manifest = json.loads(manifest_path.read_text())
+        class_names = {c["name"] for c in manifest["api"]["classes"]}
+        assert "Foo" in class_names
+        assert "Bar" in class_names
+
+    def test_error_dir_target_without_outputs(self, simple_input_yml, tmp_path):
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+        _, stderr = _run(
+            "-i",
+            str(simple_input_yml),
+            "--target",
+            "luabridge3",
+            str(outdir) + "/",
+            expected_exit=1,
+        )
+        assert "outputs:" in stderr
+        assert "directory output" in stderr
+
+    def test_error_outputs_without_dir_target(self, multi_output_input_yml, tmp_path):
+        _, stderr = _run(
+            "-i",
+            str(multi_output_input_yml),
+            "--target",
+            "luabridge3",
+            str(tmp_path / "out.cpp"),
+            expected_exit=1,
+        )
+        assert "outputs:" in stderr
+        assert "all targets" in stderr
+
+    def test_outdir_created_if_missing(self, multi_output_input_yml, tmp_path):
+        outdir = tmp_path / "nested" / "new_dir"
+        # Do not mkdir — the CLI must create it
+        _run("-i", str(multi_output_input_yml), "--target", "luabridge3", str(outdir) + "/")
+        assert (outdir / "foo_bindings.cpp").exists()
+
+    def test_fmt_generation_prefix_applied_per_group(self, tmp_path):
+        """format_overrides generation prefix is applied in multi-output mode (covers lines 493-496)."""
+        data = {
+            "outputs": [
+                {"name": "foo_bindings", "sources": [str(HERE_CLI / "multi_out_a.hpp")]},
+            ],
+            "filters": {
+                "namespaces": ["alpha"],
+                "constructors": {"include": False},
+            },
+            "format_overrides": {
+                "luabridge3": {
+                    "generation": {
+                        "prefix": "// MULTI PREFIX\n",
+                    },
+                },
+            },
+        }
+        p = tmp_path / "multi_fmt_gen.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+        _run("-i", str(p), "--target", "luabridge3", str(outdir) + "/")
+        content = (outdir / "foo_bindings.cpp").read_text()
+        assert "// MULTI PREFIX" in content
+
+    def test_error_mixed_targets_with_outputs(self, multi_output_input_yml, tmp_path):
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+        _, stderr = _run(
+            "-i",
+            str(multi_output_input_yml),
+            "--target",
+            "luabridge3",
+            str(outdir) + "/",
+            "--target",
+            "luals",
+            str(tmp_path / "out.lua"),
+            expected_exit=1,
+        )
+        assert "all targets" in stderr
+
+    def test_error_format_without_extension(self, multi_output_input_yml, tmp_path):
+        fmt_dir = tmp_path / "fmts"
+        fmt_dir.mkdir()
+        (fmt_dir / "noext.output.yml").write_text(
+            "format_name: noext\nlanguage: cpp\ntemplate: |\n  NOOP\n",
+            encoding="utf-8",
+        )
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+        _, stderr = _run(
+            "-i",
+            str(multi_output_input_yml),
+            "--formats-dir",
+            str(fmt_dir),
+            "--target",
+            "noext",
+            str(outdir) + "/",
+            expected_exit=1,
+        )
+        assert "extension" in stderr
+
+    def test_pretty_applied_per_group(self, tmp_path):
+        """Pretty printing runs for each group output (covers line 529)."""
+        data = {
+            "outputs": [
+                {"name": "foo_bindings", "sources": [str(HERE_CLI / "multi_out_a.hpp")]},
+            ],
+            "filters": {
+                "namespaces": ["alpha"],
+                "constructors": {"include": False},
+            },
+            "pretty": True,
+        }
+        p = tmp_path / "multi_pretty.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+        with patch("tsujikiri.cli.pretty", return_value="// pretty\n") as mock_fmt:
+            _run("-i", str(p), "--target", "luabridge3", str(outdir) + "/")
+        mock_fmt.assert_called_once()

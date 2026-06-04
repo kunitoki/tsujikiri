@@ -135,3 +135,21 @@ def fmt_generation_input_yml(tmp_path) -> Path:
     p = tmp_path / "fmt_gen.input.yml"
     p.write_text(yaml.dump(data), encoding="utf-8")
     return p
+
+
+@pytest.fixture
+def multi_output_input_yml(tmp_path) -> Path:
+    """Input YAML with two output groups, each pointing to a separate header."""
+    data = {
+        "outputs": [
+            {"name": "foo_bindings", "sources": [str(HERE / "multi_out_a.hpp")]},
+            {"name": "bar_bindings", "sources": [str(HERE / "multi_out_b.hpp")]},
+        ],
+        "filters": {
+            "namespaces": ["alpha"],
+            "constructors": {"include": False},
+        },
+    }
+    p = tmp_path / "multi_out.input.yml"
+    p.write_text(yaml.dump(data), encoding="utf-8")
+    return p

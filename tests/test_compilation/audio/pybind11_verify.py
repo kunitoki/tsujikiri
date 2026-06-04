@@ -6,6 +6,7 @@ Requires PYTHONPATH to contain the directory with the built audio extension modu
 Note: constructors taking const char* are avoided — we use default constructors
 and test only numeric/boolean API surface to sidestep const char* lifetime issues.
 """
+
 from __future__ import annotations
 
 import sys
