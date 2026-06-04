@@ -305,11 +305,8 @@ def _is_deprecated(cursor) -> bool:
 def _get_deprecation_message(cursor) -> Optional[str]:
     """Return the deprecation message if present, or None.
 
-    Scans tokens for [[deprecated("msg")]] or __attribute__((deprecated("msg"))) patterns.
+    Scans source text for [[deprecated("msg")]] or __attribute__((deprecated("msg"))) patterns.
     """
-    for tok in cursor.get_tokens():
-        if tok.spelling == "deprecated":
-            pass  # found the keyword; scan surrounding tokens
     # Scan source text for deprecated("msg") pattern
     if cursor.location.file is None:
         return None
