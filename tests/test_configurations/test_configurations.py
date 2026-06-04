@@ -782,6 +782,79 @@ class TestConfigLoads:
         assert cfg.custom_data["abs"] is True
 
 
+class TestBasepath:
+    def test_absent_basepath_single_source_resolves_relative_to_config_dir(self, tmp_path: Path) -> None:
+        yml = tmp_path / "my.input.yml"
+        yml.write_text("source:\n  path: myfile.hpp\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.source is not None
+        assert cfg.source.path == str(tmp_path / "myfile.hpp")
+
+    def test_relative_basepath_prepended_to_relative_path(self, tmp_path: Path) -> None:
+        subdir = tmp_path / "src"
+        subdir.mkdir()
+        yml = tmp_path / "my.input.yml"
+        yml.write_text("basepath: src\nsource:\n  path: myfile.hpp\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.source is not None
+        assert cfg.source.path == str(subdir / "myfile.hpp")
+
+    def test_absolute_basepath_prepended_to_relative_path(self, tmp_path: Path) -> None:
+        basedir = tmp_path / "abs_base"
+        basedir.mkdir()
+        yml = tmp_path / "my.input.yml"
+        yml.write_text(f"basepath: {basedir}\nsource:\n  path: myfile.hpp\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.source is not None
+        assert cfg.source.path == str(basedir / "myfile.hpp")
+
+    def test_basepath_ignored_for_absolute_source_path(self, tmp_path: Path) -> None:
+        absolute_path = str(tmp_path / "absolute.hpp")
+        yml = tmp_path / "my.input.yml"
+        yml.write_text(f"basepath: src\nsource:\n  path: '{absolute_path}'\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.source is not None
+        assert cfg.source.path == absolute_path
+
+    def test_basepath_with_dotdot_traversal(self, tmp_path: Path) -> None:
+        subdir = tmp_path / "configs"
+        subdir.mkdir()
+        yml = subdir / "my.input.yml"
+        yml.write_text("basepath: ..\nsource:\n  path: myfile.hpp\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.source is not None
+        assert cfg.source.path == str(tmp_path / "myfile.hpp")
+
+    def test_basepath_applies_to_all_sources_in_list(self, tmp_path: Path) -> None:
+        subdir = tmp_path / "include"
+        subdir.mkdir()
+        yml = tmp_path / "my.input.yml"
+        yml.write_text(
+            "basepath: include\nsources:\n  - path: first.hpp\n  - path: second.hpp\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert len(cfg.sources) == 2
+        assert cfg.sources[0].source.path == str(subdir / "first.hpp")
+        assert cfg.sources[1].source.path == str(subdir / "second.hpp")
+
+    def test_null_basepath_treated_as_absent(self, tmp_path: Path) -> None:
+        yml = tmp_path / "my.input.yml"
+        yml.write_text("basepath:\nsource:\n  path: myfile.hpp\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.source is not None
+        assert cfg.source.path == str(tmp_path / "myfile.hpp")
+
+    def test_basepath_with_nested_relative_path(self, tmp_path: Path) -> None:
+        subdir = tmp_path / "src" / "core"
+        subdir.mkdir(parents=True)
+        yml = tmp_path / "my.input.yml"
+        yml.write_text("basepath: src/core\nsource:\n  path: engine.hpp\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.source is not None
+        assert cfg.source.path == str(subdir / "engine.hpp")
+
+
 class TestOutputGroupsLoading:
     @pytest.fixture(scope="class")
     def cfg(self):

@@ -11,6 +11,7 @@ An **input file** (conventionally named `*.input.yml`) is the primary configurat
 | Key | Type | Required | Default | Purpose |
 |-----|------|----------|---------|---------|
 | `loads` | list of strings | no | `[]` | Other input config files to merge in as defaults (resolved relative to this file) |
+| `basepath` | string | no | `""` | Base directory prepended to every relative `source`/`sources` path; resolved relative to this file |
 | `source` | mapping | one of `source`/`sources` | — | Single C++ source to parse |
 | `sources` | list | one of `source`/`sources` | — | Multiple C++ sources to parse |
 | `outputs` | list | no | — | Named output groups; produces one file per group per target format |
@@ -90,6 +91,30 @@ generation:
 ```
 
 The resulting config has the class blacklist and `add_type_mapping` transform from `filters.input.yml`, with both sources and `embed_version: true` from `game_engine.input.yml`. Transforms from the loaded file appear before any transforms declared in `game_engine.input.yml`.
+
+---
+
+## `basepath` — Source Base Directory
+
+`basepath` is a shorthand for the common directory prefix shared by all your source files.  When set, it is prepended to every relative `path` value under `source` and `sources`.  Absolute `path` values are left unchanged.
+
+```yaml
+basepath: "../../engine/include"   # relative to this input.yml
+
+sources:
+  - path: "physics.hpp"            # resolves to ../../engine/include/physics.hpp
+  - path: "audio.hpp"              # resolves to ../../engine/include/audio.hpp
+```
+
+Without `basepath` you would have to repeat the long relative prefix on each entry:
+
+```yaml
+sources:
+  - path: "../../engine/include/physics.hpp"
+  - path: "../../engine/include/audio.hpp"
+```
+
+`basepath` itself is resolved relative to the input file's directory when it is a relative path, so the two examples above are equivalent.  An absolute `basepath` is used as-is.
 
 ---
 
