@@ -151,6 +151,25 @@ class OutputGroupEntry:
     sources: List[str]  # raw path strings from YAML; resolved via InputConfig.resolve_group_sources()
 
 
+def _path_parts_for_lookup(path: str) -> tuple[str, ...]:
+    path_obj = Path(path)
+    if path_obj.is_absolute():
+        return path_obj.resolve().parts
+    return path_obj.parts
+
+
+def _source_path_matches(source_path: str, requested_path: str) -> bool:
+    requested_parts = _path_parts_for_lookup(requested_path)
+    if not requested_parts:
+        return False
+
+    source_parts = _path_parts_for_lookup(source_path)
+    if Path(requested_path).is_absolute():
+        return source_parts == requested_parts
+
+    return len(requested_parts) <= len(source_parts) and source_parts[-len(requested_parts) :] == requested_parts
+
+
 @dataclass
 class FormatOverrideConfig:
     """Per-format configuration overrides.
@@ -224,19 +243,25 @@ class InputConfig:
     def resolve_group_sources(self, group: "OutputGroupEntry") -> List[SourceEntry]:
         """Resolve a group's path strings to SourceEntry objects using self.sources as lookup.
 
-        Matching is first by absolute path, then by basename. Unmatched paths
-        produce a bare SourceEntry (path only, no extra clang flags).
+        Absolute paths match exactly. Relative paths match any unique source
+        path suffix, so ``source.h``, ``to/source.h``, and
+        ``path/to/source.h`` can all refer to ``../../path/to/source.h``.
+        Unmatched paths produce a bare SourceEntry (path only, no extra clang
+        flags). Ambiguous matches are rejected.
         """
-        by_path: Dict[str, SourceEntry] = {}
-        for entry in self.sources:
-            by_path[entry.source.path] = entry
-            basename = Path(entry.source.path).name
-            if basename not in by_path:
-                by_path[basename] = entry
-        return [
-            by_path.get(p) or by_path.get(Path(p).name) or SourceEntry(source=SourceConfig(path=p))
-            for p in group.sources
-        ]
+        return [self._resolve_group_source(group, source_path) for source_path in group.sources]
+
+    def _resolve_group_source(self, group: "OutputGroupEntry", source_path: str) -> SourceEntry:
+        matches = [entry for entry in self.sources if _source_path_matches(entry.source.path, source_path)]
+        if not matches:
+            return SourceEntry(source=SourceConfig(path=source_path))
+        if len(matches) == 1:
+            return matches[0]
+
+        candidates = ", ".join(entry.source.path for entry in matches)
+        raise ValueError(
+            f"Ambiguous source reference '{source_path}' in output group '{group.name}'; matches: {candidates}"
+        )
 
     def get_source_entries(self) -> List[SourceEntry]:
         """Return all source entries, normalising a bare ``source:`` key into the list."""

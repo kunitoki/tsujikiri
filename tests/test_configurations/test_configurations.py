@@ -11,6 +11,7 @@ from tsujikiri.configurations import (
     FormatOverrideConfig,
     InputConfig,
     OutputConfig,
+    OutputGroupEntry,
     SourceConfig,
     SourceEntry,
     load_input_config,
@@ -914,8 +915,56 @@ class TestOutputGroupsLoading:
         resolved = cfg.resolve_group_sources(cfg.output_groups[0])
         assert resolved[0].source.path == str(tmp_path / "standalone.hpp")
 
-    def test_basename_collision_first_entry_wins(self, tmp_path):
-        # Two sources with the same basename: the first one wins in the basename slot.
+    def test_relative_output_source_matches_source_path_suffix(self, tmp_path):
+        import yaml
+
+        config_dir = tmp_path / "configs" / "nested"
+        config_dir.mkdir(parents=True)
+        data = {
+            "sources": [
+                {
+                    "path": "../../path/to/source.h",
+                    "parse_args": ["-std=c++20"],
+                }
+            ],
+            "outputs": [
+                {"name": "by_file", "sources": ["source.h"]},
+                {"name": "by_parent", "sources": ["to/source.h"]},
+                {"name": "by_path", "sources": ["path/to/source.h"]},
+            ],
+        }
+        p = config_dir / "suffix.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        cfg = load_input_config(p)
+
+        for group in cfg.output_groups:
+            resolved = cfg.resolve_group_sources(group)
+            assert resolved == cfg.sources
+            assert "-std=c++20" in resolved[0].source.parse_args
+
+    def test_absolute_output_source_matches_exact_source_path(self, tmp_path):
+        source = tmp_path / "include" / "api.hpp"
+        entry = SourceEntry(source=SourceConfig(path=str(source), parse_args=["-std=c++20"]))
+        cfg = InputConfig(sources=[entry])
+        group = OutputGroupEntry(name="absolute", sources=[str(source)])
+
+        resolved = cfg.resolve_group_sources(group)
+
+        assert resolved == [entry]
+
+    def test_empty_output_source_falls_back_to_bare_entry(self):
+        entry = SourceEntry(source=SourceConfig(path="api.hpp"))
+        cfg = InputConfig(sources=[entry])
+        group = OutputGroupEntry(name="empty", sources=[""])
+
+        resolved = cfg.resolve_group_sources(group)
+
+        assert len(resolved) == 1
+        assert resolved[0].source.path == ""
+        assert resolved[0] is not entry
+
+    def test_relative_output_source_disambiguates_same_basename(self, tmp_path):
         import yaml
 
         data = {
@@ -931,12 +980,29 @@ class TestOutputGroupsLoading:
         p = tmp_path / "collision.input.yml"
         p.write_text(yaml.dump(data), encoding="utf-8")
         cfg = load_input_config(p)
-        # basename "utils.hpp" → first entry (a/utils.hpp) wins the slot
+
         resolved_a = cfg.resolve_group_sources(cfg.output_groups[0])
         resolved_b = cfg.resolve_group_sources(cfg.output_groups[1])
-        # group_a matched by full path (a/utils.hpp resolved); group_b falls back to basename slot
-        assert resolved_a[0].source.path.endswith("a/utils.hpp") or resolved_a[0].source.path.endswith("utils.hpp")
-        assert len(resolved_b) == 1
+
+        assert resolved_a[0].source.path.endswith("a/utils.hpp")
+        assert resolved_b[0].source.path.endswith("b/utils.hpp")
+
+    def test_ambiguous_output_source_raises(self, tmp_path):
+        import yaml
+
+        data = {
+            "sources": [
+                {"path": "a/utils.hpp"},
+                {"path": "b/utils.hpp"},
+            ],
+            "outputs": [{"name": "ambiguous", "sources": ["utils.hpp"]}],
+        }
+        p = tmp_path / "ambiguous.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+        cfg = load_input_config(p)
+
+        with pytest.raises(ValueError, match="Ambiguous source reference 'utils.hpp'"):
+            cfg.resolve_group_sources(cfg.output_groups[0])
 
     def test_get_source_entries_deduplicates_shared_source(self, tmp_path):
         # Same source in two groups → get_source_entries() returns it only once.

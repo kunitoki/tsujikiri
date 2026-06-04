@@ -1031,6 +1031,20 @@ class TestValidateConfig:
         _, stderr = _run("--input", str(p), "--validate-config", expected_exit=1)
         assert "ERROR" in stderr
 
+    def test_ambiguous_output_source_exits_1(self, tmp_path):
+        data = {
+            "sources": [
+                {"path": "a/utils.hpp"},
+                {"path": "b/utils.hpp"},
+            ],
+            "outputs": [{"name": "ambiguous", "sources": ["utils.hpp"]}],
+        }
+        p = tmp_path / "ambiguous.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--validate-config", expected_exit=1)
+        assert "Ambiguous source reference 'utils.hpp'" in stderr
+
     def test_source_entry_with_transforms_validated(self, tmp_path):
         hpp = tmp_path / "api.hpp"
         hpp.write_text("namespace api { int x(); }\n")
@@ -1122,6 +1136,23 @@ class TestValidateConfig:
 
         _, stderr = _run("--input", str(p), "--validate-config")
         assert "valid" in stderr.lower()
+
+
+class TestSourceResolutionErrors:
+    def test_ambiguous_output_source_exits_1_before_generation(self, tmp_path):
+        data = {
+            "sources": [
+                {"path": "a/utils.hpp"},
+                {"path": "b/utils.hpp"},
+            ],
+            "outputs": [{"name": "ambiguous", "sources": ["utils.hpp"]}],
+        }
+        p = tmp_path / "ambiguous.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--target", "luabridge3", "-", expected_exit=1)
+
+        assert "tsujikiri: error: Ambiguous source reference 'utils.hpp'" in stderr
 
 
 # ---------------------------------------------------------------------------

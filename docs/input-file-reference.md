@@ -216,11 +216,11 @@ Each group entry has two fields:
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `name` | string | yes | Output filename stem — written as `{name}{ext}` where `ext` comes from the format's `extension:` field |
-| `sources` | list of strings | yes | Filenames or absolute paths referencing source files; matched against the top-level `sources:` by basename or full path. If no match is found, a source entry with the given path and no extra flags is used |
+| `sources` | list of strings | yes | Filenames, relative path suffixes, or absolute paths referencing source files; matched against the top-level `sources:` by exact absolute path or unique suffix. Ambiguous matches are errors. If no match is found, a source entry with the given path and no extra flags is used |
 
 ### Matching sources to groups
 
-When both a top-level `sources:` list and `outputs:` are present, each path in a group's `sources:` list is resolved relative to the input YAML directory and then looked up in the global sources table. The match inherits the full `SourceEntry` configuration (including `parse_args`, `include_paths`, `defines`, per-source `filters`, and `transforms`).
+When both a top-level `sources:` list and `outputs:` are present, each path in a group's `sources:` list is looked up in the global sources table. Absolute paths match exactly. Relative paths match unique trailing path suffixes, so `source.h`, `to/source.h`, and `path/to/source.h` can all resolve to a configured source such as `../../path/to/source.h`. The match inherits the full `SourceEntry` configuration (including `parse_args`, `include_paths`, `defines`, per-source `filters`, and `transforms`). If a relative path matches more than one configured source, tsujikiri reports an ambiguity error.
 
 If no matching global source entry is found, a bare source entry (path only) is created for that path. This lets you use `outputs:` without a top-level `sources:` key when you only need simple path-based groups with no extra clang flags.
 

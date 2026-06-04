@@ -215,7 +215,12 @@ def _validate_config_action(args: argparse.Namespace, extra_dirs: List[Path]) ->
 
     # Validate transform stage names across all sources
     all_transform_specs = list(input_config.transforms)
-    for entry in input_config.get_source_entries():
+    try:
+        source_entries = input_config.get_source_entries()
+    except ValueError as exc:
+        errors.append(str(exc))
+        source_entries = []
+    for entry in source_entries:
         if entry.transforms:
             all_transform_specs.extend(entry.transforms)
     for override in input_config.format_overrides.values():
@@ -337,7 +342,11 @@ def main() -> None:
 
     module_name = input_path.stem.replace(".input", "")
 
-    source_entries = input_config.get_source_entries()
+    try:
+        source_entries = input_config.get_source_entries()
+    except ValueError as exc:
+        print(f"tsujikiri: error: {exc}", file=sys.stderr)
+        sys.exit(1)
     if not source_entries:
         print(
             "tsujikiri: error: no source defined (add 'source:', 'sources:', or 'outputs:' to input YAML)",
