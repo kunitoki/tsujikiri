@@ -372,10 +372,20 @@ def _parse_optional_overrides(
     return filters, transforms, generation
 
 
-def _parse_source_entry(entry_raw: Dict[str, Any], config_dir: Path) -> SourceEntry:
-    src_path = entry_raw.get("path", "")
-    if src_path and not Path(src_path).is_absolute():
-        src_path = str((config_dir / src_path).resolve())
+def _resolve_source_path(src_path: str, config_dir: Path, basepath: str) -> str:
+    """Resolve a source path to absolute, honouring an optional basepath prefix."""
+    if not src_path or Path(src_path).is_absolute():
+        return src_path
+    if basepath:
+        base = Path(basepath)
+        if not base.is_absolute():
+            base = (config_dir / base).resolve()
+        return str((base / src_path).resolve())
+    return str((config_dir / src_path).resolve())
+
+
+def _parse_source_entry(entry_raw: Dict[str, Any], config_dir: Path, basepath: str = "") -> SourceEntry:
+    src_path = _resolve_source_path(entry_raw.get("path", ""), config_dir, basepath)
 
     source = SourceConfig(
         path=src_path,
@@ -444,16 +454,14 @@ def load_input_config(config_file: Path) -> InputConfig:
     data = _load_raw_with_loads(config_file)
 
     config_dir = config_file.parent
+    basepath: str = data.get("basepath", "") or ""
 
     # --- Single source (backward compat) ---
     source: Optional[SourceConfig] = None
     if "source" in data:
         src = data["source"]
-        src_path = src.get("path", "")
-        if src_path and not Path(src_path).is_absolute():
-            src_path = str((config_dir / src_path).resolve())
         source = SourceConfig(
-            path=src_path,
+            path=_resolve_source_path(src.get("path", ""), config_dir, basepath),
             parse_args=src.get("parse_args", []),
             include_paths=src.get("include_paths", []),
             system_include_paths=src.get("system_include_paths", []),
@@ -461,7 +469,9 @@ def load_input_config(config_file: Path) -> InputConfig:
         )
 
     # --- Multiple sources ---
-    sources: List[SourceEntry] = [_parse_source_entry(entry_raw, config_dir) for entry_raw in data.get("sources", [])]
+    sources: List[SourceEntry] = [
+        _parse_source_entry(entry_raw, config_dir, basepath) for entry_raw in data.get("sources", [])
+    ]
 
     output_groups: List[OutputGroupEntry] = [
         OutputGroupEntry(name=group_raw.get("name", ""), sources=group_raw.get("sources", []))
