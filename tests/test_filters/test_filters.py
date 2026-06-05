@@ -552,7 +552,9 @@ class TestBaseFilter:
         base = TIRBase("ns::IService", "public")
         cls = TIRClass(name="EventService", qualified_name="ns::EventService", namespace="ns", bases=[base])  # type: ignore[arg-type]
         mod = TIRModule(name="m", classes=[cls], class_by_name={"EventService": cls})  # type: ignore[arg-type, list-item]
-        cfg = FilterConfig(classes=ClassFilter(whitelist=[FilterPattern("EventService")], internal=[FilterPattern("IService")]))
+        cfg = FilterConfig(
+            classes=ClassFilter(whitelist=[FilterPattern("EventService")], internal=[FilterPattern("IService")])
+        )
         FilterEngine(cfg).apply(mod)
         assert cls.emit is True
         assert base.emit is False
