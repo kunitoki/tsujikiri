@@ -101,15 +101,19 @@ class FilterEngine:
             self._filter_class(inner)
 
     def _filter_bases(self, ir_class: TIRClass) -> None:
-        """Mark bases emit=False when they are outside the configured namespace filter."""
-        if not self.cfg.namespaces:
-            return
+        """Mark bases emit=False when they are internal or outside the configured namespace filter."""
         for base in ir_class.bases:
             if not base.emit:
                 continue
             qname = base.qualified_name
-            if not any(qname == ns or qname.startswith(ns + "::") for ns in self.cfg.namespaces):
+            # Suppress bases that match the internal class filter (unqualified or fully qualified)
+            unqualified = qname.split("::")[-1]
+            if _matches(unqualified, self.cfg.classes.internal) or _matches(qname, self.cfg.classes.internal):
                 base.emit = False
+                continue
+            if self.cfg.namespaces:
+                if not any(qname == ns or qname.startswith(ns + "::") for ns in self.cfg.namespaces):
+                    base.emit = False
 
     def _filter_methods(self, ir_class: TIRClass) -> None:
         per_class = self.cfg.methods.per_class.get(ir_class.name)
