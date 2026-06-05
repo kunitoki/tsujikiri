@@ -223,7 +223,7 @@ def _validate_config_action(args: argparse.Namespace, extra_dirs: List[Path]) ->
     for entry in source_entries:
         if entry.transforms:
             all_transform_specs.extend(entry.transforms)
-    for override in input_config.format_overrides.values():
+    for override in input_config.all_format_overrides():
         if override.transforms:
             all_transform_specs.extend(override.transforms)
 
@@ -253,9 +253,10 @@ def _process_sources(
     module_name: str,
     trace_stream: Optional[IO],
     verbose: bool = False,
+    output_name: Optional[str] = None,
 ) -> tuple[TIRModule, list[str]]:
     """Run parse → upgrade → filter → attribute → transform for all sources, return merged module and includes."""
-    fmt_override = input_config.format_overrides.get(output_config.format_name)
+    fmt_override = input_config.format_override_for(output_config.format_name, output_name)
     fmt_filters = fmt_override.filters if fmt_override else None
     fmt_transforms = fmt_override.transforms if fmt_override else None
     fmt_transforms_list: List = list(fmt_transforms) if fmt_transforms else []
@@ -379,14 +380,30 @@ def main() -> None:
     first_fmt_path = resolve_format_path(first_fmt, extra_dirs=extra_dirs)
     first_output_config = apply_format_inheritance(load_output_config(first_fmt_path), extra_dirs=extra_dirs)
 
-    merged, all_includes = _process_sources(
-        input_config,
-        source_entries,
-        first_output_config,
-        module_name,
-        trace_stream,
-        verbose=args.verbose,
-    )
+    if has_output_groups:
+        manifest_modules: List[TIRModule] = []
+        all_includes: list[str] = []
+        for group in input_config.output_groups:
+            group_merged, _ = _process_sources(
+                input_config,
+                input_config.resolve_group_sources(group),
+                first_output_config,
+                module_name,
+                trace_stream,
+                verbose=args.verbose,
+                output_name=group.name,
+            )
+            manifest_modules.append(group_merged)
+        merged = merge_tir_modules(manifest_modules)
+    else:
+        merged, all_includes = _process_sources(
+            input_config,
+            source_entries,
+            first_output_config,
+            module_name,
+            trace_stream,
+            verbose=args.verbose,
+        )
 
     # --- Inject declared functions from typesystem ---
     for fn_decl in input_config.typesystem.declared_functions:
@@ -463,17 +480,6 @@ def main() -> None:
             fmt_path = resolve_format_path(fmt, extra_dirs=extra_dirs)
             output_config = apply_format_inheritance(load_output_config(fmt_path), extra_dirs=extra_dirs)
 
-        fmt_override = input_config.format_overrides.get(output_config.format_name)
-        template_extends = fmt_override.template_extends if fmt_override else ""
-        extra_unsupported = fmt_override.unsupported_types if fmt_override else []
-        fmt_generation = fmt_override.generation if fmt_override else None
-
-        effective_typesystem = (
-            merge_typesystems(fmt_override.typesystem, input_config.typesystem)
-            if fmt_override and fmt_override.typesystem
-            else input_config.typesystem
-        )
-
         if has_output_groups:
             outdir = Path(outfile)
             outdir.mkdir(parents=True, exist_ok=True)
@@ -484,9 +490,24 @@ def main() -> None:
                 )
                 sys.exit(1)
             ext = output_config.extension
-            do_pretty, pretty_opts = _resolve_pretty(output_config.format_name, fmt_override, input_config, args.pretty)
 
             for group in input_config.output_groups:
+                fmt_override = input_config.format_override_for(output_config.format_name, group.name)
+                template_extends = fmt_override.template_extends if fmt_override else ""
+                extra_unsupported = fmt_override.unsupported_types if fmt_override else []
+                fmt_generation = fmt_override.generation if fmt_override else None
+                effective_typesystem = (
+                    merge_typesystems(fmt_override.typesystem, input_config.typesystem)
+                    if fmt_override and fmt_override.typesystem
+                    else input_config.typesystem
+                )
+                do_pretty, pretty_opts = _resolve_pretty(
+                    output_config.format_name,
+                    fmt_override,
+                    input_config,
+                    args.pretty,
+                )
+
                 group_merged, group_includes = _process_sources(
                     input_config,
                     input_config.resolve_group_sources(group),
@@ -494,6 +515,7 @@ def main() -> None:
                     module_name,
                     trace_stream,
                     verbose=args.verbose,
+                    output_name=group.name,
                 )
 
                 if fmt_generation:
@@ -538,6 +560,16 @@ def main() -> None:
 
         else:
             # Single-output mode (unchanged behaviour)
+            fmt_override = input_config.format_override_for(output_config.format_name)
+            template_extends = fmt_override.template_extends if fmt_override else ""
+            extra_unsupported = fmt_override.unsupported_types if fmt_override else []
+            fmt_generation = fmt_override.generation if fmt_override else None
+            effective_typesystem = (
+                merge_typesystems(fmt_override.typesystem, input_config.typesystem)
+                if fmt_override and fmt_override.typesystem
+                else input_config.typesystem
+            )
+
             if target_idx == 0:
                 target_merged = merged
                 target_includes = all_includes

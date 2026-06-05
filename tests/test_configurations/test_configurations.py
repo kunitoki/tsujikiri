@@ -286,6 +286,196 @@ class TestMultiSourceLoading:
         assert override.pretty_options == ["--style=LLVM"]
 
 
+class TestOutputScopedFormatOverrides:
+    def test_output_scoped_format_override_parsed(self, tmp_path):
+        yml = tmp_path / "output_scoped.input.yml"
+        yml.write_text(
+            """
+outputs:
+  - name: foo_bindings
+    sources: ["foo.hpp"]
+  - name: bar_bindings
+    sources: ["bar.hpp"]
+format_overrides:
+  - output: foo_bindings
+    luabridge3:
+      generation:
+        prefix: "// foo\\n"
+      pretty: true
+""",
+            encoding="utf-8",
+        )
+
+        cfg = load_input_config(yml)
+
+        assert cfg.format_overrides == {}
+        scoped = cfg.output_format_overrides["foo_bindings"]["luabridge3"]
+        assert scoped.generation is not None
+        assert scoped.generation.prefix == "// foo\n"
+        assert scoped.pretty is True
+        assert cfg.all_format_overrides() == [scoped]
+        assert cfg.format_override_for("luabridge3", "foo_bindings") is scoped
+        assert cfg.format_override_for("luabridge3", "bar_bindings") is None
+
+    def test_output_scoped_format_override_merges_global_override(self, tmp_path):
+        yml = tmp_path / "output_scoped_merge.input.yml"
+        yml.write_text(
+            """
+outputs:
+  - name: foo_bindings
+    sources: ["foo.hpp"]
+  - name: bar_bindings
+    sources: ["bar.hpp"]
+format_overrides:
+  - luabridge3:
+      unsupported_types:
+        - GlobalOpaque
+      generation:
+        includes: ['"global.hpp"']
+        prefix: "// global\\n"
+      pretty_options:
+        - "--style=LLVM"
+  - output: foo_bindings
+    luabridge3:
+      unsupported_types:
+        - FooOpaque
+      generation:
+        includes: ['"foo.hpp"']
+        prefix: "// foo\\n"
+""",
+            encoding="utf-8",
+        )
+
+        cfg = load_input_config(yml)
+
+        global_override = cfg.format_override_for("luabridge3", "bar_bindings")
+        assert global_override is not None
+        assert cfg.format_override_for("luabridge3") is global_override
+        assert global_override.unsupported_types == ["GlobalOpaque"]
+        assert global_override.generation is not None
+        assert global_override.generation.prefix == "// global\n"
+
+        scoped = cfg.format_override_for("luabridge3", "foo_bindings")
+        assert scoped is not None
+        assert scoped.unsupported_types == ["GlobalOpaque", "FooOpaque"]
+        assert scoped.generation is not None
+        assert scoped.generation.includes == ['"global.hpp"', '"foo.hpp"']
+        assert scoped.generation.prefix == "// foo\n"
+        assert scoped.pretty_options == ["--style=LLVM"]
+
+    def test_output_scoped_format_override_unknown_output_rejected(self, tmp_path):
+        yml = tmp_path / "output_scoped_unknown.input.yml"
+        yml.write_text(
+            """
+outputs:
+  - name: foo_bindings
+    sources: ["foo.hpp"]
+format_overrides:
+  - output: missing_bindings
+    luabridge3:
+      pretty: true
+""",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="unknown output group"):
+            load_input_config(yml)
+
+    def test_null_format_override_parsed_as_empty_mapping(self, tmp_path):
+        yml = tmp_path / "null_override.input.yml"
+        yml.write_text(
+            """
+source:
+  path: "dummy.hpp"
+format_overrides:
+  luabridge3:
+""",
+            encoding="utf-8",
+        )
+
+        cfg = load_input_config(yml)
+
+        assert cfg.format_overrides["luabridge3"] == FormatOverrideConfig()
+
+    def test_non_mapping_format_override_rejected(self, tmp_path):
+        yml = tmp_path / "bad_override.input.yml"
+        yml.write_text(
+            """
+source:
+  path: "dummy.hpp"
+format_overrides:
+  luabridge3: bad
+""",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="format_overrides.luabridge3 must be a mapping"):
+            load_input_config(yml)
+
+    def test_non_mapping_format_overrides_list_entry_rejected(self, tmp_path):
+        yml = tmp_path / "bad_override_list_entry.input.yml"
+        yml.write_text(
+            """
+source:
+  path: "dummy.hpp"
+format_overrides:
+  - bad
+""",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="format_overrides list entries must be mappings"):
+            load_input_config(yml)
+
+    def test_non_string_output_scoped_format_override_rejected(self, tmp_path):
+        yml = tmp_path / "bad_override_output.input.yml"
+        yml.write_text(
+            """
+outputs:
+  - name: foo_bindings
+    sources: ["foo.hpp"]
+format_overrides:
+  - output: 123
+    luabridge3:
+      pretty: true
+""",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="format_overrides output values must be strings"):
+            load_input_config(yml)
+
+    def test_scalar_format_overrides_rejected(self, tmp_path):
+        yml = tmp_path / "bad_overrides_scalar.input.yml"
+        yml.write_text(
+            """
+source:
+  path: "dummy.hpp"
+format_overrides: bad
+""",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="format_overrides must be a mapping or a list of mappings"):
+            load_input_config(yml)
+
+    def test_null_format_overrides_parsed_as_empty_mapping(self, tmp_path):
+        yml = tmp_path / "null_overrides.input.yml"
+        yml.write_text(
+            """
+source:
+  path: "dummy.hpp"
+format_overrides:
+""",
+            encoding="utf-8",
+        )
+
+        cfg = load_input_config(yml)
+
+        assert cfg.format_overrides == {}
+        assert cfg.output_format_overrides == {}
+
+
 class TestPrettyFields:
     def test_pretty_defaults_to_false(self, tmp_path):
         yml = tmp_path / "noformat.input.yml"

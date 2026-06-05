@@ -20,7 +20,7 @@ An **input file** (conventionally named `*.input.yml`) is the primary configurat
 | `generation` | mapping | no | (empty) | Output generation settings |
 | `attributes` | mapping | no | (built-ins only) | Custom C++ attribute handlers |
 | `tweaks` | mapping | no | `{}` | Legacy per-class overrides |
-| `format_overrides` | mapping | no | `{}` | Per-format filter/transform/generation overrides |
+| `format_overrides` | mapping or list | no | `{}` | Per-format filter/transform/generation overrides |
 | `pretty` | bool | no | `false` | Run the language-appropriate pretty printer on generated output |
 | `pretty_options` | list of strings | no | `[]` | Extra arguments forwarded to the pretty printer CLI |
 | `typesystem` | mapping | no | (empty) | Type system declarations: primitive types, typedefs, custom types, containers, smart pointers, conversion rules, and declared functions |
@@ -48,9 +48,10 @@ Loaded files are processed first and provide **defaults**. The current file's va
 |------------|-----------|
 | Scalar (`pretty`, `pretty_options`, `prefix`, …) | Current file wins on conflict; loaded value used when key is absent |
 | List (`sources`, `transforms`, `generation.includes`, …) | Loaded entries come first, then current file's entries |
-| Mapping (`filters`, `custom_data`, `format_overrides`, …) | Deep-merged; current file wins on scalar-leaf conflicts |
+| Mapping (`filters`, `custom_data`, …) | Deep-merged; current file wins on scalar-leaf conflicts |
 
 When multiple paths are listed under `loads`, they are merged in order — earlier entries are treated as deeper defaults, later entries extend them.
+For `format_overrides`, mapping form follows mapping semantics and list form follows list semantics; output-scoped entries are merged over matching global entries after loading.
 
 ### Cycle detection
 
@@ -376,7 +377,7 @@ tweaks:
 
 ## `format_overrides` — Per-Format Customisation
 
-The `format_overrides` section customises behaviour for specific output formats. The key is the format name (e.g. `luabridge3`, `luals`, `pybind11`, `pyi`).
+The `format_overrides` section customises behaviour for specific output formats. In the mapping form, the key is the format name (e.g. `luabridge3`, `luals`, `pybind11`, `pyi`) and the override applies to every output.
 
 ```yaml
 format_overrides:
@@ -414,6 +415,28 @@ format_overrides:
       includes: []
     typesystem_file: luals_types.input.yml   # load typesystem from an external file
     pretty: false  # disable even if top-level pretty: true
+```
+
+When `outputs:` groups are used, list entries can scope overrides to one output group with `output`. Entries without `output` are global; output-scoped entries are deep-merged on top of the matching global format override. Nested mappings merge, lists append, and scalar values from the output-scoped entry win.
+
+```yaml
+outputs:
+  - name: gameplay_bindings
+    sources: ["gameplay.hpp"]
+  - name: editor_bindings
+    sources: ["editor.hpp"]
+
+format_overrides:
+  - luabridge3:
+      generation:
+        includes: ['"lua_common.hpp"']
+        prefix: "// Lua bindings\n"
+
+  - output: gameplay_bindings
+    luabridge3:
+      generation:
+        includes: ['"gameplay_lua.hpp"']  # appended after lua_common.hpp
+        prefix: "// Gameplay Lua bindings\n"  # replaces the global prefix
 ```
 
 | Field | Type | Default | Override Behaviour |
