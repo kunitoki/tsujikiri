@@ -8,21 +8,19 @@ tsujikiri can track the binding surface (API) of your C++ headers over time usin
 
 ## What the Manifest Captures
 
-The manifest is computed from the **filtered and transformed IR**, after all `emit=False` nodes have been removed. It records the **binding-visible** surface — names after any renames, types before format-level remapping:
+The manifest is computed from the **filtered and transformed IR**, after `emit=False` nodes have been removed. It records the **binding-visible** surface — names after renames and types after transform overrides, but before format-level remapping:
 
-- **Classes**: their binding name, all emitted constructor signatures, all emitted methods (name, parameters, return type, is_static), all emitted fields (name, type, is_const), and nested enums
+- **Classes**: their binding name, all emitted constructor signatures, all emitted methods (name, parameters, return type, is_static), all emitted fields (name, type, is_const/read_only), injected properties, and nested enums
 - **Free functions**: name, parameter types, return type
 - **Top-level enums**: name and all value names with their integer values
+- **Transform metadata**: code injections, wrapper code, ownership/keep-alive/thread hints, exception policy, type hints, injected properties, API gates, and other transform-controlled binding metadata
 
 The manifest does **not** capture:
 - Suppressed nodes (`emit=False`)
 - Template-level type remapping (from `type_mappings` in `.output.yml`)
-- Code injections
 - Comments or generation settings
 
-### Deterministic UID
-
-The `uid` field is a SHA-256 hash of the `api` section serialised with sorted keys. The same C++ surface always produces the same uid, regardless of file ordering or timestamp.
+Any difference in transform metadata is classified as breaking, so changes to injected code or transform-controlled binding behavior suggest a major version bump.
 
 ---
 
@@ -79,6 +77,11 @@ The `uid` field is a SHA-256 hash of the `api` section serialised with sorted ke
         ]
       }
     ]
+  },
+  "transformations": {
+    "code_injections": [
+      { "position": "beginning", "code": "// generated prologue" }
+    ]
   }
 }
 ```
@@ -101,8 +104,7 @@ tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp \
 
 When `-m FILE` is passed:
 - If `FILE` does **not** exist: generate bindings normally, then save the manifest.
-- If `FILE` **does** exist and the uid differs: compare the two manifests, print a report, then save the new manifest.
-- If `FILE` exists and uid is **identical**: no changes; keep the existing manifest unchanged.
+- If `FILE` **does** exist: compare the old and new manifests, print any detected changes, then save the new manifest unless `--check-compat` blocks a breaking change.
 
 ---
 
@@ -123,6 +125,7 @@ When the manifest changes, tsujikiri classifies each difference:
 | Enum removed | `Color` was removed |
 | Enum value removed | `Color.Red` was removed |
 | Enum value integer changed | `Color.Red`: 0 → 1 |
+| Transform metadata changed | injected code, wrapper code, or type hints changed |
 
 ### Additive Changes (existing scripts continue to work)
 
