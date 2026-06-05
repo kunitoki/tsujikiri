@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from tsujikiri.ir import IRCodeInjection, IRExceptionRegistration, IRProperty
 from tsujikiri.tir import (
     TIRClass,
     TIRConstructor,
@@ -128,6 +129,7 @@ class TestComputeManifest:
         m = compute_manifest(mod)
         assert "version" in m
         assert "api" in m
+        assert "transformations" not in m
 
     def test_emit_false_class_excluded(self):
         mod_with = _make_module(classes=[_cls(emit=True)])
@@ -189,6 +191,149 @@ class TestComputeManifest:
         mod = _make_module(classes=[_cls(methods=[m])])
         manifest = compute_manifest(mod)
         assert manifest["api"]["classes"][0]["methods"][0]["name"] == "x"
+
+    def test_transformed_method_signature_is_manifested(self):
+        p0 = TIRParameter(name="value", type_spelling="int", type_override="float")
+        p1 = TIRParameter(name="hidden", type_spelling="bool", emit=False)
+        method = TIRMethod(
+            name="convert",
+            spelling="convert",
+            qualified_name="C::convert",
+            return_type="int",
+            return_type_override="double",
+            parameters=[p0, p1],
+        )
+        mod = _make_module(classes=[_cls(methods=[method])])
+
+        manifest_method = compute_manifest(mod)["api"]["classes"][0]["methods"][0]
+
+        assert manifest_method["params"] == ["float"]
+        assert manifest_method["return_type"] == "double"
+
+    def test_transformed_enum_names_are_manifested(self):
+        enum = TIREnum(
+            name="Color",
+            qualified_name="testmod::Color",
+            rename="Colour",
+            values=[TIREnumValue(name="VeryRed", value=1, rename="red")],
+        )
+        mod = _make_module(enums=[enum])
+        manifest_enum = compute_manifest(mod)["api"]["enums"][0]
+
+        assert manifest_enum["name"] == "Colour"
+        assert manifest_enum["values"][0]["name"] == "red"
+
+    def test_code_injections_are_manifested(self):
+        method = _method("add")
+        method.code_injections.append(IRCodeInjection(position="end", code="// method end"))
+        cls = _cls(methods=[method])
+        cls.code_injections.append(IRCodeInjection(position="beginning", code="// class start"))
+        mod = _make_module(classes=[cls])
+        mod.code_injections.append(IRCodeInjection(position="beginning", code="// module start"))
+
+        transformations = compute_manifest(mod)["transformations"]
+
+        assert transformations["code_injections"] == [{"position": "beginning", "code": "// module start"}]
+        assert transformations["classes"][0]["code_injections"] == [{"position": "beginning", "code": "// class start"}]
+        assert transformations["classes"][0]["methods"][0]["code_injections"] == [
+            {"position": "end", "code": "// method end"}
+        ]
+
+    def test_injected_properties_are_manifested(self):
+        cls = _cls()
+        cls.properties.append(IRProperty(name="value", getter="getValue", setter="setValue", type_spelling="int"))
+        mod = _make_module(classes=[cls])
+
+        manifest_class = compute_manifest(mod)["api"]["classes"][0]
+
+        assert manifest_class["properties"] == [
+            {
+                "name": "value",
+                "getter": "getValue",
+                "setter": "setValue",
+                "type": "int",
+                "read_only": False,
+            }
+        ]
+
+    def test_transform_metadata_branches_are_manifested(self):
+        ctor_param = TIRParameter(name="x", type_spelling="int", rename="value", default_override="0", ownership="cpp")
+        ctor = TIRConstructor(parameters=[ctor_param])
+        ctor.code_injections.append(IRCodeInjection(position="end", code="// ctor"))
+
+        method_param = TIRParameter(name="arg", type_spelling="float", rename="amount", ownership="script")
+        method = TIRMethod(
+            name="scale",
+            spelling="scale",
+            qualified_name="testmod::Widget::scale",
+            return_type="void",
+            parameters=[method_param],
+        )
+        field = TIRField(name="state_", type_spelling="int", read_only=True)
+        nested_enum = TIREnum(
+            name="Mode",
+            qualified_name="testmod::Widget::Mode",
+            is_arithmetic=True,
+            values=[TIREnumValue(name="Fast", value=1)],
+        )
+        inner = TIRClass(
+            name="Inner", qualified_name="testmod::Widget::Inner", namespace="testmod", force_abstract=True
+        )
+        cls = TIRClass(
+            name="Widget",
+            qualified_name="testmod::Widget",
+            namespace="testmod",
+            constructors=[ctor],
+            methods=[method],
+            fields=[field],
+            enums=[nested_enum],
+            inner_classes=[inner],
+        )
+
+        fn_param = TIRParameter(name="input", type_spelling="int", default_override="1")
+        fn = TIRFunction(
+            name="make",
+            qualified_name="testmod::make",
+            namespace="testmod",
+            return_type="Widget",
+            parameters=[fn_param],
+            allow_thread=True,
+        )
+        enum = TIREnum(
+            name="Flags",
+            qualified_name="testmod::Flags",
+            is_arithmetic=True,
+            values=[TIREnumValue(name="Enabled", value=1)],
+        )
+        mod = _make_module(classes=[cls], functions=[fn], enums=[enum])
+        mod.exception_registrations.append(
+            IRExceptionRegistration(
+                cpp_exception_type="WidgetError",
+                target_exception_name="WidgetError",
+                base_target_exception="RuntimeError",
+            )
+        )
+
+        transformations = compute_manifest(mod)["transformations"]
+
+        assert transformations["exception_registrations"] == [
+            {
+                "cpp_exception_type": "WidgetError",
+                "target_exception_name": "WidgetError",
+                "base_target_exception": "RuntimeError",
+            }
+        ]
+        widget = next(c for c in transformations["classes"] if c["name"] == "Widget")
+        assert widget["constructors"][0]["parameters"][0]["rename"] == "value"
+        assert widget["constructors"][0]["code_injections"] == [{"position": "end", "code": "// ctor"}]
+        assert widget["methods"][0]["parameters"][0]["ownership"] == "script"
+        assert widget["fields"][0]["read_only"] is True
+        assert widget["enums"][0] == {"name": "Mode", "is_arithmetic": True, "parent": "Widget"}
+        inner_manifest = next(c for c in transformations["classes"] if c["name"] == "Inner")
+        assert inner_manifest["force_abstract"] is True
+        assert transformations["functions"][0]["allow_thread"] is True
+        assert transformations["functions"][0]["parameters"][0]["default"] == "1"
+        assert transformations["enums"][0] == {"name": "Flags", "is_arithmetic": True}
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +402,18 @@ class TestCompareManifoldsAdditive:
         r = self._compare(old, new)
         assert r.is_compatible
         assert any("x" in c for c in r.additive_changes)
+
+    def test_new_property_is_additive(self):
+        old = _make_module(classes=[_cls()])
+        new_cls = _cls()
+        new_cls.properties.append(IRProperty(name="value", getter="getValue", setter=None, type_spelling="int"))
+        new = _make_module(classes=[new_cls])
+
+        r = self._compare(old, new)
+
+        assert not r.is_compatible
+        assert "Property 'Calculator.value' was added" in r.additive_changes
+        assert "Transformed binding metadata changed" in r.breaking_changes
 
     def test_new_enum_is_additive(self):
         old = _make_module()
@@ -421,6 +578,81 @@ class TestCompareManifoldBreaking:
         r = self._compare(old, new)
         assert not r.is_compatible
         assert any("Error" in c for c in r.breaking_changes)
+
+    def test_property_removed_is_breaking(self):
+        old_cls = _cls()
+        old_cls.properties.append(IRProperty(name="value", getter="getValue", setter=None, type_spelling="int"))
+        old = _make_module(classes=[old_cls])
+        new = _make_module(classes=[_cls()])
+
+        r = self._compare(old, new)
+
+        assert "Property 'Calculator.value' was removed" in r.breaking_changes
+
+    def test_unchanged_property_is_compatible(self):
+        old_cls = _cls()
+        old_cls.properties.append(IRProperty(name="value", getter="getValue", setter="setValue", type_spelling="int"))
+        new_cls = _cls()
+        new_cls.properties.append(IRProperty(name="value", getter="getValue", setter="setValue", type_spelling="int"))
+        old = _make_module(classes=[old_cls])
+        new = _make_module(classes=[new_cls])
+
+        r = self._compare(old, new)
+
+        assert r.is_compatible
+        assert not r.has_changes
+
+    def test_property_changes_are_breaking(self):
+        old_cls = _cls()
+        old_cls.properties.append(IRProperty(name="value", getter="getValue", setter="setValue", type_spelling="int"))
+        new_cls = _cls()
+        new_cls.properties.append(IRProperty(name="value", getter="readValue", setter=None, type_spelling="double"))
+        old = _make_module(classes=[old_cls])
+        new = _make_module(classes=[new_cls])
+
+        r = self._compare(old, new)
+
+        assert "Property 'Calculator.value' type changed: int -> double" in r.breaking_changes
+        assert "Property 'Calculator.value' getter changed: getValue -> readValue" in r.breaking_changes
+        assert "Property 'Calculator.value' setter changed: setValue -> None" in r.breaking_changes
+        assert "Property 'Calculator.value' read-only changed: False -> True" in r.breaking_changes
+
+    def test_transform_signature_override_change_is_breaking(self):
+        old_method = _method("value", return_type="int")
+        old_method.return_type_override = "float"
+        new_method = _method("value", return_type="int")
+        new_method.return_type_override = "double"
+        old = _make_module(classes=[_cls(methods=[old_method])])
+        new = _make_module(classes=[_cls(methods=[new_method])])
+
+        r = self._compare(old, new)
+
+        assert not r.is_compatible
+        assert any("value" in c for c in r.breaking_changes)
+
+    def test_code_injection_change_is_breaking(self):
+        old = _make_module()
+        old.code_injections.append(IRCodeInjection(position="beginning", code="// old"))
+        new = _make_module()
+        new.code_injections.append(IRCodeInjection(position="beginning", code="// new"))
+
+        r = self._compare(old, new)
+
+        assert not r.is_compatible
+        assert "Transformed binding metadata changed" in r.breaking_changes
+
+    def test_wrapper_code_change_is_breaking(self):
+        old_method = _method("value")
+        old_method.wrapper_code = "+[](C& self) { return 1; }"
+        new_method = _method("value")
+        new_method.wrapper_code = "+[](C& self) { return 2; }"
+        old = _make_module(classes=[_cls(methods=[old_method])])
+        new = _make_module(classes=[_cls(methods=[new_method])])
+
+        r = self._compare(old, new)
+
+        assert not r.is_compatible
+        assert "Transformed binding metadata changed" in r.breaking_changes
 
 
 # ---------------------------------------------------------------------------
@@ -603,6 +835,28 @@ class TestSuggestVersionBump:
         old = compute_manifest(old_mod)
         old["version"] = "2.0.0"
         assert suggest_version_bump(old, report) == "3.0.0"
+
+    def test_changed_transform_signature_suggests_major(self):
+        old_method = _method("value", return_type="int")
+        old_method.return_type_override = "float"
+        new_method = _method("value", return_type="int")
+        new_method.return_type_override = "double"
+        old_mod = _make_module(classes=[_cls(methods=[old_method])])
+        new_mod = _make_module(classes=[_cls(methods=[new_method])])
+        report = compare_manifests(compute_manifest(old_mod), compute_manifest(new_mod))
+        old = compute_manifest(old_mod)
+        old["version"] = "2.0.0"
+        assert suggest_version_bump(old, report) == "3.0.0"
+
+    def test_changed_code_injection_suggests_major(self):
+        old_mod = _make_module()
+        old_mod.code_injections.append(IRCodeInjection(position="beginning", code="// old"))
+        new_mod = _make_module()
+        new_mod.code_injections.append(IRCodeInjection(position="beginning", code="// new"))
+        report = compare_manifests(compute_manifest(old_mod), compute_manifest(new_mod))
+        old = compute_manifest(old_mod)
+        old["version"] = "1.4.0"
+        assert suggest_version_bump(old, report) == "2.0.0"
 
     def test_removed_function_suggests_major(self):
         old_mod = _make_module(functions=[_fn("compute", ["double"], "double")])
