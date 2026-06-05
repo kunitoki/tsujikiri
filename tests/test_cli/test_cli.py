@@ -1446,6 +1446,48 @@ class TestMultiOutputGeneration:
         content = (outdir / "foo_bindings.cpp").read_text()
         assert "// MULTI PREFIX" in content
 
+    def test_output_scoped_fmt_generation_prefix_only_applies_to_named_group(self, tmp_path):
+        data = {
+            "outputs": [
+                {"name": "foo_bindings", "sources": [str(HERE_CLI / "multi_out_a.hpp")]},
+                {"name": "bar_bindings", "sources": [str(HERE_CLI / "multi_out_b.hpp")]},
+            ],
+            "filters": {
+                "namespaces": ["alpha"],
+                "constructors": {"include": False},
+            },
+            "format_overrides": [
+                {
+                    "luabridge3": {
+                        "generation": {
+                            "prefix": "// GLOBAL PREFIX\n",
+                        },
+                    },
+                },
+                {
+                    "output": "foo_bindings",
+                    "luabridge3": {
+                        "generation": {
+                            "prefix": "// FOO PREFIX\n",
+                        },
+                    },
+                },
+            ],
+        }
+        p = tmp_path / "multi_fmt_gen_scoped.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+
+        _run("-i", str(p), "--target", "luabridge3", str(outdir) + "/")
+
+        foo_content = (outdir / "foo_bindings.cpp").read_text()
+        bar_content = (outdir / "bar_bindings.cpp").read_text()
+        assert "// FOO PREFIX" in foo_content
+        assert "// GLOBAL PREFIX" not in foo_content
+        assert "// GLOBAL PREFIX" in bar_content
+        assert "// FOO PREFIX" not in bar_content
+
     def test_error_mixed_targets_with_outputs(self, multi_output_input_yml, tmp_path):
         outdir = tmp_path / "out"
         outdir.mkdir()

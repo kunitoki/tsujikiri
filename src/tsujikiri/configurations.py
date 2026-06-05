@@ -232,6 +232,8 @@ class InputConfig:
     attributes: AttributeHandlerConfig = field(default_factory=AttributeHandlerConfig)
     # Per-format template/type overrides (keyed by format name, e.g. "luabridge3").
     format_overrides: Dict[str, FormatOverrideConfig] = field(default_factory=dict)
+    # Per-output-group format overrides: output group name -> format name -> override.
+    output_format_overrides: Dict[str, Dict[str, FormatOverrideConfig]] = field(default_factory=dict)
     # Post-generation pretty printing: run the language-appropriate pretty printer on output.
     pretty: bool = False
     pretty_options: List[str] = field(default_factory=list)
@@ -279,6 +281,25 @@ class InputConfig:
         if self.source:
             return [SourceEntry(source=self.source)]
         return []
+
+    def format_override_for(
+        self,
+        format_name: str,
+        output_name: Optional[str] = None,
+    ) -> Optional[FormatOverrideConfig]:
+        """Return the override for a format, preferring a merged output-scoped override."""
+        if output_name is not None:
+            output_override = self.output_format_overrides.get(output_name, {}).get(format_name)
+            if output_override is not None:
+                return output_override
+        return self.format_overrides.get(format_name)
+
+    def all_format_overrides(self) -> List[FormatOverrideConfig]:
+        """Return global and output-scoped format overrides for validation."""
+        overrides = list(self.format_overrides.values())
+        for scoped_overrides in self.output_format_overrides.values():
+            overrides.extend(scoped_overrides.values())
+        return overrides
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +416,46 @@ def _parse_optional_overrides(
     transforms = _parse_transforms_list(raw["transforms"]) if "transforms" in raw else None
     generation = _parse_generation_config(raw["generation"]) if "generation" in raw else None
     return filters, transforms, generation
+
+
+def _parse_format_override_config(override_raw: Dict[str, Any], config_dir: Path) -> FormatOverrideConfig:
+    ov_filters, ov_transforms, ov_generation = _parse_optional_overrides(override_raw)
+    tef_path_str = override_raw.get("template_extends_file", "") or ""
+    ov_template_extends = override_raw.get("template_extends", "") or ""
+    if tef_path_str:
+        tef_path = Path(tef_path_str)
+        if not tef_path.is_absolute():
+            tef_path = config_dir / tef_path
+        with open(tef_path, "r", encoding="utf-8") as _tf:
+            ov_template_extends = _tf.read()
+    # Parse format-specific typesystem (inline or from file).
+    ov_ts_file_str = override_raw.get("typesystem_file", "") or ""
+    ov_typesystem: Optional[TypesystemConfig] = None
+    if ov_ts_file_str:
+        ov_ts_path = Path(ov_ts_file_str)
+        if not ov_ts_path.is_absolute():
+            ov_ts_path = config_dir / ov_ts_path
+        with open(ov_ts_path, encoding="utf-8") as _f:
+            _ts_doc = yaml.safe_load(_f) or {}
+        ov_ts_raw = _ts_doc.get("typesystem", _ts_doc)
+        ov_typesystem = _parse_typesystem_config(ov_ts_raw)
+    elif "typesystem" in override_raw:
+        ov_typesystem = _parse_typesystem_config(override_raw["typesystem"] or {})
+    # Use "key in" guard so `pretty: false` is not confused with absent key.
+    ov_pretty: Optional[bool] = override_raw["pretty"] if "pretty" in override_raw else None
+    ov_pretty_options: Optional[List[str]] = override_raw.get("pretty_options")
+    return FormatOverrideConfig(
+        template_extends=ov_template_extends,
+        template_extends_file=tef_path_str,
+        unsupported_types=override_raw.get("unsupported_types", []),
+        filters=ov_filters,
+        transforms=ov_transforms,
+        generation=ov_generation,
+        typesystem=ov_typesystem,
+        typesystem_file=ov_ts_file_str,
+        pretty=ov_pretty,
+        pretty_options=ov_pretty_options,
+    )
 
 
 def _resolve_source_path(src_path: str, config_dir: Path, basepath: str) -> str:
@@ -526,45 +587,61 @@ def load_input_config(config_file: Path) -> InputConfig:
 
     # --- Format overrides ---
     fmt_overrides_raw = data.get("format_overrides", {})
-    format_overrides: Dict[str, FormatOverrideConfig] = {}
-    for fmt_name, override_raw in fmt_overrides_raw.items():
-        ov_filters, ov_transforms, ov_generation = _parse_optional_overrides(override_raw)
-        tef_path_str = override_raw.get("template_extends_file", "") or ""
-        ov_template_extends = override_raw.get("template_extends", "") or ""
-        if tef_path_str:
-            tef_path = Path(tef_path_str)
-            if not tef_path.is_absolute():
-                tef_path = config_dir / tef_path
-            with open(tef_path, "r", encoding="utf-8") as _tf:
-                ov_template_extends = _tf.read()
-        # Parse format-specific typesystem (inline or from file).
-        ov_ts_file_str = override_raw.get("typesystem_file", "") or ""
-        ov_typesystem: Optional[TypesystemConfig] = None
-        if ov_ts_file_str:
-            ov_ts_path = Path(ov_ts_file_str)
-            if not ov_ts_path.is_absolute():
-                ov_ts_path = config_dir / ov_ts_path
-            with open(ov_ts_path, encoding="utf-8") as _f:
-                _ts_doc = yaml.safe_load(_f) or {}
-            ov_ts_raw = _ts_doc.get("typesystem", _ts_doc)
-            ov_typesystem = _parse_typesystem_config(ov_ts_raw)
-        elif "typesystem" in override_raw:
-            ov_typesystem = _parse_typesystem_config(override_raw["typesystem"] or {})
-        # Use "key in" guard so `pretty: false` is not confused with absent key.
-        ov_pretty: Optional[bool] = override_raw["pretty"] if "pretty" in override_raw else None
-        ov_pretty_options: Optional[List[str]] = override_raw.get("pretty_options")
-        format_overrides[fmt_name] = FormatOverrideConfig(
-            template_extends=ov_template_extends,
-            template_extends_file=tef_path_str,
-            unsupported_types=override_raw.get("unsupported_types", []),
-            filters=ov_filters,
-            transforms=ov_transforms,
-            generation=ov_generation,
-            typesystem=ov_typesystem,
-            typesystem_file=ov_ts_file_str,
-            pretty=ov_pretty,
-            pretty_options=ov_pretty_options,
-        )
+    global_format_overrides_raw: Dict[str, Dict[str, Any]] = {}
+    scoped_format_overrides_raw: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    def _format_override_raw(fmt_name: str, override_raw: Any) -> Dict[str, Any]:
+        if override_raw is None:
+            return {}
+        if not isinstance(override_raw, dict):
+            raise ValueError(f"format_overrides.{fmt_name} must be a mapping")
+        return override_raw
+
+    if isinstance(fmt_overrides_raw, dict):
+        for fmt_name, override_raw in fmt_overrides_raw.items():
+            global_format_overrides_raw[fmt_name] = _format_override_raw(fmt_name, override_raw)
+    elif isinstance(fmt_overrides_raw, list):
+        for entry_raw in fmt_overrides_raw:
+            if not isinstance(entry_raw, dict):
+                raise ValueError("format_overrides list entries must be mappings")
+            output_name = entry_raw.get("output")
+            if output_name is not None and not isinstance(output_name, str):
+                raise ValueError("format_overrides output values must be strings")
+
+            for fmt_name, override_raw in entry_raw.items():
+                if fmt_name == "output":
+                    continue
+                fmt_override_raw = _format_override_raw(fmt_name, override_raw)
+                if output_name is None:
+                    base = global_format_overrides_raw.get(fmt_name, {})
+                    global_format_overrides_raw[fmt_name] = _merge_yaml_dicts(base, fmt_override_raw)
+                else:
+                    scoped_by_format = scoped_format_overrides_raw.setdefault(output_name, {})
+                    base = scoped_by_format.get(fmt_name, {})
+                    scoped_by_format[fmt_name] = _merge_yaml_dicts(base, fmt_override_raw)
+    elif fmt_overrides_raw:
+        raise ValueError("format_overrides must be a mapping or a list of mappings")
+
+    if scoped_format_overrides_raw:
+        known_outputs = {group.name for group in output_groups}
+        unknown_outputs = sorted(set(scoped_format_overrides_raw) - known_outputs)
+        if unknown_outputs:
+            unknown = ", ".join(unknown_outputs)
+            raise ValueError(f"format_overrides references unknown output group(s): {unknown}")
+
+    format_overrides: Dict[str, FormatOverrideConfig] = {
+        fmt_name: _parse_format_override_config(override_raw, config_dir)
+        for fmt_name, override_raw in global_format_overrides_raw.items()
+    }
+    output_format_overrides: Dict[str, Dict[str, FormatOverrideConfig]] = {}
+    for output_name, scoped_by_format in scoped_format_overrides_raw.items():
+        output_format_overrides[output_name] = {}
+        for fmt_name, scoped_override_raw in scoped_by_format.items():
+            merged_override_raw = _merge_yaml_dicts(global_format_overrides_raw.get(fmt_name, {}), scoped_override_raw)
+            output_format_overrides[output_name][fmt_name] = _parse_format_override_config(
+                merged_override_raw,
+                config_dir,
+            )
 
     # --- Typesystem ---
     ts_raw = data.get("typesystem", {})
@@ -583,6 +660,7 @@ def load_input_config(config_file: Path) -> InputConfig:
         generation=generation,
         attributes=attributes,
         format_overrides=format_overrides,
+        output_format_overrides=output_format_overrides,
         pretty=data.get("pretty", False),
         pretty_options=data.get("pretty_options", []),
         typesystem=typesystem,
