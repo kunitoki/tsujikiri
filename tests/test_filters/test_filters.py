@@ -547,3 +547,22 @@ class TestBaseFilter:
         cfg = FilterConfig(namespaces=["ns"])
         FilterEngine(cfg).apply(mod)
         assert base.emit is False
+
+    def test_internal_base_suppressed_unqualified(self) -> None:
+        base = TIRBase("ns::IService", "public")
+        cls = TIRClass(name="EventService", qualified_name="ns::EventService", namespace="ns", bases=[base])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"EventService": cls})  # type: ignore[arg-type, list-item]
+        cfg = FilterConfig(
+            classes=ClassFilter(whitelist=[FilterPattern("EventService")], internal=[FilterPattern("IService")])
+        )
+        FilterEngine(cfg).apply(mod)
+        assert cls.emit is True
+        assert base.emit is False
+
+    def test_internal_base_suppressed_qualified(self) -> None:
+        base = TIRBase("ns::IService", "public")
+        cls = TIRClass(name="EventService", qualified_name="ns::EventService", namespace="ns", bases=[base])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"EventService": cls})  # type: ignore[arg-type, list-item]
+        cfg = FilterConfig(classes=ClassFilter(internal=[FilterPattern("ns::IService")]))
+        FilterEngine(cfg).apply(mod)
+        assert base.emit is False
