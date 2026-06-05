@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 
 from tsujikiri.configurations import (
+    ConstructorClassFilter,
     FilterPattern,
     FormatOverrideConfig,
     InputConfig,
+    MethodClassFilter,
     OutputConfig,
     OutputGroupEntry,
     SourceConfig,
@@ -56,7 +58,9 @@ class TestInputConfigLoading:
 
     def test_method_per_class(self, cfg):
         assert "Foo" in cfg.filters.methods.per_class
-        assert any(p.pattern == "internalReset" for p in cfg.filters.methods.per_class["Foo"])
+        foo_filter = cfg.filters.methods.per_class["Foo"]
+        assert isinstance(foo_filter, MethodClassFilter)
+        assert any(p.pattern == "internalReset" for p in foo_filter.blacklist)
 
     def test_field_blacklist(self, cfg):
         assert any(p.pattern == "pimpl_" for p in cfg.filters.fields.global_blacklist)
@@ -1210,3 +1214,164 @@ class TestOutputGroupsLoading:
         cfg = load_input_config(p)
         entries = cfg.get_source_entries()
         assert len(entries) == 1
+
+
+class TestFieldPerClassParsing:
+    def test_field_per_class_blacklist_parsed(self, tmp_path: Path) -> None:
+        yml = tmp_path / "field_per_class.input.yml"
+        yml.write_text(
+            "source:\n  path: x.hpp\nfilters:\n  fields:\n    per_class:\n      MyClass:\n        - 'secret_'\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert "MyClass" in cfg.filters.fields.per_class
+        patterns = cfg.filters.fields.per_class["MyClass"]
+        assert any(p.pattern == "secret_" for p in patterns)
+
+
+class TestConstructorPerClassParsing:
+    def test_per_class_include_false_parsed(self, tmp_path: Path) -> None:
+        yml = tmp_path / "ctor_per_class.input.yml"
+        yml.write_text(
+            "source:\n  path: x.hpp\nfilters:\n  constructors:\n    include: true\n    per_class:\n      MyClass:\n        include: false\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert "MyClass" in cfg.filters.constructors.per_class
+        pc = cfg.filters.constructors.per_class["MyClass"]
+        assert isinstance(pc, ConstructorClassFilter)
+        assert pc.include is False
+
+    def test_per_class_include_true_parsed(self, tmp_path: Path) -> None:
+        yml = tmp_path / "ctor_per_class.input.yml"
+        yml.write_text(
+            "source:\n  path: x.hpp\nfilters:\n  constructors:\n    include: false\n    per_class:\n      MyClass:\n        include: true\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        pc = cfg.filters.constructors.per_class["MyClass"]
+        assert pc.include is True
+
+    def test_per_class_include_absent_gives_none(self, tmp_path: Path) -> None:
+        yml = tmp_path / "ctor_per_class.input.yml"
+        yml.write_text(
+            "source:\n  path: x.hpp\nfilters:\n  constructors:\n    per_class:\n      MyClass:\n        signatures:\n          - 'int'\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        pc = cfg.filters.constructors.per_class["MyClass"]
+        assert pc.include is None
+        assert any(p.pattern == "int" for p in pc.signatures)
+
+    def test_per_class_empty_gives_defaults(self, tmp_path: Path) -> None:
+        yml = tmp_path / "ctor_per_class.input.yml"
+        yml.write_text(
+            "source:\n  path: x.hpp\nfilters:\n  constructors:\n    per_class:\n      MyClass:\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        pc = cfg.filters.constructors.per_class["MyClass"]
+        assert pc.include is None
+        assert pc.signatures == []
+
+    def test_no_per_class_gives_empty_dict(self, tmp_path: Path) -> None:
+        yml = tmp_path / "ctor_no_per_class.input.yml"
+        yml.write_text(
+            "source:\n  path: x.hpp\nfilters:\n  constructors:\n    include: true\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.filters.constructors.per_class == {}
+
+
+class TestMethodPerClassParsing:
+    def test_blacklist_parsed(self, tmp_path: Path) -> None:
+        yml = tmp_path / "meth_per_class.input.yml"
+        yml.write_text(
+            "source:\n  path: x.hpp\nfilters:\n  methods:\n    per_class:\n      MyClass:\n        blacklist:\n          - 'secretMethod'\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert "MyClass" in cfg.filters.methods.per_class
+        pc = cfg.filters.methods.per_class["MyClass"]
+        assert isinstance(pc, MethodClassFilter)
+        assert any(p.pattern == "secretMethod" for p in pc.blacklist)
+        assert pc.whitelist == []
+
+    def test_whitelist_parsed(self, tmp_path: Path) -> None:
+        yml = tmp_path / "meth_per_class.input.yml"
+        yml.write_text(
+            "source:\n  path: x.hpp\nfilters:\n  methods:\n    per_class:\n      MyClass:\n        whitelist:\n          - 'publicMethod'\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        pc = cfg.filters.methods.per_class["MyClass"]
+        assert any(p.pattern == "publicMethod" for p in pc.whitelist)
+        assert pc.blacklist == []
+
+    def test_empty_per_class_gives_defaults(self, tmp_path: Path) -> None:
+        yml = tmp_path / "meth_per_class.input.yml"
+        yml.write_text(
+            "source:\n  path: x.hpp\nfilters:\n  methods:\n    per_class:\n      MyClass:\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        pc = cfg.filters.methods.per_class["MyClass"]
+        assert pc.whitelist == []
+        assert pc.blacklist == []
+
+    def test_no_per_class_gives_empty_dict(self, tmp_path: Path) -> None:
+        yml = tmp_path / "meth_no_per_class.input.yml"
+        yml.write_text(
+            "source:\n  path: x.hpp\nfilters:\n  methods:\n    global_blacklist:\n      - 'remove'\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.filters.methods.per_class == {}
+
+
+class TestLoadsFormatOverridesMix:
+    def test_loads_dict_form_base_list_form_override_combines(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text(
+            "source:\n  path: x.hpp\nformat_overrides:\n  luabridge3:\n    generation:\n      includes: ['\"global.hpp\"']\n",
+            encoding="utf-8",
+        )
+        main = tmp_path / "main.input.yml"
+        main.write_text(
+            f"""loads: [{base.name}]
+format_overrides:
+  - output: foo
+    luabridge3:
+      generation:
+        includes: ['"foo.hpp"']
+outputs:
+  - name: foo
+    sources: [x.hpp]
+""",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(main)
+        global_override = cfg.format_overrides.get("luabridge3")
+        assert global_override is not None
+        assert '"global.hpp"' in global_override.generation.includes
+        scoped = cfg.output_format_overrides["foo"]["luabridge3"]
+        assert '"global.hpp"' in scoped.generation.includes
+        assert '"foo.hpp"' in scoped.generation.includes
+
+    def test_loads_list_form_base_dict_form_override_combines(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text(
+            "source:\n  path: x.hpp\nformat_overrides:\n  - luabridge3:\n      generation:\n        includes: ['\"base.hpp\"']\n",
+            encoding="utf-8",
+        )
+        main = tmp_path / "main.input.yml"
+        main.write_text(
+            f"loads: [{base.name}]\nformat_overrides:\n  luabridge3:\n    generation:\n      includes: ['\"main.hpp\"']\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(main)
+        override = cfg.format_overrides.get("luabridge3")
+        assert override is not None
+        assert '"base.hpp"' in override.generation.includes
+        assert '"main.hpp"' in override.generation.includes

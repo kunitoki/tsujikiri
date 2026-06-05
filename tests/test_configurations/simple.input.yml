@@ -21,7 +21,8 @@ filters:
         is_regex: true
     per_class:
       Foo:
-        - pattern: "internalReset"
+        blacklist:
+          - pattern: "internalReset"
   fields:
     global_blacklist:
       - pattern: "pimpl_"
