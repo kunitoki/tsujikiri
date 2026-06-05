@@ -27,9 +27,14 @@ class ClassFilter:
     internal: list[FilterPattern] = field(default_factory=list)
 
 @dataclass
+class MethodClassFilter:
+    whitelist: list[FilterPattern] = field(default_factory=list)
+    blacklist: list[FilterPattern] = field(default_factory=list)
+
+@dataclass
 class MethodFilter:
     global_blacklist: list[FilterPattern] = field(default_factory=list)
-    per_class: dict[str, list[FilterPattern]] = field(default_factory=dict)
+    per_class: dict[str, MethodClassFilter] = field(default_factory=dict)
 
 @dataclass
 class FieldFilter:
@@ -37,9 +42,15 @@ class FieldFilter:
     per_class: dict[str, list[FilterPattern]] = field(default_factory=dict)
 
 @dataclass
+class ConstructorClassFilter:
+    include: bool | None = ...
+    signatures: list[FilterPattern] = field(default_factory=list)
+
+@dataclass
 class ConstructorFilter:
     include: bool = ...
     signatures: list[FilterPattern] = field(default_factory=list)
+    per_class: dict[str, ConstructorClassFilter] = field(default_factory=dict)
 
 @dataclass
 class FunctionFilter:

@@ -18,10 +18,10 @@ For each class in the IR, the FilterEngine applies rules in this order:
 
 1. **Source exclusion** — exclude by source file glob pattern
 2. **Internal suppression** — silent suppression (no log message)
-3. **Blacklist matching** — explicit exclusion
-4. **Whitelist matching** — explicit inclusion (if whitelist is non-empty)
-5. **Method filtering** — global blacklist + per-class blacklist
-6. **Constructor filtering** — master include switch + signature filter
+3. **Whitelist matching** — if whitelist is non-empty and class matches, blacklist is skipped
+4. **Blacklist matching** — explicit exclusion (only when whitelist is empty)
+5. **Method filtering** — global blacklist + per-class whitelist/blacklist
+6. **Constructor filtering** — master include switch + signature filter + per-class overrides
 7. **Field filtering** — global blacklist + per-class blacklist
 8. **Enum filtering** — whitelist/blacklist
 9. **Inner class filtering** — recursive application of all rules
@@ -122,7 +122,7 @@ Use the whitelist when you want to explicitly enumerate the public API surface. 
 
 ### `blacklist`
 
-Classes matching any entry are suppressed, **regardless of whitelist membership**. The blacklist takes precedence over the whitelist.
+Classes matching any entry are suppressed when no whitelist is configured. The whitelist takes precedence over the blacklist: if a whitelist is non-empty and the class matches it, the blacklist is not checked.
 
 ```yaml
 # Include all classes EXCEPT those ending in Impl or containing Detail
@@ -148,10 +148,11 @@ filters:
 
 ### Interaction Between Lists
 
-1. If `blacklist` matches → suppressed (no further checks)
-2. If `internal` matches → suppressed (no further checks)
-3. If `whitelist` is non-empty and the class does NOT match → suppressed
-4. Otherwise → included
+1. If `internal` matches → suppressed (no further checks)
+2. If `whitelist` is non-empty and the class **matches** → included (blacklist is not checked)
+3. If `whitelist` is non-empty and the class does **not** match → suppressed
+4. If `blacklist` matches (when whitelist is empty) → suppressed
+5. Otherwise → included
 
 ---
 
@@ -188,16 +189,26 @@ filters:
 
 ### `per_class`
 
-A mapping from class name to a list of method patterns. The class name must match exactly (no regex support for the class key; only the method patterns support regex).
+A mapping from class name to a `whitelist`/`blacklist` configuration for that class. The class name must match exactly (no regex support for the class key; only the method patterns support regex).
+
+When `whitelist` is non-empty for a class, only the listed methods are emitted from that class (the per-class `blacklist` is ignored). When only `blacklist` is provided, matching methods are suppressed.
+
+The global `global_blacklist` is always applied first, before per-class rules.
 
 ```yaml
 filters:
   methods:
     per_class:
       MyClass:
-        - "internalHelper"
-        - pattern: "_.*"        # suppress methods starting with underscore
-          is_regex: true
+        blacklist:
+          - "internalHelper"
+          - pattern: "_.*"        # suppress methods starting with underscore
+            is_regex: true
+      PublicApi:
+        whitelist:
+          - "getValue"
+          - "setValue"
+          - "reset"
 ```
 
 ---
@@ -265,6 +276,24 @@ filters:
 ```
 
 **Signature format:** join the C++ type spellings (as libclang sees them) with `, `. For a constructor `MyClass(const char* name, int id)`, the signature is `"const char *, int"`.
+
+### `per_class`
+
+Per-class constructor overrides. Each entry can specify `include` (overrides the global `include` for that class) and/or `signatures` (overrides the global `signatures` for that class). An absent field means "inherit from global".
+
+```yaml
+filters:
+  constructors:
+    include: true        # global: include constructors
+    signatures: []       # global: all constructors
+    per_class:
+      InternalClass:
+        include: false   # suppress all constructors for InternalClass
+      LimitedClass:
+        signatures:
+          - ""           # only the default constructor for LimitedClass
+          - "int"
+```
 
 ---
 
@@ -343,8 +372,9 @@ filters:
     # Remove internal-only methods from Calculator specifically
     per_class:
       Calculator:
-        - pattern: "debug.*"
-          is_regex: true
+        blacklist:
+          - pattern: "debug.*"
+            is_regex: true
 
   fields:
     # Hide fields that follow the trailing-underscore convention globally

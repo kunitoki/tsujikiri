@@ -51,7 +51,7 @@ Loaded files are processed first and provide **defaults**. The current file's va
 | Mapping (`filters`, `custom_data`, …) | Deep-merged; current file wins on scalar-leaf conflicts |
 
 When multiple paths are listed under `loads`, they are merged in order — earlier entries are treated as deeper defaults, later entries extend them.
-For `format_overrides`, mapping form follows mapping semantics and list form follows list semantics; output-scoped entries are merged over matching global entries after loading.
+For `format_overrides`, both mapping form and list form are supported in any combination across loaded and loading files — they are normalised to list form during the merge. Output-scoped entries are merged over matching global entries after loading.
 
 ### Cycle detection
 

@@ -69,15 +69,17 @@ class FilterEngine:
             ir_class.emit = False
             return
 
-        # Class blacklist
-        if _matches(name, cfg.classes.blacklist):
-            ir_class.emit = False
-            return
-
-        # Class whitelist (non-empty = only these classes are emitted)
-        if cfg.classes.whitelist and not _matches(name, cfg.classes.whitelist):
-            ir_class.emit = False
-            return
+        # Class whitelist takes priority — whitelisted items bypass blacklist
+        if cfg.classes.whitelist:
+            if not _matches(name, cfg.classes.whitelist):
+                ir_class.emit = False
+                return
+            # matched whitelist → keep; skip blacklist
+        else:
+            # Class blacklist (only when no whitelist)
+            if _matches(name, cfg.classes.blacklist):
+                ir_class.emit = False
+                return
 
         # Bases outside the filtered namespaces cannot be registered, so suppress them
         self._filter_bases(ir_class)
@@ -110,7 +112,7 @@ class FilterEngine:
                 base.emit = False
 
     def _filter_methods(self, ir_class: TIRClass) -> None:
-        per_class = self.cfg.methods.per_class.get(ir_class.name, [])
+        per_class = self.cfg.methods.per_class.get(ir_class.name)
         for method in ir_class.methods:
             if not method.emit:
                 continue
@@ -123,22 +125,30 @@ class FilterEngine:
             if _matches(method.name, self.cfg.methods.global_blacklist):
                 method.emit = False
                 continue
-            # Per-class blacklist
-            if _matches(method.name, per_class):
-                method.emit = False
+            # Per-class whitelist/blacklist
+            if per_class:
+                if per_class.whitelist:
+                    if not _matches(method.name, per_class.whitelist):
+                        method.emit = False
+                elif _matches(method.name, per_class.blacklist):
+                    method.emit = False
 
     def _filter_constructors(self, ir_class: TIRClass) -> None:
         cfg = self.cfg.constructors
-        if not cfg.include:
+        per_class = cfg.per_class.get(ir_class.name)
+        effective_include = per_class.include if (per_class and per_class.include is not None) else cfg.include
+        effective_signatures = per_class.signatures if (per_class and per_class.signatures) else cfg.signatures
+
+        if not effective_include:
             for ctor in ir_class.constructors:
                 ctor.emit = False
             return
 
-        if cfg.signatures:
+        if effective_signatures:
             for ctor in ir_class.constructors:
                 # Match by comma-joined parameter types
                 sig = ", ".join(p.type_spelling for p in ctor.parameters)
-                if not _matches(sig, cfg.signatures):
+                if not _matches(sig, effective_signatures):
                     ctor.emit = False
 
     def _filter_fields(self, ir_class: TIRClass) -> None:
@@ -167,11 +177,15 @@ class FilterEngine:
             if fn.is_varargs:
                 fn.emit = False
                 continue
-            if _matches(fn.name, blacklist):
-                fn.emit = False
-                continue
-            if whitelist and not _matches(fn.name, whitelist):
-                fn.emit = False
+            if whitelist:
+                if not _matches(fn.name, whitelist):
+                    fn.emit = False
+                    continue
+                # matched whitelist → keep
+            else:
+                if _matches(fn.name, blacklist):
+                    fn.emit = False
+                    continue
 
     # ------------------------------------------------------------------
     # Enums
@@ -181,8 +195,12 @@ class FilterEngine:
         for enum in enums:
             if not enum.emit:
                 continue
-            if _matches(enum.name, blacklist):
-                enum.emit = False
-                continue
-            if whitelist and not _matches(enum.name, whitelist):
-                enum.emit = False
+            if whitelist:
+                if not _matches(enum.name, whitelist):
+                    enum.emit = False
+                    continue
+                # matched whitelist → keep
+            else:
+                if _matches(enum.name, blacklist):
+                    enum.emit = False
+                    continue

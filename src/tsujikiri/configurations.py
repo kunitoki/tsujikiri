@@ -54,9 +54,15 @@ class ClassFilter:
 
 
 @dataclass
+class MethodClassFilter:
+    whitelist: List[FilterPattern] = field(default_factory=list)
+    blacklist: List[FilterPattern] = field(default_factory=list)
+
+
+@dataclass
 class MethodFilter:
     global_blacklist: List[FilterPattern] = field(default_factory=list)
-    per_class: Dict[str, List[FilterPattern]] = field(default_factory=dict)
+    per_class: Dict[str, MethodClassFilter] = field(default_factory=dict)
 
 
 @dataclass
@@ -66,9 +72,16 @@ class FieldFilter:
 
 
 @dataclass
+class ConstructorClassFilter:
+    include: Optional[bool] = None  # None = inherit global
+    signatures: List[FilterPattern] = field(default_factory=list)
+
+
+@dataclass
 class ConstructorFilter:
     include: bool = True
     signatures: List[FilterPattern] = field(default_factory=list)  # empty = all ctors
+    per_class: Dict[str, ConstructorClassFilter] = field(default_factory=dict)
 
 
 @dataclass
@@ -347,6 +360,24 @@ def _parse_per_class_filter(raw: Any) -> Dict[str, List[FilterPattern]]:
     return {cls: _parse_filter_patterns(patterns) for cls, patterns in raw.items()}
 
 
+def _parse_method_class_filter(raw: Any) -> MethodClassFilter:
+    if not raw:
+        return MethodClassFilter()
+    return MethodClassFilter(
+        whitelist=_parse_filter_patterns(raw.get("whitelist", [])),
+        blacklist=_parse_filter_patterns(raw.get("blacklist", [])),
+    )
+
+
+def _parse_constructor_class_filter(raw: Any) -> ConstructorClassFilter:
+    if not raw:
+        return ConstructorClassFilter()
+    return ConstructorClassFilter(
+        include=raw.get("include"),
+        signatures=_parse_filter_patterns(raw.get("signatures", [])),
+    )
+
+
 def _parse_transform_spec(raw: Dict[str, Any]) -> TransformSpec:
     stage = raw.pop("stage")
     return TransformSpec(stage=stage, kwargs=raw)
@@ -373,7 +404,7 @@ def _parse_filter_config(filt_raw: Dict[str, Any]) -> FilterConfig:
         ),
         methods=MethodFilter(
             global_blacklist=_parse_filter_patterns(meth_raw.get("global_blacklist", [])),
-            per_class=_parse_per_class_filter(meth_raw.get("per_class", {})),
+            per_class={cls: _parse_method_class_filter(v) for cls, v in (meth_raw.get("per_class", {}) or {}).items()},
         ),
         fields=FieldFilter(
             global_blacklist=_parse_filter_patterns(field_raw.get("global_blacklist", [])),
@@ -390,6 +421,9 @@ def _parse_filter_config(filt_raw: Dict[str, Any]) -> FilterConfig:
         constructors=ConstructorFilter(
             include=ctor_raw.get("include", True),
             signatures=_parse_filter_patterns(ctor_raw.get("signatures", [])),
+            per_class={
+                cls: _parse_constructor_class_filter(v) for cls, v in (ctor_raw.get("per_class", {}) or {}).items()
+            },
         ),
     )
 
@@ -505,6 +539,13 @@ def _merge_yaml_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[st
     return result
 
 
+def _normalize_format_overrides_to_list(data: Dict[str, Any]) -> None:
+    """Convert dict-form format_overrides to list-form for uniform loads: merging."""
+    fov = data.get("format_overrides")
+    if isinstance(fov, dict):
+        data["format_overrides"] = [{k: v} for k, v in fov.items()]
+
+
 def _load_raw_with_loads(config_file: Path, _seen: frozenset[str] = frozenset()) -> Dict[str, Any]:
     """Load a YAML config file and recursively expand any top-level ``loads:`` entries.
 
@@ -529,8 +570,11 @@ def _load_raw_with_loads(config_file: Path, _seen: frozenset[str] = frozenset())
         if not load_path.is_absolute():
             load_path = config_dir / load_path
         load_data = _load_raw_with_loads(load_path.resolve(), seen)
+        _normalize_format_overrides_to_list(load_data)
         merged_base = _merge_yaml_dicts(merged_base, load_data)
 
+    if merged_base:
+        _normalize_format_overrides_to_list(data)
     result = _merge_yaml_dicts(merged_base, data)
     result.pop("loads", None)
     return result

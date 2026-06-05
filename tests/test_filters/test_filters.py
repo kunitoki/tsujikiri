@@ -6,12 +6,14 @@ from pathlib import Path
 
 from tsujikiri.configurations import (
     ClassFilter,
+    ConstructorClassFilter,
     ConstructorFilter,
     EnumFilter,
     FieldFilter,
     FilterConfig,
     FilterPattern,
     FunctionFilter,
+    MethodClassFilter,
     MethodFilter,
     SourceFilter,
 )
@@ -98,6 +100,20 @@ class TestClassWhitelist:
         emitted = {c.name for c in mod.classes if c.emit}
         assert emitted == {"MyFoo", "MyBar"}
 
+    def test_whitelist_takes_priority_over_blacklist(self):
+        mod = _module_with_classes("Foo", "Bar")
+        # Foo is in both whitelist and blacklist — whitelist wins
+        FilterEngine(
+            FilterConfig(
+                classes=ClassFilter(
+                    whitelist=[FilterPattern("Foo")],
+                    blacklist=[FilterPattern("Foo")],
+                )
+            )
+        ).apply(mod)
+        assert mod.classes[0].emit is True  # Foo is whitelisted → kept
+        assert mod.classes[1].emit is False  # Bar not in whitelist → suppressed
+
 
 class TestClassInternal:
     def test_internal_suppresses(self):
@@ -141,7 +157,11 @@ class TestMethodFilter:
 
     def test_per_class_blacklist(self):
         mod, cls = _module_with_methods("keep", "perClassOnly")
-        FilterEngine(FilterConfig(methods=MethodFilter(per_class={"Cls": [FilterPattern("perClassOnly")]}))).apply(mod)
+        FilterEngine(
+            FilterConfig(
+                methods=MethodFilter(per_class={"Cls": MethodClassFilter(blacklist=[FilterPattern("perClassOnly")])})
+            )
+        ).apply(mod)
         emitted = [m.name for m in cls.methods if m.emit]
         assert emitted == ["keep"]
 
@@ -153,8 +173,65 @@ class TestMethodFilter:
         ]
         other_cls = TIRClass(name="Other", qualified_name="ns::Other", namespace="ns", methods=methods)  # type: ignore[arg-type]
         mod = TIRModule(name="m", classes=[other_cls], class_by_name={"Other": other_cls})  # type: ignore[arg-type, list-item]
-        FilterEngine(FilterConfig(methods=MethodFilter(per_class={"Cls": [FilterPattern("perClassOnly")]}))).apply(mod)
+        FilterEngine(
+            FilterConfig(
+                methods=MethodFilter(per_class={"Cls": MethodClassFilter(blacklist=[FilterPattern("perClassOnly")])})
+            )
+        ).apply(mod)
         assert other_cls.methods[0].emit is True
+
+    def test_per_class_whitelist(self):
+        mod, cls = _module_with_methods("getValue", "setValue", "internalHelper")
+        FilterEngine(
+            FilterConfig(
+                methods=MethodFilter(
+                    per_class={
+                        "Cls": MethodClassFilter(whitelist=[FilterPattern("getValue"), FilterPattern("setValue")])
+                    }
+                )
+            )
+        ).apply(mod)
+        emitted = [m.name for m in cls.methods if m.emit]
+        assert emitted == ["getValue", "setValue"]
+
+    def test_per_class_whitelist_does_not_affect_other_classes(self):
+        methods = [
+            TIRMethod(name="getValue", spelling="getValue", qualified_name="Other::getValue", return_type="void")
+        ]
+        other_cls = TIRClass(name="Other", qualified_name="ns::Other", namespace="ns", methods=methods)  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[other_cls], class_by_name={"Other": other_cls})  # type: ignore[arg-type, list-item]
+        FilterEngine(
+            FilterConfig(
+                methods=MethodFilter(per_class={"Cls": MethodClassFilter(whitelist=[FilterPattern("setValue")])})
+            )
+        ).apply(mod)
+        assert other_cls.methods[0].emit is True
+
+    def test_per_class_blacklist_still_works(self):
+        mod, cls = _module_with_methods("keep", "remove")
+        FilterEngine(
+            FilterConfig(
+                methods=MethodFilter(per_class={"Cls": MethodClassFilter(blacklist=[FilterPattern("remove")])})
+            )
+        ).apply(mod)
+        emitted = [m.name for m in cls.methods if m.emit]
+        assert emitted == ["keep"]
+
+    def test_global_blacklist_overrides_per_class_whitelist(self):
+        """Global blacklist still removes methods even when per-class whitelist would keep them."""
+        mod, cls = _module_with_methods("getValue", "internalOp")
+        FilterEngine(
+            FilterConfig(
+                methods=MethodFilter(
+                    global_blacklist=[FilterPattern("internalOp")],
+                    per_class={
+                        "Cls": MethodClassFilter(whitelist=[FilterPattern("getValue"), FilterPattern("internalOp")])
+                    },
+                )
+            )
+        ).apply(mod)
+        emitted = [m.name for m in cls.methods if m.emit]
+        assert emitted == ["getValue"]  # internalOp removed by global blacklist first
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +264,48 @@ class TestConstructorFilter:
         emitted = [c for c in cls.constructors if c.emit]
         assert len(emitted) == 1
         assert emitted[0].parameters[0].type_spelling == "int"
+
+    def test_per_class_include_false_suppresses_only_that_class(self):
+        mod_c, cls_c = self._cls_with_ctors([], ["int"])
+        ctors_d = [TIRConstructor(parameters=[TIRParameter("x", t) for t in pl]) for pl in [[], ["float"]]]
+        cls_d = TIRClass(name="D", qualified_name="ns::D", namespace="ns", constructors=ctors_d)  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[cls_c, cls_d], class_by_name={"C": cls_c, "D": cls_d})  # type: ignore[arg-type, list-item]
+        FilterEngine(
+            FilterConfig(
+                constructors=ConstructorFilter(
+                    include=True,
+                    per_class={"C": ConstructorClassFilter(include=False)},
+                )
+            )
+        ).apply(mod)
+        assert all(not c.emit for c in cls_c.constructors)  # C: per-class include=False wins
+        assert all(c.emit for c in cls_d.constructors)  # D: global include=True
+
+    def test_per_class_signatures_filter(self):
+        mod, cls = self._cls_with_ctors([], ["int"], ["float"])
+        FilterEngine(
+            FilterConfig(
+                constructors=ConstructorFilter(
+                    include=True,
+                    signatures=[FilterPattern("int")],  # global: only int
+                    per_class={"C": ConstructorClassFilter(signatures=[FilterPattern("float")])},  # C: only float
+                )
+            )
+        ).apply(mod)
+        emitted_sigs = [", ".join(p.type_spelling for p in c.parameters) for c in cls.constructors if c.emit]
+        assert emitted_sigs == ["float"]  # per-class overrides global for class C
+
+    def test_per_class_inherits_global_include(self):
+        mod, cls = self._cls_with_ctors([], ["int"])
+        FilterEngine(
+            FilterConfig(
+                constructors=ConstructorFilter(
+                    include=False,  # global: suppress all
+                    per_class={"C": ConstructorClassFilter()},  # no override
+                )
+            )
+        ).apply(mod)
+        assert all(not c.emit for c in cls.constructors)  # inherits global False
 
 
 # ---------------------------------------------------------------------------
