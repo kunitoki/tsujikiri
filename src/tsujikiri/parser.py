@@ -6,7 +6,9 @@ Filtering happens in filters.py after the full IR is built.
 
 from __future__ import annotations
 
+import platform
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -726,6 +728,20 @@ def parse_translation_unit(
         if not any("libcxx" in a for a in args):
             args += [f"-isystem{bundled_libcxx}", f"-isystem{bundled_resource}"]
 
+    # On macOS the bundled libcxx headers use #include_next to pull in system C
+    # headers (stdio.h, wchar.h, etc.).  Without an explicit sysroot clang cannot
+    # locate those headers, causing "undeclared identifier 'FILE'", 'BUFSIZ', and
+    # similar errors in any third-party C header that includes standard C headers.
+    if platform.system() == "Darwin" and not any("-isysroot" in a for a in args):
+        try:
+            sdk_path = subprocess.check_output(
+                ["xcrun", "--show-sdk-path"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            if sdk_path:
+                args += ["-isysroot", sdk_path]
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+
     if verbose:
         print(f"[parse] {source_path}: args={args}", file=sys.stderr)
 
@@ -735,15 +751,15 @@ def parse_translation_unit(
     # before processing all namespaces in the translation unit.
     tu = index.parse(str(source_path.absolute()), args=args, options=0x200)
 
-    # Print diagnostics: errors/fatals always, all diags when verbose.
+    # Print diagnostics only when verbose; always collect errors for --strict.
     for diag in tu.diagnostics:
-        if diag.severity >= 3 or verbose:
-            loc = diag.location
-            loc_str = f"{loc.file.name}:{loc.line}:{loc.column}" if loc.file else "<unknown>"
-            sev = _CLANG_SEVERITY.get(diag.severity, str(diag.severity))
+        loc = diag.location
+        loc_str = f"{loc.file.name}:{loc.line}:{loc.column}" if loc.file else "<unknown>"
+        sev = _CLANG_SEVERITY.get(diag.severity, str(diag.severity))
+        if verbose:
             print(f"[clang:{sev}] {loc_str}: {diag.spelling}", file=sys.stderr)
-            if clang_errors is not None and diag.severity >= 3:
-                clang_errors.append(f"[clang:{sev}] {loc_str}: {diag.spelling}")
+        if clang_errors is not None and diag.severity >= 3:
+            clang_errors.append(f"[clang:{sev}] {loc_str}: {diag.spelling}")
 
     module = IRModule(name=module_name, namespaces=list(namespaces))
 

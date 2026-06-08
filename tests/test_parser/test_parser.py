@@ -588,6 +588,52 @@ class TestBundledLibcxx:
 
 
 # ---------------------------------------------------------------------------
+# Branch coverage: Darwin sysroot injection (735-743)
+# ---------------------------------------------------------------------------
+
+
+class TestDarwinSysroot:
+    def test_isysroot_already_in_args_skips_xcrun(self, tmp_path: Path) -> None:
+        """Branch 735->745: -isysroot already present — xcrun not called."""
+        hpp = tmp_path / "sysroot.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/some/sdk"])
+        with patch("tsujikiri.parser.subprocess.check_output") as mock_xcrun:
+            module = parse_translation_unit(src, ["ns"], "isysroot_preset")
+        mock_xcrun.assert_not_called()
+        assert module is not None
+
+    def test_empty_sdk_path_not_added(self, tmp_path: Path) -> None:
+        """Branch 740->745: xcrun returns empty string — -isysroot not appended."""
+        hpp = tmp_path / "sysroot2.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="  \n"):
+            module = parse_translation_unit(src, ["ns"], "empty_sdk")
+        assert module is not None
+
+    def test_xcrun_subprocess_error_silenced(self, tmp_path: Path) -> None:
+        """Lines 742-743: SubprocessError from xcrun is caught and ignored."""
+        import subprocess as _subprocess
+
+        hpp = tmp_path / "sysroot3.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("tsujikiri.parser.subprocess.check_output", side_effect=_subprocess.SubprocessError("xcrun failed")):
+            module = parse_translation_unit(src, ["ns"], "xcrun_error")
+        assert module is not None
+
+    def test_xcrun_file_not_found_silenced(self, tmp_path: Path) -> None:
+        """Lines 742-743: FileNotFoundError (xcrun not installed) is caught and ignored."""
+        hpp = tmp_path / "sysroot4.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("tsujikiri.parser.subprocess.check_output", side_effect=FileNotFoundError("xcrun not found")):
+            module = parse_translation_unit(src, ["ns"], "xcrun_missing")
+        assert module is not None
+
+
+# ---------------------------------------------------------------------------
 # _type_from_tokens — comprehensive real-libclang tests
 #
 # Many std:: types are misreported by libclang (typically as 'int') when they
