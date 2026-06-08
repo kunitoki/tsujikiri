@@ -12,7 +12,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from tsujikiri.tir import TIRClass, TIRModule
 
@@ -108,7 +108,14 @@ def _canonical_class(ir_class: TIRClass) -> Dict[str, Any]:
         key=lambda e: e["name"],
     )
 
-    return {
+    bases = sorted(b.qualified_name for b in ir_class.bases if getattr(b, "emit", True))
+
+    inner_classes = sorted(
+        [_canonical_class(c) for c in ir_class.inner_classes if c.emit],
+        key=lambda c: c["name"],
+    )
+
+    result: Dict[str, Any] = {
         "name": name,
         "constructors": [list(sig) for sig in constructors],
         "methods": methods,
@@ -116,6 +123,11 @@ def _canonical_class(ir_class: TIRClass) -> Dict[str, Any]:
         "properties": properties,
         "enums": enums,
     }
+    if bases:
+        result["bases"] = bases
+    if inner_classes:
+        result["inner_classes"] = inner_classes
+    return result
 
 
 def _canonical_property(prop: Any) -> Dict[str, Any]:
@@ -331,13 +343,6 @@ def _canonical_class_transform(ir_class: Any) -> Optional[Dict[str, Any]]:
     ]
     if fields:
         data["fields"] = sorted(fields, key=lambda f: (f["class"], f["name"]))
-
-    properties = sorted(
-        [_canonical_property(p) for p in ir_class.properties if p.emit],
-        key=lambda p: p["name"],
-    )
-    if properties:
-        data["properties"] = properties
 
     enums = [
         transformed
@@ -560,11 +565,46 @@ def _compare_class_members(
     new_cls: Dict,
     report: CompatibilityReport,
 ) -> None:
+    _compare_bases(class_name, old_cls.get("bases", []), new_cls.get("bases", []), report)
     _compare_constructors(class_name, old_cls.get("constructors", []), new_cls.get("constructors", []), report)
     _compare_methods(class_name, old_cls.get("methods", []), new_cls.get("methods", []), report)
     _compare_fields(class_name, old_cls.get("fields", []), new_cls.get("fields", []), report)
     _compare_properties(class_name, old_cls.get("properties", []), new_cls.get("properties", []), report)
     _compare_enums(class_name, old_cls.get("enums", []), new_cls.get("enums", []), report)
+    _compare_inner_classes(class_name, old_cls.get("inner_classes", []), new_cls.get("inner_classes", []), report)
+
+
+def _compare_bases(
+    class_name: str,
+    old_bases: List[str],
+    new_bases: List[str],
+    report: CompatibilityReport,
+) -> None:
+    old_set: Set[str] = set(old_bases)
+    new_set: Set[str] = set(new_bases)
+    for base in old_set - new_set:
+        report.breaking_changes.append(f"Class '{class_name}' removed base '{base}'")
+    for base in new_set - old_set:
+        report.additive_changes.append(f"Class '{class_name}' added base '{base}'")
+
+
+def _compare_inner_classes(
+    parent_class: str,
+    old_list: List[Dict],
+    new_list: List[Dict],
+    report: CompatibilityReport,
+) -> None:
+    old_by_name = {c["name"]: c for c in old_list}
+    new_by_name = {c["name"]: c for c in new_list}
+    for name, old_c in old_by_name.items():
+        label = f"{parent_class}.{name}"
+        if name not in new_by_name:
+            report.breaking_changes.append(f"Inner class '{label}' was removed")
+        else:
+            _compare_class_members(label, old_c, new_by_name[name], report)
+    for name in new_by_name:
+        if name not in old_by_name:
+            report.additive_changes.append(f"Inner class '{parent_class}.{name}' was added")
 
 
 def _compare_constructors(
@@ -761,8 +801,56 @@ def _compare_enums(
             report.additive_changes.append(f"Enum '{prefix}{name}' was added")
 
 
+def _compare_transformation_list(
+    old_list: List[Dict[str, Any]],
+    new_list: List[Dict[str, Any]],
+    key_fn: Callable[[Dict[str, Any]], Any],
+    label_fn: Callable[[Dict[str, Any]], str],
+    report: CompatibilityReport,
+) -> None:
+    old_by_key = {key_fn(item): item for item in old_list}
+    new_by_key = {key_fn(item): item for item in new_list}
+    for key, old_item in old_by_key.items():
+        if key not in new_by_key:
+            report.breaking_changes.append(f"Binding {label_fn(old_item)} was removed")
+        elif old_item != new_by_key[key]:
+            report.breaking_changes.append(f"Binding {label_fn(old_item)} was changed")
+    for key, new_item in new_by_key.items():
+        if key not in old_by_key:
+            report.additive_changes.append(f"Binding {label_fn(new_item)} was added")
+
+
 def _compare_transformations(
     old_transformations: Dict[str, Any], new_transformations: Dict[str, Any], report: CompatibilityReport
 ) -> None:
-    if old_transformations != new_transformations:
-        report.breaking_changes.append("Transformed binding metadata changed")
+    if old_transformations.get("code_injections") != new_transformations.get("code_injections"):
+        report.breaking_changes.append("Module code injections changed")
+
+    _compare_transformation_list(
+        old_transformations.get("exception_registrations", []),
+        new_transformations.get("exception_registrations", []),
+        key_fn=lambda er: (er["cpp_exception_type"], er["target_exception_name"]),
+        label_fn=lambda er: f"exception registration '{er['cpp_exception_type']}'",
+        report=report,
+    )
+    _compare_transformation_list(
+        old_transformations.get("classes", []),
+        new_transformations.get("classes", []),
+        key_fn=lambda c: c["qualified_name"],
+        label_fn=lambda c: f"class transform '{c['qualified_name']}'",
+        report=report,
+    )
+    _compare_transformation_list(
+        old_transformations.get("functions", []),
+        new_transformations.get("functions", []),
+        key_fn=lambda f: (f["name"], tuple(f["params"])),
+        label_fn=lambda f: f"function transform '{f['name']}'",
+        report=report,
+    )
+    _compare_transformation_list(
+        old_transformations.get("enums", []),
+        new_transformations.get("enums", []),
+        key_fn=lambda e: e["name"],
+        label_fn=lambda e: f"enum transform '{e['name']}'",
+        report=report,
+    )

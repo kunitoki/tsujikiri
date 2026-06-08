@@ -55,30 +55,36 @@ class FilterEngine:
                 continue
             self._filter_class(ir_class)
 
+    def _suppress_class_tree(self, ir_class: TIRClass) -> None:
+        """Recursively mark a class and all its inner classes as emit=False."""
+        ir_class.emit = False
+        for inner in ir_class.inner_classes:
+            self._suppress_class_tree(inner)
+
     def _filter_class(self, ir_class: TIRClass) -> None:
         name = ir_class.name
         cfg = self.cfg
 
         # Source file exclusion
         if ir_class.source_file and _matches_glob(ir_class.source_file, cfg.sources.exclude_patterns):
-            ir_class.emit = False
+            self._suppress_class_tree(ir_class)
             return
 
         # Class internal (silent suppression — treated same as blacklist here)
         if _matches(name, cfg.classes.internal):
-            ir_class.emit = False
+            self._suppress_class_tree(ir_class)
             return
 
         # Class whitelist takes priority — whitelisted items bypass blacklist
         if cfg.classes.whitelist:
             if not _matches(name, cfg.classes.whitelist):
-                ir_class.emit = False
+                self._suppress_class_tree(ir_class)
                 return
             # matched whitelist → keep; skip blacklist
         else:
             # Class blacklist (only when no whitelist)
             if _matches(name, cfg.classes.blacklist):
-                ir_class.emit = False
+                self._suppress_class_tree(ir_class)
                 return
 
         # Bases outside the filtered namespaces cannot be registered, so suppress them

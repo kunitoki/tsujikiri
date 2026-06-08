@@ -8,6 +8,7 @@ import pytest
 
 from tsujikiri.ir import IRCodeInjection, IRExceptionRegistration, IRProperty
 from tsujikiri.tir import (
+    TIRBase,
     TIRClass,
     TIRConstructor,
     TIREnum,
@@ -411,9 +412,8 @@ class TestCompareManifoldsAdditive:
 
         r = self._compare(old, new)
 
-        assert not r.is_compatible
+        assert r.is_compatible
         assert "Property 'Calculator.value' was added" in r.additive_changes
-        assert "Transformed binding metadata changed" in r.breaking_changes
 
     def test_new_enum_is_additive(self):
         old = _make_module()
@@ -435,6 +435,57 @@ class TestCompareManifoldsAdditive:
         r = self._compare(old, new)
         assert r.is_compatible
         assert any("compute" in c for c in r.additive_changes)
+
+    def test_adding_function_with_transform_metadata_is_additive(self):
+        old = _make_module()
+        fn = _fn("compute", ["double"], "double")
+        fn.allow_thread = True  # non-default → lands in transformations
+        new = _make_module(functions=[fn])
+        r = self._compare(old, new)
+        assert r.is_compatible
+        assert any("compute" in c for c in r.additive_changes)
+
+    def test_adding_class_with_transform_metadata_is_additive(self):
+        old = _make_module()
+        cls = _cls("Widget")
+        cls.holder_type = "shared_ptr"  # non-default → lands in transformations
+        new = _make_module(classes=[cls])
+        r = self._compare(old, new)
+        assert r.is_compatible
+        assert any("Widget" in c for c in r.additive_changes)
+
+    def test_adding_exception_registration_is_additive(self):
+        old = _make_module()
+        new = _make_module()
+        new.exception_registrations.append(
+            IRExceptionRegistration(
+                cpp_exception_type="FooError",
+                target_exception_name="FooError",
+                base_target_exception="Exception",
+            )
+        )
+        r = self._compare(old, new)
+        assert r.is_compatible
+        assert any("FooError" in c for c in r.additive_changes)
+
+    def test_base_class_added_is_additive(self):
+        old = _make_module(classes=[_cls()])
+        new_cls = _cls()
+        new_cls.bases.append(TIRBase(qualified_name="testmod::Base"))
+        new = _make_module(classes=[new_cls])
+        r = self._compare(old, new)
+        assert r.is_compatible
+        assert any("testmod::Base" in c for c in r.additive_changes)
+
+    def test_inner_class_added_is_additive(self):
+        old = _make_module(classes=[_cls()])
+        inner = TIRClass(name="Inner", qualified_name="testmod::Calculator::Inner", namespace="testmod")
+        new_cls = _cls()
+        new_cls.inner_classes.append(inner)
+        new = _make_module(classes=[new_cls])
+        r = self._compare(old, new)
+        assert r.is_compatible
+        assert any("Inner" in c for c in r.additive_changes)
 
 
 # ---------------------------------------------------------------------------
@@ -639,7 +690,7 @@ class TestCompareManifoldBreaking:
         r = self._compare(old, new)
 
         assert not r.is_compatible
-        assert "Transformed binding metadata changed" in r.breaking_changes
+        assert any("code injections" in c for c in r.breaking_changes)
 
     def test_wrapper_code_change_is_breaking(self):
         old_method = _method("value")
@@ -652,7 +703,110 @@ class TestCompareManifoldBreaking:
         r = self._compare(old, new)
 
         assert not r.is_compatible
-        assert "Transformed binding metadata changed" in r.breaking_changes
+        assert any("Calculator" in c for c in r.breaking_changes)
+
+    def test_unchanged_class_transform_is_compatible(self):
+        old_cls = _cls("Widget")
+        old_cls.holder_type = "shared_ptr"
+        old = _make_module(classes=[old_cls])
+        new_cls = _cls("Widget")
+        new_cls.holder_type = "shared_ptr"  # same
+        new = _make_module(classes=[new_cls])
+        r = self._compare(old, new)
+        assert r.is_compatible
+        assert not r.has_changes
+
+    def test_removing_class_transform_is_breaking(self):
+        old_cls = _cls("Widget")
+        old_cls.holder_type = "shared_ptr"
+        old = _make_module(classes=[old_cls])
+        new = _make_module(classes=[_cls("Widget")])  # holder_type dropped
+        r = self._compare(old, new)
+        assert not r.is_compatible
+        assert any("Widget" in c for c in r.breaking_changes)
+
+    def test_changing_class_transform_is_breaking(self):
+        old_cls = _cls("Widget")
+        old_cls.holder_type = "shared_ptr"
+        old = _make_module(classes=[old_cls])
+        new_cls = _cls("Widget")
+        new_cls.holder_type = "unique_ptr"
+        new = _make_module(classes=[new_cls])
+        r = self._compare(old, new)
+        assert not r.is_compatible
+        assert any("Widget" in c for c in r.breaking_changes)
+
+    def test_removing_exception_registration_is_breaking(self):
+        old = _make_module()
+        old.exception_registrations.append(
+            IRExceptionRegistration(
+                cpp_exception_type="BarError",
+                target_exception_name="BarError",
+                base_target_exception="Exception",
+            )
+        )
+        new = _make_module()
+        r = self._compare(old, new)
+        assert not r.is_compatible
+        assert any("BarError" in c for c in r.breaking_changes)
+
+    def test_base_class_removed_is_breaking(self):
+        old_cls = _cls()
+        old_cls.bases.append(TIRBase(qualified_name="testmod::Base"))
+        old = _make_module(classes=[old_cls])
+        new = _make_module(classes=[_cls()])
+        r = self._compare(old, new)
+        assert not r.is_compatible
+        assert any("testmod::Base" in c for c in r.breaking_changes)
+
+    def test_base_class_changed_is_breaking(self):
+        old_cls = _cls()
+        old_cls.bases.append(TIRBase(qualified_name="testmod::OldBase"))
+        old = _make_module(classes=[old_cls])
+        new_cls = _cls()
+        new_cls.bases.append(TIRBase(qualified_name="testmod::NewBase"))
+        new = _make_module(classes=[new_cls])
+        r = self._compare(old, new)
+        assert not r.is_compatible
+        assert any("testmod::OldBase" in c for c in r.breaking_changes)
+        assert any("testmod::NewBase" in c for c in r.additive_changes)
+
+    def test_non_emitted_base_class_ignored(self):
+        old = _make_module(classes=[_cls()])
+        new_cls = _cls()
+        new_cls.bases.append(TIRBase(qualified_name="testmod::Hidden", emit=False))
+        new = _make_module(classes=[new_cls])
+        r = self._compare(old, new)
+        assert r.is_compatible
+        assert not r.has_changes
+
+    def test_inner_class_removed_is_breaking(self):
+        inner = TIRClass(name="Inner", qualified_name="testmod::Calculator::Inner", namespace="testmod")
+        old_cls = _cls()
+        old_cls.inner_classes.append(inner)
+        old = _make_module(classes=[old_cls])
+        new = _make_module(classes=[_cls()])
+        r = self._compare(old, new)
+        assert not r.is_compatible
+        assert any("Inner" in c for c in r.breaking_changes)
+
+    def test_inner_class_method_removed_is_breaking(self):
+        inner_old = TIRClass(
+            name="Inner",
+            qualified_name="testmod::Calculator::Inner",
+            namespace="testmod",
+            methods=[_method("foo")],
+        )
+        inner_new = TIRClass(name="Inner", qualified_name="testmod::Calculator::Inner", namespace="testmod")
+        old_cls = _cls()
+        old_cls.inner_classes.append(inner_old)
+        old = _make_module(classes=[old_cls])
+        new_cls = _cls()
+        new_cls.inner_classes.append(inner_new)
+        new = _make_module(classes=[new_cls])
+        r = self._compare(old, new)
+        assert not r.is_compatible
+        assert any("foo" in c for c in r.breaking_changes)
 
 
 # ---------------------------------------------------------------------------

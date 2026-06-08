@@ -453,6 +453,56 @@ class TestPreSuppressedNodes:
         FilterEngine(FilterConfig(classes=ClassFilter(blacklist=[FilterPattern("Inner")]))).apply(mod)
         assert inner.emit is False
 
+    def test_suppressed_outer_via_whitelist_also_suppresses_inner(self):
+        # Regression: inner class of a whitelist-suppressed outer class must not leak into
+        # manifest transformations with emit=True when the outer class is filtered out.
+        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
+        outer = TIRClass(name="Outer", qualified_name="ns::Outer", namespace="ns", inner_classes=[inner])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})  # type: ignore[arg-type, list-item]
+        FilterEngine(FilterConfig(classes=ClassFilter(whitelist=[FilterPattern("Other")]))).apply(mod)
+        assert outer.emit is False
+        assert inner.emit is False
+
+    def test_suppressed_outer_via_blacklist_also_suppresses_inner(self):
+        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
+        outer = TIRClass(name="Outer", qualified_name="ns::Outer", namespace="ns", inner_classes=[inner])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})  # type: ignore[arg-type, list-item]
+        FilterEngine(FilterConfig(classes=ClassFilter(blacklist=[FilterPattern("Outer")]))).apply(mod)
+        assert outer.emit is False
+        assert inner.emit is False
+
+    def test_suppressed_outer_via_internal_also_suppresses_inner(self):
+        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns")
+        outer = TIRClass(name="Outer", qualified_name="ns::Outer", namespace="ns", inner_classes=[inner])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})  # type: ignore[arg-type, list-item]
+        FilterEngine(FilterConfig(classes=ClassFilter(internal=[FilterPattern("Outer")]))).apply(mod)
+        assert outer.emit is False
+        assert inner.emit is False
+
+    def test_suppressed_outer_via_source_file_also_suppresses_inner(self):
+        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns", source_file="/path/to/foo.mm")
+        outer = TIRClass(
+            name="Outer",
+            qualified_name="ns::Outer",
+            namespace="ns",
+            source_file="/path/to/foo.mm",
+            inner_classes=[inner],
+        )  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})  # type: ignore[arg-type, list-item]
+        FilterEngine(FilterConfig(sources=SourceFilter(exclude_patterns=["*.mm"]))).apply(mod)
+        assert outer.emit is False
+        assert inner.emit is False
+
+    def test_suppressed_outer_suppresses_deeply_nested_inner(self):
+        grandchild = TIRClass(name="GrandChild", qualified_name="ns::Outer::Inner::GrandChild", namespace="ns")
+        inner = TIRClass(name="Inner", qualified_name="ns::Outer::Inner", namespace="ns", inner_classes=[grandchild])  # type: ignore[arg-type]
+        outer = TIRClass(name="Outer", qualified_name="ns::Outer", namespace="ns", inner_classes=[inner])  # type: ignore[arg-type]
+        mod = TIRModule(name="m", classes=[outer], class_by_name={"Outer": outer})  # type: ignore[arg-type, list-item]
+        FilterEngine(FilterConfig(classes=ClassFilter(whitelist=[FilterPattern("Other")]))).apply(mod)
+        assert outer.emit is False
+        assert inner.emit is False
+        assert grandchild.emit is False
+
 
 # ---------------------------------------------------------------------------
 # Varargs suppression (Gap 16)
