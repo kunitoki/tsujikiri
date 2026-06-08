@@ -153,3 +153,33 @@ def multi_output_input_yml(tmp_path) -> Path:
     p = tmp_path / "multi_out.input.yml"
     p.write_text(yaml.dump(data), encoding="utf-8")
     return p
+
+
+@pytest.fixture
+def broken_input_yml(tmp_path) -> Path:
+    """Input YAML pointing to broken.hpp which produces a clang fatal error."""
+    data = {
+        "source": {
+            "path": str(HERE / "broken.hpp"),
+            "parse_args": ["-std=c++17"],
+        },
+        "filters": {"namespaces": []},
+    }
+    p = tmp_path / "broken.input.yml"
+    p.write_text(yaml.dump(data), encoding="utf-8")
+    return p
+
+
+@pytest.fixture
+def warning_input_yml(tmp_path) -> Path:
+    """Input YAML pointing to warning.hpp which produces only a clang warning."""
+    data = {
+        "source": {
+            "path": str(HERE / "warning.hpp"),
+            "parse_args": ["-std=c++17"],
+        },
+        "filters": {"namespaces": []},
+    }
+    p = tmp_path / "warning.input.yml"
+    p.write_text(yaml.dump(data), encoding="utf-8")
+    return p

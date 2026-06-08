@@ -237,6 +237,7 @@ tsujikiri [OPTIONS]
 | `--trace-transforms` | | | Print which transform stages ran and on what entities to stderr |
 | `--dump-ir` | | `[FILE]` | Dump the post-transform IR as JSON to FILE (default: stdout) |
 | `--validate-config` | | | Validate input config (regex patterns, stage names) and exit |
+| `--strict` | | | Exit 1 if clang reports any errors during parsing; no output is written |
 | `--verbose` | `-v` | | Enable verbose Clang diagnostic output during parsing |
 | `--api-version` | | `VERSION` | Override the API version string used for `--embed-version` and `api_since`/`api_until` semver filtering |
 | `--pretty` | | `[FORMAT...]` | Enable pretty printing. No FORMAT args = all targets; with FORMAT names = only those targets. Overrides `pretty` in input YAML. |

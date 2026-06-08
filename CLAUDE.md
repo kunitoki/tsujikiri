@@ -1,4 +1,4 @@
-- never git add or commit
+- never do git destructive operations (like git add/commit/restore)
 - always use python and tools via "uv run"
 - use "just test" to test
 - use "just test clang22 -k test_method_name" to test an individual test method

@@ -134,6 +134,11 @@ def build_parser() -> argparse.ArgumentParser:
             "those targets. Overrides the input.yml `pretty` setting."
         ),
     )
+    p.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit 1 if clang reports any errors during parsing; no output is written",
+    )
     return p
 
 
@@ -254,6 +259,7 @@ def _process_sources(
     trace_stream: Optional[IO],
     verbose: bool = False,
     output_name: Optional[str] = None,
+    clang_errors: Optional[List[str]] = None,
 ) -> tuple[TIRModule, list[str]]:
     """Run parse → upgrade → filter → attribute → transform for all sources, return merged module and includes."""
     fmt_override = input_config.format_override_for(output_config.format_name, output_name)
@@ -278,6 +284,7 @@ def _process_sources(
             effective_filters.namespaces,
             module_name,
             verbose=verbose,
+            clang_errors=clang_errors,
         )
         module = upgrade_module(ir_module)
 
@@ -380,6 +387,8 @@ def main() -> None:
     first_fmt_path = resolve_format_path(first_fmt, extra_dirs=extra_dirs)
     first_output_config = apply_format_inheritance(load_output_config(first_fmt_path), extra_dirs=extra_dirs)
 
+    clang_errors: List[str] = []
+
     if has_output_groups:
         manifest_modules: List[TIRModule] = []
         all_includes: list[str] = []
@@ -392,6 +401,7 @@ def main() -> None:
                 trace_stream,
                 verbose=args.verbose,
                 output_name=group.name,
+                clang_errors=clang_errors,
             )
             manifest_modules.append(group_merged)
         merged = merge_tir_modules(manifest_modules)
@@ -403,7 +413,11 @@ def main() -> None:
             module_name,
             trace_stream,
             verbose=args.verbose,
+            clang_errors=clang_errors,
         )
+
+    if args.strict and clang_errors:
+        sys.exit(1)
 
     # --- Inject declared functions from typesystem ---
     for fn_decl in input_config.typesystem.declared_functions:
