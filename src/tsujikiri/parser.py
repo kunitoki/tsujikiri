@@ -696,6 +696,7 @@ def parse_translation_unit(
     module_name: str,
     *,
     verbose: bool = False,
+    clang_errors: Optional[List[str]] = None,
 ) -> TIRModule:
     """Parse a C++ translation unit and return a fully populated IRModule.
 
@@ -741,6 +742,8 @@ def parse_translation_unit(
             loc_str = f"{loc.file.name}:{loc.line}:{loc.column}" if loc.file else "<unknown>"
             sev = _CLANG_SEVERITY.get(diag.severity, str(diag.severity))
             print(f"[clang:{sev}] {loc_str}: {diag.spelling}", file=sys.stderr)
+            if clang_errors is not None and diag.severity >= 3:
+                clang_errors.append(f"[clang:{sev}] {loc_str}: {diag.spelling}")
 
     module = IRModule(name=module_name, namespaces=list(namespaces))
 

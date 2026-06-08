@@ -11,6 +11,8 @@ import pytest
 import yaml
 
 from tsujikiri.cli import _is_directory_target, build_parser, main
+from tsujikiri.parser import parse_translation_unit
+from tsujikiri.configurations import SourceConfig
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +131,16 @@ class TestBuildParser:
             ]
         )
         assert args.pretty == ["luabridge3", "pybind11"]
+
+    def test_strict_flag_absent_is_false(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-"])
+        assert args.strict is False
+
+    def test_strict_flag_is_true(self):
+        p = build_parser()
+        args = p.parse_args(["--input", "x.yml", "--target", "luabridge3", "-", "--strict"])
+        assert args.strict is True
 
 
 # ---------------------------------------------------------------------------
@@ -1544,3 +1556,111 @@ class TestMultiOutputGeneration:
         with patch("tsujikiri.cli.pretty", return_value="// pretty\n") as mock_fmt:
             _run("-i", str(p), "--target", "luabridge3", str(outdir) + "/")
         mock_fmt.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# parse_translation_unit clang_errors accumulator
+# ---------------------------------------------------------------------------
+
+
+class TestParseTranslationUnitClangErrors:
+    HERE = Path(__file__).parent
+
+    def test_errors_collected_for_broken_header(self):
+        source = SourceConfig(path=str(self.HERE / "broken.hpp"), parse_args=["-std=c++17"])
+        errors: list[str] = []
+        parse_translation_unit(source, [], "test_module", clang_errors=errors)
+        assert len(errors) >= 1
+        assert any("error" in e.lower() or "fatal" in e.lower() for e in errors)
+
+    def test_warnings_not_collected_in_accumulator(self):
+        source = SourceConfig(path=str(self.HERE / "warning.hpp"), parse_args=["-std=c++17"])
+        errors: list[str] = []
+        parse_translation_unit(source, [], "test_module", clang_errors=errors)
+        assert errors == []
+
+    def test_clean_header_produces_no_errors(self):
+        source = SourceConfig(path=str(self.HERE / "simple.hpp"), parse_args=["-std=c++17"])
+        errors: list[str] = []
+        parse_translation_unit(source, ["simple"], "test_module", clang_errors=errors)
+        assert errors == []
+
+    def test_none_accumulator_does_not_raise(self):
+        source = SourceConfig(path=str(self.HERE / "broken.hpp"), parse_args=["-std=c++17"])
+        parse_translation_unit(source, [], "test_module", clang_errors=None)
+
+    def test_no_accumulator_kwarg_does_not_raise(self):
+        source = SourceConfig(path=str(self.HERE / "simple.hpp"), parse_args=["-std=c++17"])
+        parse_translation_unit(source, ["simple"], "test_module")
+
+
+# ---------------------------------------------------------------------------
+# --strict
+# ---------------------------------------------------------------------------
+
+
+class TestStrict:
+    def test_strict_flag_absent_does_not_fail_on_broken_header(self, broken_input_yml, tmp_path):
+        out_file = tmp_path / "out.cpp"
+        # Without --strict, broken headers still exit 0
+        _run("--input", str(broken_input_yml), "--target", "luabridge3", str(out_file))
+        # File written (may be empty bindings, but the tool should not abort)
+        assert out_file.exists()
+
+    def test_strict_exits_1_on_broken_header(self, broken_input_yml, tmp_path):
+        out_file = tmp_path / "out.cpp"
+        with patch(
+            "sys.argv",
+            ["tsujikiri", "--input", str(broken_input_yml), "--target", "luabridge3", str(out_file), "--strict"],
+        ):
+            with patch("sys.stdout", StringIO()), patch("sys.stderr", StringIO()):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+        assert exc_info.value.code == 1
+
+    def test_strict_no_output_written_on_broken_header(self, broken_input_yml, tmp_path):
+        out_file = tmp_path / "out.cpp"
+        with patch(
+            "sys.argv",
+            ["tsujikiri", "--input", str(broken_input_yml), "--target", "luabridge3", str(out_file), "--strict"],
+        ):
+            with patch("sys.stdout", StringIO()), patch("sys.stderr", StringIO()):
+                with pytest.raises(SystemExit):
+                    main()
+        assert not out_file.exists()
+
+    def test_strict_exits_0_on_clean_header(self, simple_input_yml, tmp_path):
+        out_file = tmp_path / "out.cpp"
+        _run("--input", str(simple_input_yml), "--target", "luabridge3", str(out_file), "--strict")
+        assert out_file.exists()
+
+    def test_strict_exits_0_on_warning_only_header(self, warning_input_yml, tmp_path):
+        out_file = tmp_path / "out.cpp"
+        _run("--input", str(warning_input_yml), "--target", "luabridge3", str(out_file), "--strict")
+        # Warnings alone must not trigger strict failure
+        assert out_file.exists()
+
+    def test_strict_exits_1_on_broken_header_in_output_groups(self, tmp_path):
+        broken_hpp = Path(__file__).parent / "broken.hpp"
+        data = {
+            "outputs": [{"name": "out_a", "sources": [str(broken_hpp)]}],
+            "filters": {"namespaces": []},
+        }
+        input_yml = tmp_path / "broken_groups.input.yml"
+        input_yml.write_text(yaml.dump(data), encoding="utf-8")
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+        with patch("sys.argv", ["tsujikiri", "--input", str(input_yml), "--target", "luabridge3", str(outdir) + "/", "--strict"]):
+            with patch("sys.stdout", StringIO()), patch("sys.stderr", StringIO()):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+        assert exc_info.value.code == 1
+        assert not (outdir / "out_a.cpp").exists()
+
+    def test_strict_with_dry_run_exits_1_on_broken_header(self, broken_input_yml):
+        with patch("sys.argv", ["tsujikiri", "--input", str(broken_input_yml), "--target", "luabridge3", "-", "--strict", "--dry-run"]):
+            with patch("sys.stdout", StringIO()) as mock_stdout, patch("sys.stderr", StringIO()):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+        assert exc_info.value.code == 1
+        assert mock_stdout.getvalue() == ""

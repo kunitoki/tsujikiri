@@ -254,6 +254,9 @@ class InputConfig:
     typesystem: TypesystemConfig = field(default_factory=TypesystemConfig)
     # Arbitrary user-defined data passed verbatim into the template context as ``custom_data``.
     custom_data: Dict[str, Any] = field(default_factory=dict)
+    parse_args: List[str] = field(default_factory=list)
+    include_paths: List[str] = field(default_factory=list)
+    defines: List[str] = field(default_factory=list)
 
     def resolve_group_sources(self, group: "OutputGroupEntry") -> List[SourceEntry]:
         """Resolve a group's path strings to SourceEntry objects using self.sources as lookup.
@@ -313,6 +316,15 @@ class InputConfig:
         for scoped_overrides in self.output_format_overrides.values():
             overrides.extend(scoped_overrides.values())
         return overrides
+
+    def effective_source(self, entry: "SourceEntry") -> "SourceConfig":
+        return SourceConfig(
+            path=entry.source.path,
+            parse_args=self.parse_args + entry.source.parse_args,
+            include_paths=self.include_paths + entry.source.include_paths,
+            system_include_paths=entry.source.system_include_paths,
+            defines=self.defines + entry.source.defines,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -694,6 +706,11 @@ def load_input_config(config_file: Path) -> InputConfig:
     # --- Custom data ---
     custom_data: Dict[str, Any] = data.get("custom_data") or {}
 
+    # --- Global clang flags ---
+    parse_args: List[str] = data.get("parse_args", []) or []
+    include_paths: List[str] = data.get("include_paths", []) or []
+    defines: List[str] = data.get("defines", []) or []
+
     return InputConfig(
         source=source,
         sources=sources,
@@ -709,6 +726,9 @@ def load_input_config(config_file: Path) -> InputConfig:
         pretty_options=data.get("pretty_options", []),
         typesystem=typesystem,
         custom_data=custom_data,
+        parse_args=parse_args,
+        include_paths=include_paths,
+        defines=defines,
     )
 
 

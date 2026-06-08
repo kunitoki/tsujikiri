@@ -1,0 +1,1 @@
+#error "strict test error"
