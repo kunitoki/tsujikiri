@@ -560,6 +560,49 @@ class TestManifestCompatibility:
         assert "add" in stderr
         assert json.loads(manifest.read_text())["version"] == v1_version
 
+    def test_breaking_change_does_not_write_output_file(self, tmp_path):
+        """When --check-compat detects breaking changes, output files must not be written."""
+        v1_hpp = tmp_path / "v1.hpp"
+        v1_hpp.write_text("namespace api { int compute(int x); }\n")
+        manifest = tmp_path / "api.json"
+        out = tmp_path / "bindings.cpp"
+
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, v1_hpp, "v1")),
+            "--target",
+            "luabridge3",
+            str(out),
+            "--manifest-file",
+            str(manifest),
+        )
+        v1_content = out.read_text(encoding="utf-8")
+
+        v2_hpp = tmp_path / "v2.hpp"
+        v2_hpp.write_text("namespace api { int compute(int x, double y); }\n")
+
+        stdout_io, stderr_io = StringIO(), StringIO()
+        with patch(
+            "sys.argv",
+            [
+                "tsujikiri",
+                "--input",
+                str(self._input_yml(tmp_path, v2_hpp, "v2")),
+                "--target",
+                "luabridge3",
+                str(out),
+                "--manifest-file",
+                str(manifest),
+                "--check-compat",
+            ],
+        ):
+            with patch("sys.stdout", stdout_io), patch("sys.stderr", stderr_io):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+
+        assert exc_info.value.code == 1
+        assert out.read_text(encoding="utf-8") == v1_content
+
     def test_additive_change_exits_0_with_warning(self, tmp_path):
         """Adding a new function is additive — warns but does not fail."""
         v1_hpp = tmp_path / "v1.hpp"
@@ -1650,7 +1693,10 @@ class TestStrict:
         input_yml.write_text(yaml.dump(data), encoding="utf-8")
         outdir = tmp_path / "out"
         outdir.mkdir()
-        with patch("sys.argv", ["tsujikiri", "--input", str(input_yml), "--target", "luabridge3", str(outdir) + "/", "--strict"]):
+        with patch(
+            "sys.argv",
+            ["tsujikiri", "--input", str(input_yml), "--target", "luabridge3", str(outdir) + "/", "--strict"],
+        ):
             with patch("sys.stdout", StringIO()), patch("sys.stderr", StringIO()):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -1658,7 +1704,10 @@ class TestStrict:
         assert not (outdir / "out_a.cpp").exists()
 
     def test_strict_with_dry_run_exits_1_on_broken_header(self, broken_input_yml):
-        with patch("sys.argv", ["tsujikiri", "--input", str(broken_input_yml), "--target", "luabridge3", "-", "--strict", "--dry-run"]):
+        with patch(
+            "sys.argv",
+            ["tsujikiri", "--input", str(broken_input_yml), "--target", "luabridge3", "-", "--strict", "--dry-run"],
+        ):
             with patch("sys.stdout", StringIO()) as mock_stdout, patch("sys.stderr", StringIO()):
                 with pytest.raises(SystemExit) as exc_info:
                     main()

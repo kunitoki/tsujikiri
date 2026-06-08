@@ -486,6 +486,9 @@ def main() -> None:
             Path(args.dump_ir).write_text(ir_json + "\n", encoding="utf-8")
             print(f"IR written to {args.dump_ir}", file=sys.stderr)
 
+    if has_breaking:
+        sys.exit(1)
+
     # --- Generate for each target ---
     for target_idx, (fmt, outfile) in enumerate(args.target):
         if target_idx == 0:
@@ -641,11 +644,7 @@ def main() -> None:
                 out_path.write_text(content, encoding="utf-8")
                 print(f"Written to {out_path}", file=sys.stderr)
 
-    # Write manifest only when there are no breaking changes (or compat check is off).
-    if args.manifest_file and not has_breaking:
+    if args.manifest_file:
         manifest_path = Path(args.manifest_file)
         save_manifest(manifest, manifest_path)
         print(f"Written to {manifest_path}", file=sys.stderr)
-
-    if has_breaking:
-        sys.exit(1)
