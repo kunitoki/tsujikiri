@@ -1375,3 +1375,187 @@ outputs:
         assert override is not None
         assert '"base.hpp"' in override.generation.includes
         assert '"main.hpp"' in override.generation.includes
+
+
+class TestGlobalSourceConfig:
+    def test_effective_source_globals_only(self) -> None:
+        cfg = InputConfig(
+            parse_args=["-std=c++17"],
+            include_paths=["/global/include"],
+            defines=["GLOBAL=1"],
+        )
+        entry = SourceEntry(source=SourceConfig(path="foo.hpp"))
+        result = cfg.effective_source(entry)
+        assert result.path == "foo.hpp"
+        assert result.parse_args == ["-std=c++17"]
+        assert result.include_paths == ["/global/include"]
+        assert result.defines == ["GLOBAL=1"]
+        assert result.system_include_paths == []
+
+    def test_effective_source_per_source_only(self) -> None:
+        cfg = InputConfig()
+        entry = SourceEntry(
+            source=SourceConfig(
+                path="bar.hpp",
+                parse_args=["-std=c++20"],
+                include_paths=["/local/include"],
+                defines=["LOCAL=1"],
+            )
+        )
+        result = cfg.effective_source(entry)
+        assert result.parse_args == ["-std=c++20"]
+        assert result.include_paths == ["/local/include"]
+        assert result.defines == ["LOCAL=1"]
+
+    def test_effective_source_globals_prepended(self) -> None:
+        cfg = InputConfig(
+            parse_args=["-std=c++17"],
+            include_paths=["/global"],
+            defines=["GLOBAL=1"],
+        )
+        entry = SourceEntry(
+            source=SourceConfig(
+                path="baz.hpp",
+                parse_args=["-fno-exceptions"],
+                include_paths=["/local"],
+                defines=["LOCAL=1"],
+            )
+        )
+        result = cfg.effective_source(entry)
+        assert result.parse_args == ["-std=c++17", "-fno-exceptions"]
+        assert result.include_paths == ["/global", "/local"]
+        assert result.defines == ["GLOBAL=1", "LOCAL=1"]
+
+    def test_effective_source_empty_both(self) -> None:
+        cfg = InputConfig()
+        entry = SourceEntry(source=SourceConfig(path="empty.hpp"))
+        result = cfg.effective_source(entry)
+        assert result.parse_args == []
+        assert result.include_paths == []
+        assert result.defines == []
+
+    def test_effective_source_system_include_paths_pass_through(self) -> None:
+        cfg = InputConfig()
+        entry = SourceEntry(source=SourceConfig(path="sys.hpp", system_include_paths=["/usr/include"]))
+        result = cfg.effective_source(entry)
+        assert result.system_include_paths == ["/usr/include"]
+
+    def test_effective_source_path_unchanged(self) -> None:
+        cfg = InputConfig(parse_args=["-std=c++17"])
+        entry = SourceEntry(source=SourceConfig(path="/abs/path/to/header.hpp"))
+        result = cfg.effective_source(entry)
+        assert result.path == "/abs/path/to/header.hpp"
+
+    def test_load_global_parse_args(self, tmp_path: Path) -> None:
+        yml = tmp_path / "g.input.yml"
+        yml.write_text(
+            'source:\n  path: foo.hpp\nparse_args: ["-std=c++17", "-fno-exceptions"]\n',
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.parse_args == ["-std=c++17", "-fno-exceptions"]
+
+    def test_load_global_include_paths(self, tmp_path: Path) -> None:
+        yml = tmp_path / "g.input.yml"
+        yml.write_text(
+            "source:\n  path: foo.hpp\ninclude_paths:\n  - /opt/sdk/include\n  - /usr/local/include\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.include_paths == ["/opt/sdk/include", "/usr/local/include"]
+
+    def test_load_global_defines(self, tmp_path: Path) -> None:
+        yml = tmp_path / "g.input.yml"
+        yml.write_text(
+            "source:\n  path: foo.hpp\ndefines:\n  - NDEBUG\n  - MY_FLAG=1\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.defines == ["NDEBUG", "MY_FLAG=1"]
+
+    def test_load_global_fields_default_to_empty(self, tmp_path: Path) -> None:
+        yml = tmp_path / "g.input.yml"
+        yml.write_text("source:\n  path: foo.hpp\n", encoding="utf-8")
+        cfg = load_input_config(yml)
+        assert cfg.parse_args == []
+        assert cfg.include_paths == []
+        assert cfg.defines == []
+
+    def test_load_global_fields_null_coerced_to_empty(self, tmp_path: Path) -> None:
+        yml = tmp_path / "g.input.yml"
+        yml.write_text(
+            "source:\n  path: foo.hpp\nparse_args:\ninclude_paths:\ndefines:\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        assert cfg.parse_args == []
+        assert cfg.include_paths == []
+        assert cfg.defines == []
+
+    def test_loads_global_parse_args_prepended(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text(
+            'source:\n  path: base.hpp\nparse_args: ["-std=c++17"]\n',
+            encoding="utf-8",
+        )
+        child = tmp_path / "child.input.yml"
+        child.write_text(
+            'loads:\n  - base.input.yml\nsource:\n  path: child.hpp\nparse_args: ["-fno-exceptions"]\n',
+            encoding="utf-8",
+        )
+        cfg = load_input_config(child)
+        assert cfg.parse_args == ["-std=c++17", "-fno-exceptions"]
+
+    def test_loads_global_include_paths_prepended(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text(
+            "source:\n  path: base.hpp\ninclude_paths:\n  - /base/include\n",
+            encoding="utf-8",
+        )
+        child = tmp_path / "child.input.yml"
+        child.write_text(
+            "loads:\n  - base.input.yml\nsource:\n  path: child.hpp\ninclude_paths:\n  - /child/include\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(child)
+        assert cfg.include_paths == ["/base/include", "/child/include"]
+
+    def test_loads_global_defines_prepended(self, tmp_path: Path) -> None:
+        base = tmp_path / "base.input.yml"
+        base.write_text(
+            "source:\n  path: base.hpp\ndefines:\n  - BASE_FLAG\n",
+            encoding="utf-8",
+        )
+        child = tmp_path / "child.input.yml"
+        child.write_text(
+            "loads:\n  - base.input.yml\nsource:\n  path: child.hpp\ndefines:\n  - CHILD_FLAG\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(child)
+        assert cfg.defines == ["BASE_FLAG", "CHILD_FLAG"]
+
+    def test_effective_source_roundtrip_bare_source(self, tmp_path: Path) -> None:
+        yml = tmp_path / "rt.input.yml"
+        yml.write_text(
+            'source:\n  path: foo.hpp\n  parse_args: ["-fno-rtti"]\nparse_args: ["-std=c++17"]\n',
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        entries = cfg.get_source_entries()
+        assert len(entries) == 1
+        result = cfg.effective_source(entries[0])
+        assert result.parse_args == ["-std=c++17", "-fno-rtti"]
+
+    def test_effective_source_roundtrip_with_defines(self, tmp_path: Path) -> None:
+        yml = tmp_path / "rt.input.yml"
+        yml.write_text(
+            'sources:\n  - path: a.hpp\n    defines: ["LOCAL=1"]\n  - path: b.hpp\ndefines: ["GLOBAL=1"]\n',
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        entries = cfg.get_source_entries()
+        assert len(entries) == 2
+        result_a = cfg.effective_source(entries[0])
+        result_b = cfg.effective_source(entries[1])
+        assert result_a.defines == ["GLOBAL=1", "LOCAL=1"]
+        assert result_b.defines == ["GLOBAL=1"]

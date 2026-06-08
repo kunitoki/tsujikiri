@@ -274,7 +274,7 @@ def _process_sources(
             effective_transforms = list(effective_transforms) + fmt_transforms_list
 
         ir_module = parse_translation_unit(
-            entry.source,
+            input_config.effective_source(entry),
             effective_filters.namespaces,
             module_name,
             verbose=verbose,

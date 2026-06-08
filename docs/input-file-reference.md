@@ -15,6 +15,9 @@ An **input file** (conventionally named `*.input.yml`) is the primary configurat
 | `source` | mapping | one of `source`/`sources` | — | Single C++ source to parse |
 | `sources` | list | one of `source`/`sources` | — | Multiple C++ sources to parse |
 | `outputs` | list | no | — | Named output groups; produces one file per group per target format |
+| `parse_args` | list of strings | no | `[]` | Clang flags prepended to every source's `parse_args` (e.g. `-std=c++17`) |
+| `include_paths` | list of strings | no | `[]` | `-I` paths prepended to every source's `include_paths` |
+| `defines` | list of strings | no | `[]` | Preprocessor definitions prepended to every source's `defines` |
 | `filters` | mapping | no | (all included) | Default filtering rules |
 | `transforms` | list | no | `[]` | Default transform pipeline |
 | `generation` | mapping | no | (empty) | Output generation settings |
@@ -116,6 +119,47 @@ sources:
 ```
 
 `basepath` itself is resolved relative to the input file's directory when it is a relative path, so the two examples above are equivalent.  An absolute `basepath` is used as-is.
+
+---
+
+## Global Source Config
+
+`parse_args`, `include_paths`, and `defines` can be set at the top level to apply the same compiler flags or include directories to every source without repeating them on each entry.
+
+> **Note:** `system_include_paths` has no global counterpart — it remains per-source only. Use per-source `system_include_paths` for `-isystem` paths that should suppress warnings from specific directories.
+
+Global values are **prepended** to each source's own values, so per-source entries always win for last-flag-wins settings like `-std=`.
+
+```yaml
+parse_args: ["-std=c++17", "-fno-exceptions"]
+include_paths:
+  - /opt/sdk/include
+defines:
+  - NDEBUG
+
+sources:
+  - path: engine/physics.hpp
+    defines: ["ENGINE_PHYSICS=1"]   # effective: NDEBUG, ENGINE_PHYSICS=1
+  - path: engine/audio.hpp
+    parse_args: ["-std=c++20"]      # effective: -std=c++17, -fno-exceptions, -std=c++20
+```
+
+### Interaction with `loads:`
+
+Global source config fields are plain lists, so `loads:` merge semantics apply: loaded-file values are prepended before the loading file's values.
+
+```yaml
+# base.input.yml
+parse_args: ["-std=c++17"]
+```
+
+```yaml
+# project.input.yml
+loads:
+  - base.input.yml
+parse_args: ["-fno-exceptions"]
+# effective parse_args: ["-std=c++17", "-fno-exceptions"]
+```
 
 ---
 
