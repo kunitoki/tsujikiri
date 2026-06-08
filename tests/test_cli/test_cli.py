@@ -1729,6 +1729,10 @@ class TestEffectiveCustomData:
 
     def _run(self, tmp_path: Path, input_yaml: str, fmt_yaml: str) -> str:
         """Helper: write input + format YAML, run CLI, return stdout."""
+        src = tmp_path / "src.hpp"
+        src.write_text("// empty\n", encoding="utf-8")
+        input_yaml = input_yaml.replace("/dev/null", src.as_posix())
+
         fmt_file = tmp_path / "test.output.yml"
         fmt_file.write_text(fmt_yaml, encoding="utf-8")
 
