@@ -16,6 +16,7 @@ from tsujikiri.configurations import (
     FormatOverrideConfig,
     GenerationConfig,
     InputConfig,
+    merge_yaml_dicts,
     load_input_config,
     load_output_config,
 )
@@ -554,6 +555,10 @@ def main() -> None:
                     embed_version=ev,
                 )
 
+                effective_custom_data = merge_yaml_dicts(
+                    input_config.custom_data,
+                    fmt_override.custom_data if fmt_override else {},
+                )
                 gen = Generator(
                     output_config,
                     generation=effective_generation,
@@ -561,7 +566,7 @@ def main() -> None:
                     template_extends=template_extends,
                     typesystem=effective_typesystem,
                     extra_dirs=extra_dirs,
-                    custom_data=input_config.custom_data,
+                    custom_data=effective_custom_data,
                 )
 
                 buf = StringIO()
@@ -619,6 +624,10 @@ def main() -> None:
                 embed_version=ev,
             )
 
+            effective_custom_data = merge_yaml_dicts(
+                input_config.custom_data,
+                fmt_override.custom_data if fmt_override else {},
+            )
             gen = Generator(
                 output_config,
                 generation=effective_generation,
@@ -626,7 +635,7 @@ def main() -> None:
                 template_extends=template_extends,
                 typesystem=effective_typesystem,
                 extra_dirs=extra_dirs,
-                custom_data=input_config.custom_data,
+                custom_data=effective_custom_data,
             )
 
             buf = StringIO()

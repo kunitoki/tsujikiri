@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -577,6 +579,7 @@ class TestManifestCompatibility:
             str(manifest),
         )
         v1_content = out.read_text(encoding="utf-8")
+        v1_manifest = manifest.read_text(encoding="utf-8")
 
         v2_hpp = tmp_path / "v2.hpp"
         v2_hpp.write_text("namespace api { int compute(int x, double y); }\n")
@@ -602,6 +605,7 @@ class TestManifestCompatibility:
 
         assert exc_info.value.code == 1
         assert out.read_text(encoding="utf-8") == v1_content
+        assert manifest.read_text(encoding="utf-8") == v1_manifest
 
     def test_additive_change_exits_0_with_warning(self, tmp_path):
         """Adding a new function is additive — warns but does not fail."""
@@ -1713,3 +1717,95 @@ class TestStrict:
                     main()
         assert exc_info.value.code == 1
         assert mock_stdout.getvalue() == ""
+
+
+# ---------------------------------------------------------------------------
+# Effective custom_data merging
+# ---------------------------------------------------------------------------
+
+
+class TestEffectiveCustomData:
+    """Generator receives merged custom_data = global + format_override.custom_data."""
+
+    def _run(self, tmp_path: Path, input_yaml: str, fmt_yaml: str) -> str:
+        """Helper: write input + format YAML, run CLI, return stdout."""
+        src = tmp_path / "src.hpp"
+        src.write_text("// empty\n", encoding="utf-8")
+        input_yaml = input_yaml.replace("/dev/null", src.as_posix())
+
+        fmt_file = tmp_path / "test.output.yml"
+        fmt_file.write_text(fmt_yaml, encoding="utf-8")
+
+        input_file = tmp_path / "test.input.yml"
+        input_file.write_text(input_yaml, encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "tsujikiri",
+                "--input",
+                str(input_file),
+                "--target",
+                str(fmt_file),
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout
+
+    def _fmt_yaml(self, template: str) -> str:
+        return (
+            "format_name: test\nformat_version: '1'\n"
+            "description: test\nlanguage: python\nextension: .py\n"
+            "template: |\n" + "\n".join(f"  {line}" for line in template.splitlines()) + "\n"
+        )
+
+    def test_global_custom_data_only(self, tmp_path: Path) -> None:
+        input_yaml = (
+            "source:\n  path: /dev/null\n"
+            "custom_data:\n  key: global\n"
+            "format_overrides:\n  test:\n    template_extends: ''\n"
+        )
+        out = self._run(
+            tmp_path,
+            input_yaml,
+            self._fmt_yaml("{{ custom_data.key }}"),
+        )
+        assert "global" in out
+
+    def test_format_override_custom_data_extends_global(self, tmp_path: Path) -> None:
+        input_yaml = (
+            "source:\n  path: /dev/null\n"
+            "custom_data:\n  from_global: yes\n"
+            "format_overrides:\n  test:\n    custom_data:\n      from_fmt: yes\n"
+        )
+        out = self._run(
+            tmp_path,
+            input_yaml,
+            self._fmt_yaml("{{ custom_data.from_global }},{{ custom_data.from_fmt }}"),
+        )
+        assert "True,True" in out
+
+    def test_format_override_custom_data_wins_on_collision(self, tmp_path: Path) -> None:
+        input_yaml = (
+            "source:\n  path: /dev/null\n"
+            "custom_data:\n  key: global\n"
+            "format_overrides:\n  test:\n    custom_data:\n      key: override\n"
+        )
+        out = self._run(
+            tmp_path,
+            input_yaml,
+            self._fmt_yaml("{{ custom_data.key }}"),
+        )
+        assert "override" in out
+
+    def test_no_format_override_passes_global_unchanged(self, tmp_path: Path) -> None:
+        input_yaml = "source:\n  path: /dev/null\ncustom_data:\n  key: global\n"
+        out = self._run(
+            tmp_path,
+            input_yaml,
+            self._fmt_yaml("{{ custom_data.key }}"),
+        )
+        assert "global" in out

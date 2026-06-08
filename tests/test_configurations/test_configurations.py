@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from tsujikiri.configurations import (
     ConstructorClassFilter,
@@ -290,6 +291,47 @@ class TestMultiSourceLoading:
         assert override.pretty_options == ["--style=LLVM"]
 
 
+class TestFormatOverrideCustomData:
+    def _cfg(self, tmp_path: Path, override_yaml: str) -> "FormatOverrideConfig":
+        yml = tmp_path / "t.input.yml"
+        yml.write_text(
+            f"format_overrides:\n  luabridge3:\n{override_yaml}\n",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        return cfg.format_overrides["luabridge3"]
+
+    def test_absent_yields_empty_dict(self, tmp_path: Path) -> None:
+        ov = self._cfg(tmp_path, "    template_extends: ''")
+        assert ov.custom_data == {}
+
+    def test_null_yields_empty_dict(self, tmp_path: Path) -> None:
+        ov = self._cfg(tmp_path, "    custom_data: null")
+        assert ov.custom_data == {}
+
+    def test_scalar_string(self, tmp_path: Path) -> None:
+        ov = self._cfg(tmp_path, "    custom_data:\n      key: value")
+        assert ov.custom_data == {"key": "value"}
+
+    def test_scalar_int(self, tmp_path: Path) -> None:
+        ov = self._cfg(tmp_path, "    custom_data:\n      n: 42")
+        assert ov.custom_data == {"n": 42}
+
+    def test_nested_dict(self, tmp_path: Path) -> None:
+        ov = self._cfg(
+            tmp_path,
+            "    custom_data:\n      a:\n        b: 1\n        c: 2",
+        )
+        assert ov.custom_data == {"a": {"b": 1, "c": 2}}
+
+    def test_list_value(self, tmp_path: Path) -> None:
+        ov = self._cfg(tmp_path, "    custom_data:\n      items:\n        - x\n        - y")
+        assert ov.custom_data == {"items": ["x", "y"]}
+
+    def test_default_field_is_empty_dict(self) -> None:
+        assert FormatOverrideConfig().custom_data == {}
+
+
 class TestOutputScopedFormatOverrides:
     def test_output_scoped_format_override_parsed(self, tmp_path):
         yml = tmp_path / "output_scoped.input.yml"
@@ -478,6 +520,53 @@ format_overrides:
 
         assert cfg.format_overrides == {}
         assert cfg.output_format_overrides == {}
+
+    def test_scoped_override_custom_data_parsed(self, tmp_path: Path) -> None:
+        yml = tmp_path / "scoped_cd.input.yml"
+        yml.write_text(
+            """
+outputs:
+  - name: foo_bindings
+    sources: ["foo.hpp"]
+format_overrides:
+  - output: foo_bindings
+    luabridge3:
+      custom_data:
+        module: client
+""",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        scoped = cfg.output_format_overrides["foo_bindings"]["luabridge3"]
+        assert scoped.custom_data == {"module": "client"}
+
+    def test_scoped_override_custom_data_deep_merges_global(self, tmp_path: Path) -> None:
+        yml = tmp_path / "scoped_cd_merge.input.yml"
+        yml.write_text(
+            """
+outputs:
+  - name: foo_bindings
+    sources: ["foo.hpp"]
+format_overrides:
+  - luabridge3:
+      custom_data:
+        backend: lua
+        config:
+          env: production
+  - output: foo_bindings
+    luabridge3:
+      custom_data:
+        config:
+          debug: true
+""",
+            encoding="utf-8",
+        )
+        cfg = load_input_config(yml)
+        scoped = cfg.output_format_overrides["foo_bindings"]["luabridge3"]
+        assert scoped.custom_data == {
+            "backend": "lua",
+            "config": {"env": "production", "debug": True},
+        }
 
 
 class TestPrettyFields:
@@ -1092,8 +1181,6 @@ class TestOutputGroupsLoading:
     def test_fallback_creates_simple_entry(self, tmp_path):
         # Source in outputs: with no matching global sources: entry → stored as raw string,
         # resolve_group_sources() creates a bare SourceEntry for it.
-        import yaml
-
         data = {
             "outputs": [{"name": "standalone", "sources": [str(tmp_path / "standalone.hpp")]}],
             "filters": {"namespaces": ["foo"]},
@@ -1110,8 +1197,6 @@ class TestOutputGroupsLoading:
         assert resolved[0].source.path == str(tmp_path / "standalone.hpp")
 
     def test_relative_output_source_matches_source_path_suffix(self, tmp_path):
-        import yaml
-
         config_dir = tmp_path / "configs" / "nested"
         config_dir.mkdir(parents=True)
         data = {
@@ -1159,8 +1244,6 @@ class TestOutputGroupsLoading:
         assert resolved[0] is not entry
 
     def test_relative_output_source_disambiguates_same_basename(self, tmp_path):
-        import yaml
-
         data = {
             "sources": [
                 {"path": "a/utils.hpp"},
@@ -1182,8 +1265,6 @@ class TestOutputGroupsLoading:
         assert Path(resolved_b[0].source.path).parts[-2:] == ("b", "utils.hpp")
 
     def test_ambiguous_output_source_raises(self, tmp_path):
-        import yaml
-
         data = {
             "sources": [
                 {"path": "a/utils.hpp"},
@@ -1200,8 +1281,6 @@ class TestOutputGroupsLoading:
 
     def test_get_source_entries_deduplicates_shared_source(self, tmp_path):
         # Same source in two groups → get_source_entries() returns it only once.
-        import yaml
-
         data = {
             "sources": [{"path": "shared.hpp"}],
             "outputs": [

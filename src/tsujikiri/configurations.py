@@ -226,6 +226,7 @@ class FormatOverrideConfig:
     typesystem_file: str = ""  # external file path; takes precedence over inline typesystem
     pretty: Optional[bool] = None
     pretty_options: Optional[List[str]] = None
+    custom_data: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -501,6 +502,7 @@ def _parse_format_override_config(override_raw: Dict[str, Any], config_dir: Path
         typesystem_file=ov_ts_file_str,
         pretty=ov_pretty,
         pretty_options=ov_pretty_options,
+        custom_data=override_raw.get("custom_data") or {},
     )
 
 
@@ -531,7 +533,7 @@ def _parse_source_entry(entry_raw: Dict[str, Any], config_dir: Path, basepath: s
     return SourceEntry(source=source, filters=filters, transforms=transforms, generation=generation)
 
 
-def _merge_yaml_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def merge_yaml_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     """Merge two raw YAML dicts. override extends/wins over base.
 
     - Scalar conflicts: override wins
@@ -545,7 +547,7 @@ def _merge_yaml_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[st
         elif isinstance(result[key], list) and isinstance(override_val, list):
             result[key] = result[key] + override_val
         elif isinstance(result[key], dict) and isinstance(override_val, dict):
-            result[key] = _merge_yaml_dicts(result[key], override_val)
+            result[key] = merge_yaml_dicts(result[key], override_val)
         else:
             result[key] = override_val
     return result
@@ -583,11 +585,11 @@ def _load_raw_with_loads(config_file: Path, _seen: frozenset[str] = frozenset())
             load_path = config_dir / load_path
         load_data = _load_raw_with_loads(load_path.resolve(), seen)
         _normalize_format_overrides_to_list(load_data)
-        merged_base = _merge_yaml_dicts(merged_base, load_data)
+        merged_base = merge_yaml_dicts(merged_base, load_data)
 
     if merged_base:
         _normalize_format_overrides_to_list(data)
-    result = _merge_yaml_dicts(merged_base, data)
+    result = merge_yaml_dicts(merged_base, data)
     result.pop("loads", None)
     return result
 
@@ -670,11 +672,11 @@ def load_input_config(config_file: Path) -> InputConfig:
                 fmt_override_raw = _format_override_raw(fmt_name, override_raw)
                 if output_name is None:
                     base = global_format_overrides_raw.get(fmt_name, {})
-                    global_format_overrides_raw[fmt_name] = _merge_yaml_dicts(base, fmt_override_raw)
+                    global_format_overrides_raw[fmt_name] = merge_yaml_dicts(base, fmt_override_raw)
                 else:
                     scoped_by_format = scoped_format_overrides_raw.setdefault(output_name, {})
                     base = scoped_by_format.get(fmt_name, {})
-                    scoped_by_format[fmt_name] = _merge_yaml_dicts(base, fmt_override_raw)
+                    scoped_by_format[fmt_name] = merge_yaml_dicts(base, fmt_override_raw)
     elif fmt_overrides_raw:
         raise ValueError("format_overrides must be a mapping or a list of mappings")
 
@@ -693,7 +695,7 @@ def load_input_config(config_file: Path) -> InputConfig:
     for output_name, scoped_by_format in scoped_format_overrides_raw.items():
         output_format_overrides[output_name] = {}
         for fmt_name, scoped_override_raw in scoped_by_format.items():
-            merged_override_raw = _merge_yaml_dicts(global_format_overrides_raw.get(fmt_name, {}), scoped_override_raw)
+            merged_override_raw = merge_yaml_dicts(global_format_overrides_raw.get(fmt_name, {}), scoped_override_raw)
             output_format_overrides[output_name][fmt_name] = _parse_format_override_config(
                 merged_override_raw,
                 config_dir,

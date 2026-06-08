@@ -497,6 +497,7 @@ format_overrides:
 | `typesystem_file` | string | `""` | Path to a YAML file whose `typesystem:` block is used as the format typesystem; **takes precedence over** inline `typesystem` when non-empty; relative paths resolved relative to the input YAML |
 | `pretty` | bool or absent | (inherit) | `true` = force-enable; `false` = force-disable; absent = inherit top-level `pretty` |
 | `pretty_options` | list of strings or absent | (inherit) | Override args for the pretty printer; absent = inherit top-level `pretty_options` |
+| `custom_data` | mapping | `{}` | **Deep-merged over** the top-level `custom_data`; per-output scoped entries are merged over global format entries |
 
 ---
 
@@ -822,6 +823,26 @@ Inside any template, reference these values with normal Jinja2 syntax:
 ```
 
 `custom_data` is available alongside all other top-level template variables (`module_name`, `classes`, `enums`, etc.). When the key is absent or set to `null`, `custom_data` is an empty dict `{}`.
+
+### Per-Format `custom_data`
+
+`custom_data` can also be declared inside `format_overrides` to supply format-specific or output+format-specific values. These are **deep-merged over** the top-level `custom_data` when generating for that format, so global keys remain available and format keys extend or override them.
+
+```yaml
+custom_data:
+  env: production        # available in every format
+
+format_overrides:
+  - luabridge3:
+      custom_data:
+        backend: lua       # adds/overrides only for luabridge3
+  - output: client
+    luabridge3:
+      custom_data:
+        module: client     # adds/overrides only for client output in luabridge3
+```
+
+Deep merge behaviour mirrors the top-level `custom_data` merge: scalars from the format override win on conflict; lists are appended after the base list; nested mappings are merged recursively.
 
 ---
 
