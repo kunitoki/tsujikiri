@@ -747,7 +747,7 @@ def parse_translation_unit(
 
     index = cindex.Index.create()
     # CXTranslationUnit_KeepGoing (0x200): continue past fatal "too many errors" stops.
-    # libclang 18 hits the error limit from cascading stdlib header failures and aborts
+    # libclang  hits the error limit from cascading stdlib header failures and aborts
     # before processing all namespaces in the translation unit.
     tu = index.parse(str(source_path.absolute()), args=args, options=0x200)
 
