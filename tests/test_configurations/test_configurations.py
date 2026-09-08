@@ -1638,3 +1638,45 @@ class TestGlobalSourceConfig:
         result_b = cfg.effective_source(entries[1])
         assert result_a.defines == ["GLOBAL=1", "LOCAL=1"]
         assert result_b.defines == ["GLOBAL=1"]
+
+
+# ---------------------------------------------------------------------------
+# OutputConfig.expand_default_arguments
+# ---------------------------------------------------------------------------
+
+
+class TestExpandDefaultArguments:
+    def test_defaults_to_none_when_absent(self, tmp_path):
+        from tsujikiri.configurations import load_output_config
+
+        f = tmp_path / "a.output.yml"
+        f.write_text("format_name: a\n", encoding="utf-8")
+        assert load_output_config(f).expand_default_arguments is None
+
+    def test_loads_true(self, tmp_path):
+        from tsujikiri.configurations import load_output_config
+
+        f = tmp_path / "b.output.yml"
+        f.write_text("format_name: b\nexpand_default_arguments: true\n", encoding="utf-8")
+        assert load_output_config(f).expand_default_arguments is True
+
+    def test_loads_false(self, tmp_path):
+        from tsujikiri.configurations import load_output_config
+
+        f = tmp_path / "c.output.yml"
+        f.write_text("format_name: c\nexpand_default_arguments: false\n", encoding="utf-8")
+        assert load_output_config(f).expand_default_arguments is False
+
+    def test_builtin_lua_formats_enable_expansion(self):
+        from tsujikiri.configurations import load_output_config
+        from tsujikiri.formats import resolve_format_path
+
+        for name in ("luabridge3", "luals"):
+            assert load_output_config(resolve_format_path(name)).expand_default_arguments is True
+
+    def test_builtin_python_formats_leave_expansion_off(self):
+        from tsujikiri.configurations import load_output_config
+        from tsujikiri.formats import resolve_format_path
+
+        for name in ("pybind11", "pyi"):
+            assert not load_output_config(resolve_format_path(name)).expand_default_arguments

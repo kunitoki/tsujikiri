@@ -94,6 +94,43 @@ int main()
         assert(math.abs(a2 - 20.0) < 0.001, "computeArea width height")
     )LUA");
 
+    // Defaulted arguments expand to one callable per arity
+    rc |= run_script(L, R"LUA(
+        local v = geo.Vec2(2.0, 3.0)
+        local a = v:offset(1.0)
+        assert(math.abs(a.x - 3.0) < 0.001 and math.abs(a.y - 3.0) < 0.001, "offset(dx)")
+        local b = v:offset(1.0, 2.0)
+        assert(math.abs(b.x - 3.0) < 0.001 and math.abs(b.y - 5.0) < 0.001, "offset(dx, dy)")
+        local c = v:offset(1.0, 2.0, 2.0)
+        assert(math.abs(c.x - 6.0) < 0.001 and math.abs(c.y - 10.0) < 0.001, "offset(dx, dy, scale)")
+    )LUA");
+
+    // Unary and binary operator- bind to distinct metamethods
+    rc |= run_script(L, R"LUA(
+        local v = geo.Vec2(2.0, 3.0)
+        local n = -v
+        assert(math.abs(n.x + 2.0) < 0.001 and math.abs(n.y + 3.0) < 0.001, "__unm")
+        local s = v - 1.0
+        assert(math.abs(s.x - 1.0) < 0.001 and math.abs(s.y - 2.0) < 0.001, "__sub")
+    )LUA");
+
+    // Free operator+ bound as a metamethod on its first operand's class
+    rc |= run_script(L, R"LUA(
+        local sum = geo.Vec2(1.0, 2.0) + geo.Vec2(3.0, 4.0)
+        assert(math.abs(sum.x - 4.0) < 0.001 and math.abs(sum.y - 6.0) < 0.001, "__add via free operator+")
+    )LUA");
+
+    // Anonymous-union members are bound as ordinary fields
+    rc |= run_script(L, R"LUA(
+        local e = geo.Extent(3.0, 4.0)
+        assert(math.abs(e.width  - 3.0) < 0.001, "Extent.width")
+        assert(math.abs(e.height - 4.0) < 0.001, "Extent.height")
+        assert(math.abs(e:area() - 12.0) < 0.001, "Extent.area")
+        e.width = 5.0
+        assert(math.abs(e:area() - 20.0) < 0.001, "Extent.width is writable")
+        assert(e.raw == nil, "array member is not bound")
+    )LUA");
+
     lua_close(L);
     return rc;
 }

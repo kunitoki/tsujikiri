@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from tsujikiri.tir import TIRClass as TIRClass, TIRModule as TIRModule
+from tsujikiri.tir import TIRClass as TIRClass, TIRModule as TIRModule, minimum_arity as minimum_arity
 from typing import Any
 
 @dataclass

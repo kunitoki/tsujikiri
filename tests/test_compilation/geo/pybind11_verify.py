@@ -72,6 +72,39 @@ def test_free_functions() -> None:
     assert abs(a2 - 20.0) < 0.001, f"computeArea(w,h) {a2}"
 
 
+def test_default_arguments() -> None:
+    v = geo.Vec2(2.0, 3.0)
+    a = v.offset(1.0)
+    assert abs(a.x - 3.0) < 0.001 and abs(a.y - 3.0) < 0.001, f"offset(dx) {a.x},{a.y}"
+    b = v.offset(1.0, 2.0)
+    assert abs(b.x - 3.0) < 0.001 and abs(b.y - 5.0) < 0.001, f"offset(dx,dy) {b.x},{b.y}"
+    c = v.offset(1.0, 2.0, 2.0)
+    assert abs(c.x - 6.0) < 0.001 and abs(c.y - 10.0) < 0.001, f"offset(dx,dy,scale) {c.x},{c.y}"
+
+
+def test_unary_and_binary_operators() -> None:
+    v = geo.Vec2(2.0, 3.0)
+    n = -v
+    assert abs(n.x + 2.0) < 0.001 and abs(n.y + 3.0) < 0.001, f"__neg__ {n.x},{n.y}"
+    s = v - 1.0
+    assert abs(s.x - 1.0) < 0.001 and abs(s.y - 2.0) < 0.001, f"__sub__ {s.x},{s.y}"
+
+
+def test_free_operator() -> None:
+    total = geo.Vec2(1.0, 2.0) + geo.Vec2(3.0, 4.0)
+    assert abs(total.x - 4.0) < 0.001 and abs(total.y - 6.0) < 0.001, f"__add__ {total.x},{total.y}"
+
+
+def test_anonymous_union_fields() -> None:
+    e = geo.Extent(3.0, 4.0)
+    assert abs(e.width - 3.0) < 0.001, f"Extent.width {e.width}"
+    assert abs(e.height - 4.0) < 0.001, f"Extent.height {e.height}"
+    assert abs(e.area() - 12.0) < 0.001, f"Extent.area() {e.area()}"
+    e.width = 5.0
+    assert abs(e.area() - 20.0) < 0.001, "Extent.width is writable"
+    assert not hasattr(e, "raw"), "array member is not bound"
+
+
 if __name__ == "__main__":
     test_shape()
     test_circle()
@@ -80,5 +113,9 @@ if __name__ == "__main__":
     test_inheritance()
     test_color_enum()
     test_free_functions()
+    test_default_arguments()
+    test_unary_and_binary_operators()
+    test_free_operator()
+    test_anonymous_union_fields()
     print("geo pybind11 bindings: all checks passed")
     sys.exit(0)

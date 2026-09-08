@@ -70,7 +70,7 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- if fn.wrapper_code %}
   m.def("{{ group.name | camel_to_snake }}", {{ fn.wrapper_code }}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
 {%- else %}
-  m.def("{{ group.name | camel_to_snake }}", &{{ fn.spelling }}{% for p in fn.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if fn.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif fn.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in fn.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if fn.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if fn.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if fn.is_deprecated %}, py::deprecated("{{ fn.deprecation_message }}"){% endif %}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
+  m.def("{{ group.name | camel_to_snake }}", {% if fn.is_operator and fn.is_cpp_overloaded %}py::overload_cast<{{ fn.params | map(attribute='raw_type') | join(', ') }}>(&{{ fn.spelling }}){% else %}&{{ fn.spelling }}{% endif %}{% for p in fn.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if fn.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif fn.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in fn.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if fn.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if fn.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if fn.is_deprecated %}, py::deprecated("{{ fn.deprecation_message }}"){% endif %}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
 {%- endif %}
 {%- endif %}
 {%- endblock %}
@@ -149,7 +149,7 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- if method.is_operator and method.operator_name == "__repr__" %}
     .def("__repr__", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
 {%- elif method.is_operator and method.operator_name %}
-    .def("{{ method.operator_name }}", {% if method.wrapper_code %}{{ method.wrapper_code }}{% else %}&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% endif %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+    .def("{{ method.operator_name }}", {% if method.wrapper_code %}{{ method.wrapper_code }}{% else %}{% if method.is_cpp_overloaded %}py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% else %}&{{ cls.qualified_name }}::{{ method.spelling }}{% endif %}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% endif %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
 {%- elif method.wrapper_code %}
     .def("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }}{% if method.doc %}, "{{ method.doc }}"{% endif %})
 {%- else %}
@@ -158,6 +158,19 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- endif %}
 {%- endblock %}
 {%- endif %}
+{%- endfor %}
+{%- endblock %}
+{%- block class_free_operators scoped %}
+{%- for group in cls.free_operator_groups %}
+{%- block class_free_operator_group scoped %}
+{%- if group.operator_name %}
+{%- for fn in group.functions %}
+{%- block class_free_operator scoped %}
+    .def("{{ group.operator_name }}", {% if group.is_overloaded %}py::overload_cast<{{ fn.params | map(attribute='raw_type') | join(', ') }}>(&{{ fn.spelling }}){% else %}&{{ fn.spelling }}{% endif %}{% if fn.doc %}, "{{ fn.doc }}"{% endif %})
+{%- endblock %}
+{%- endfor %}
+{%- endif %}
+{%- endblock %}
 {%- endfor %}
 {%- endblock %}
 {%- block class_fields scoped %}

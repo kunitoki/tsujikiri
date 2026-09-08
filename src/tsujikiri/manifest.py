@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from tsujikiri.tir import TIRClass, TIRModule
+from tsujikiri.tir import minimum_arity, TIRClass, TIRModule
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +57,18 @@ def _emitted_param_types(params: List[Any]) -> List[str]:
     return [_effective_param_type(p) for p in _emitted_params(params)]
 
 
+def _min_arity(params: List[Any]) -> int:
+    """Return the smallest number of arguments a caller may supply.
+
+    Trailing defaulted parameters may be omitted in every target language, so
+    dropping a default raises this number and breaks existing callers even
+    though the parameter type list is unchanged.  Derived from the same rule the
+    generator uses to decide which arities to emit.
+    """
+    emitted = _emitted_params(params)
+    return minimum_arity([p.default_override or p.default_value for p in emitted])
+
+
 def _canonical_injections(injections: List[Any]) -> List[Dict[str, str]]:
     return [{"position": c.position, "code": c.code} for c in injections]
 
@@ -68,7 +80,14 @@ def _metadata(pairs: List[Tuple[str, Any, Any]]) -> Dict[str, Any]:
 def _canonical_class(ir_class: TIRClass) -> Dict[str, Any]:
     name = ir_class.binding_name
 
-    constructors = sorted([tuple(_emitted_param_types(c.parameters)) for c in ir_class.constructors if c.emit])
+    constructors = sorted(
+        [
+            {"params": _emitted_param_types(c.parameters), "min_arity": _min_arity(c.parameters)}
+            for c in ir_class.constructors
+            if c.emit
+        ],
+        key=lambda c: tuple(c["params"]),
+    )
 
     methods: List[Dict[str, Any]] = []
     for m in ir_class.methods:
@@ -78,6 +97,7 @@ def _canonical_class(ir_class: TIRClass) -> Dict[str, Any]:
             {
                 "name": m.binding_name,
                 "params": _emitted_param_types(m.parameters),
+                "min_arity": _min_arity(m.parameters),
                 "return_type": _effective_return_type(m),
                 "is_static": m.is_static,
             }
@@ -117,7 +137,7 @@ def _canonical_class(ir_class: TIRClass) -> Dict[str, Any]:
 
     result: Dict[str, Any] = {
         "name": name,
-        "constructors": [list(sig) for sig in constructors],
+        "constructors": constructors,
         "methods": methods,
         "fields": fields,
         "properties": properties,
@@ -429,6 +449,7 @@ def compute_manifest(module: TIRModule) -> Dict[str, Any]:
             {
                 "name": fn.binding_name,
                 "params": _emitted_param_types(fn.parameters),
+                "min_arity": _min_arity(fn.parameters),
                 "return_type": _effective_return_type(fn),
             }
         )
@@ -607,14 +628,56 @@ def _compare_inner_classes(
             report.additive_changes.append(f"Inner class '{parent_class}.{name}' was added")
 
 
+def _report_min_arity_change(
+    kind: str,
+    label: str,
+    params: Tuple[str, ...],
+    old_min: Optional[int],
+    new_min: Optional[int],
+    report: CompatibilityReport,
+) -> None:
+    """Classify a change in how few arguments a matched signature accepts.
+
+    ``None`` means the manifest predates ``min_arity`` and simply does not say;
+    comparing against a guess would report a spurious change for every defaulted
+    parameter the first time an old manifest meets new code.
+    """
+    if old_min is None or new_min is None or old_min == new_min:
+        return
+    params_str = ", ".join(params)
+    if new_min > old_min:
+        report.breaking_changes.append(
+            f"{kind} '{label}({params_str})' no longer accepts {old_min} argument(s): "
+            f"a parameter default was removed (minimum arity {old_min} -> {new_min})"
+        )
+    else:
+        report.additive_changes.append(
+            f"{kind} '{label}({params_str})' now accepts {new_min} argument(s): "
+            f"a parameter default was added (minimum arity {old_min} -> {new_min})"
+        )
+
+
 def _compare_constructors(
     class_name: str,
     old_ctors: List[List[str]],
     new_ctors: List[List[str]],
     report: CompatibilityReport,
 ) -> None:
-    old_sigs: Set[Tuple] = {tuple(p) for p in old_ctors}
-    new_sigs: Set[Tuple] = {tuple(p) for p in new_ctors}
+    # Manifests written before min_arity existed store each constructor as a bare
+    # list of parameter types; normalise both shapes to (params, min_arity|None).
+    def _normalise(ctors: List[Any]) -> Dict[Tuple[str, ...], Optional[int]]:
+        result: Dict[Tuple[str, ...], Optional[int]] = {}
+        for c in ctors:
+            if isinstance(c, dict):
+                result[tuple(c["params"])] = c.get("min_arity")
+            else:
+                result[tuple(c)] = None
+        return result
+
+    old_by_sig = _normalise(old_ctors)
+    new_by_sig = _normalise(new_ctors)
+    old_sigs: Set[Tuple] = set(old_by_sig)
+    new_sigs: Set[Tuple] = set(new_by_sig)
 
     for sig in old_sigs - new_sigs:
         params = ", ".join(sig)
@@ -622,6 +685,8 @@ def _compare_constructors(
     for sig in new_sigs - old_sigs:
         params = ", ".join(sig)
         report.additive_changes.append(f"Constructor '{class_name}({params})' was added")
+    for sig in old_sigs & new_sigs:
+        _report_min_arity_change("Constructor", class_name, sig, old_by_sig[sig], new_by_sig[sig], report)
 
 
 def _compare_methods(
@@ -631,12 +696,12 @@ def _compare_methods(
     report: CompatibilityReport,
 ) -> None:
     # Group by (name, is_static) → set of (params_tuple, return_type)
-    def _group(methods: List[Dict]) -> Dict[Tuple, Set[Tuple]]:
-        groups: Dict[Tuple, Set[Tuple]] = {}
+    def _group(methods: List[Dict]) -> Dict[Tuple, Dict[Tuple, Optional[int]]]:
+        groups: Dict[Tuple, Dict[Tuple, Optional[int]]] = {}
         for m in methods:
             key = (m["name"], m["is_static"])
             sig = (tuple(m["params"]), m["return_type"])
-            groups.setdefault(key, set()).add(sig)
+            groups.setdefault(key, {})[sig] = m.get("min_arity")
         return groups
 
     prefix = f"{class_name}." if class_name else ""
@@ -650,14 +715,16 @@ def _compare_methods(
             report.breaking_changes.append(f"Method '{label}' was removed")
             continue
         new_sigs = new_groups[key]
-        for sig in old_sigs - new_sigs:
+        for sig in old_sigs.keys() - new_sigs.keys():
             params_str = ", ".join(sig[0])
             report.breaking_changes.append(
                 f"Method '{label}({params_str}) -> {sig[1]}' signature was removed or changed"
             )
-        for sig in new_sigs - old_sigs:
+        for sig in new_sigs.keys() - old_sigs.keys():
             params_str = ", ".join(sig[0])
             report.additive_changes.append(f"Method '{label}({params_str}) -> {sig[1]}' overload was added")
+        for sig in old_sigs.keys() & new_sigs.keys():
+            _report_min_arity_change("Method", label, sig[0], old_sigs[sig], new_sigs[sig], report)
 
     for key in new_groups:
         if key not in old_groups:
@@ -736,11 +803,11 @@ def _compare_functions(
     new_fns: List[Dict],
     report: CompatibilityReport,
 ) -> None:
-    def _group(fns: List[Dict]) -> Dict[str, Set[Tuple]]:
-        groups: Dict[str, Set[Tuple]] = {}
+    def _group(fns: List[Dict]) -> Dict[str, Dict[Tuple, Optional[int]]]:
+        groups: Dict[str, Dict[Tuple, Optional[int]]] = {}
         for f in fns:
             sig = (tuple(f["params"]), f["return_type"])
-            groups.setdefault(f["name"], set()).add(sig)
+            groups.setdefault(f["name"], {})[sig] = f.get("min_arity")
         return groups
 
     old_groups = _group(old_fns)
@@ -753,14 +820,16 @@ def _compare_functions(
             report.breaking_changes.append(f"Function '{label}' was removed")
             continue
         new_sigs = new_groups[name]
-        for sig in old_sigs - new_sigs:
+        for sig in old_sigs.keys() - new_sigs.keys():
             params_str = ", ".join(sig[0])
             report.breaking_changes.append(
                 f"Function '{label}({params_str}) -> {sig[1]}' signature was removed or changed"
             )
-        for sig in new_sigs - old_sigs:
+        for sig in new_sigs.keys() - old_sigs.keys():
             params_str = ", ".join(sig[0])
             report.additive_changes.append(f"Function '{label}({params_str}) -> {sig[1]}' overload was added")
+        for sig in old_sigs.keys() & new_sigs.keys():
+            _report_min_arity_change("Function", label, sig[0], old_sigs[sig], new_sigs[sig], report)
 
     for name in new_groups:
         if name not in old_groups:

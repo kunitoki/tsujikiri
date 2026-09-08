@@ -1107,6 +1107,36 @@ class TestCanonicalizeOperator:
     def test_postfix_decrement(self) -> None:
         assert _canonicalize_operator("operator--", 1) == "operator--postfix"
 
+    # A free operator carries its left-hand operand as an extra leading parameter,
+    # so the same spellings shift by one relative to the member convention.
+    def test_free_unary_minus(self) -> None:
+        assert _canonicalize_operator("operator-", 1, is_member=False) == "operator-unary"
+
+    def test_free_binary_minus_unchanged(self) -> None:
+        assert _canonicalize_operator("operator-", 2, is_member=False) == "operator-"
+
+    def test_free_unary_plus(self) -> None:
+        assert _canonicalize_operator("operator+", 1, is_member=False) == "operator+unary"
+
+    def test_free_binary_plus_unchanged(self) -> None:
+        assert _canonicalize_operator("operator+", 2, is_member=False) == "operator+"
+
+    def test_free_prefix_increment(self) -> None:
+        assert _canonicalize_operator("operator++", 1, is_member=False) == "operator++prefix"
+
+    def test_free_postfix_increment(self) -> None:
+        assert _canonicalize_operator("operator++", 2, is_member=False) == "operator++postfix"
+
+    def test_free_prefix_decrement(self) -> None:
+        assert _canonicalize_operator("operator--", 1, is_member=False) == "operator--prefix"
+
+    def test_free_postfix_decrement(self) -> None:
+        assert _canonicalize_operator("operator--", 2, is_member=False) == "operator--postfix"
+
+    def test_free_zero_params_clamps_to_unary(self) -> None:
+        """A malformed zero-parameter free operator must not produce a negative arity."""
+        assert _canonicalize_operator("operator-", 0, is_member=False) == "operator-unary"
+
     def test_other_operator_passthrough(self) -> None:
         assert _canonicalize_operator("operator==", 1) == "operator=="
         assert _canonicalize_operator("operator<<", 1) == "operator<<"

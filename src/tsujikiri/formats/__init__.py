@@ -86,6 +86,8 @@ def apply_format_inheritance(
     - ``operator_mappings``: same.
     - ``unsupported_types``: union; child entries come first, duplicates removed.
     - ``language``: inherited from base when child's value is empty.
+    - ``expand_default_arguments``: inherited from base when child left it unset
+      (``None``); an explicit ``false`` in the child overrides a ``true`` base.
     - ``template``: child's template is kept unchanged (should contain ``{% extends %}``.
 
     Inheritance is resolved recursively so a chain A → B → C works correctly.
@@ -122,5 +124,7 @@ def apply_format_inheritance(
     config.unsupported_types = merged_unsupported
     if not config.language:
         config.language = base.language
+    if config.expand_default_arguments is None:
+        config.expand_default_arguments = base.expand_default_arguments
 
     return config

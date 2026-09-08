@@ -10,8 +10,8 @@ tsujikiri can track the binding surface (API) of your C++ headers over time usin
 
 The manifest is computed from the **filtered and transformed IR**, after `emit=False` nodes have been removed. It records the **binding-visible** surface — names after renames and types after transform overrides, but before format-level remapping:
 
-- **Classes**: their binding name, all emitted constructor signatures, all emitted methods (name, parameters, return type, is_static), all emitted fields (name, type, is_const/read_only), injected properties, and nested enums
-- **Free functions**: name, parameter types, return type
+- **Classes**: their binding name, all emitted constructor signatures, all emitted methods (name, parameters, minimum arity, return type, is_static), all emitted fields (name, type, is_const/read_only), injected properties, and nested enums
+- **Free functions**: name, parameter types, minimum arity, return type
 - **Top-level enums**: name and all value names with their integer values
 - **Transform metadata**: code injections, wrapper code, ownership/keep-alive/thread hints, exception policy, type hints, injected properties, API gates, and other transform-controlled binding metadata
 
@@ -19,6 +19,39 @@ The manifest does **not** capture:
 - Suppressed nodes (`emit=False`)
 - Template-level type remapping (from `type_mappings` in `.output.yml`)
 - Comments or generation settings
+- The *expressions* of parameter defaults — only how many arguments may be omitted (see `min_arity` below)
+
+### `min_arity` — defaulted arguments
+
+Every constructor, method and free function records `min_arity`: the smallest
+number of arguments a caller may supply, i.e. the parameter count minus the
+trailing run of parameters that carry a C++ default.
+
+This is tracked separately from `params` because **removing a default does not
+change any parameter type**. `f(int a, float b = 1.0f)` and `f(int a, float b)`
+have an identical type list, so without `min_arity` the two produce byte-identical
+manifests — while every generated binding silently loses the one-argument call.
+Trailing defaults are omittable in each target language (pybind11 and pyi emit
+them natively as `py::arg("b") = 1.0f` / `b: float = 1.0f`; luabridge3 and luals
+emit one callable per arity, see
+`expand_default_arguments` in [Output Formats](output-formats.md)), so
+`min_arity` is a format-agnostic property of the binding surface.
+
+`min_arity` is derived from the same rule the generator uses to decide which
+arities to emit, so the manifest can never claim an arity that is not generated.
+It is computed over the **emitted** parameters, so a parameter suppressed by a
+transform is not counted.
+
+Changing a default's *value* (`= 1.0f` → `= 2.0f`) leaves `min_arity` untouched
+and is reported as no change: the callable surface is identical and only runtime
+behaviour differs. There is no "changed" classification, and recording a value
+that is never compared would put churn in the file that drives no version bump.
+
+Manifests written before `min_arity` existed simply omit it. The comparison then
+**skips the arity check** for that entry rather than assuming a value, so
+upgrading tsujikiri never reports a spurious change on the first run. Constructors
+in those older manifests are stored as bare lists of parameter types instead of
+objects; both shapes are accepted.
 
 Any difference in transform metadata is classified as breaking, so changes to injected code or transform-controlled binding behavior suggest a major version bump.
 
@@ -35,19 +68,21 @@ Any difference in transform metadata is classified as breaking, so changes to in
       {
         "name": "Vec3",
         "constructors": [
-          [],
-          ["float", "float", "float"]
+          { "params": [], "min_arity": 0 },
+          { "params": ["float", "float", "float"], "min_arity": 1 }
         ],
         "methods": [
           {
             "name": "length",
             "params": [],
+            "min_arity": 0,
             "return_type": "float",
             "is_static": false
           },
           {
             "name": "dot",
             "params": ["const Vec3 &"],
+            "min_arity": 1,
             "return_type": "float",
             "is_static": false
           }
@@ -64,6 +99,7 @@ Any difference in transform metadata is classified as breaking, so changes to in
       {
         "name": "computeArea",
         "params": ["double"],
+        "min_arity": 1,
         "return_type": "double"
       }
     ],
@@ -119,6 +155,7 @@ When the manifest changes, tsujikiri classifies each difference:
 | Class removed | `Vec3` was removed |
 | Constructor removed | `Vec3()` was removed |
 | Method signature removed or changed | `Vec3.length() → float` was removed or changed |
+| Parameter default removed | `Vec3.scale(float, float)` no longer accepts 1 argument(s) |
 | Field removed | `Vec3.x_` was removed |
 | Field type changed | `Vec3.x_`: `float` → `double` |
 | Field const qualifier changed | `Vec3.x_` const: `false` → `true` |
@@ -135,6 +172,7 @@ When the manifest changes, tsujikiri classifies each difference:
 | Constructor overload added | `Vec3(float, float, float)` was added |
 | Method added | `Vec3.normalize() → Vec3` was added |
 | Method overload added | `add(double, double) → double` overload was added |
+| Parameter default added | `Vec3.scale(float, float)` now accepts 1 argument(s) |
 | Field added | `Vec3.w_` was added |
 | Enum added | `BlendMode` was added |
 | Enum value added | `Color.Alpha` was added |

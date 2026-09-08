@@ -339,17 +339,73 @@ def _is_explicit(cursor) -> bool:
     return any(tok.spelling == "explicit" for tok in cursor.get_tokens())
 
 
-def _canonicalize_operator(spelling: str, num_params: int) -> str:
-    """Return a canonical operator type string, disambiguating unary/binary cases."""
-    if spelling in ("operator-", "operator+") and num_params == 0:
+_RECORD_KINDS = (CursorKind.UNION_DECL, CursorKind.STRUCT_DECL, CursorKind.CLASS_DECL)
+
+
+def _field_decl_type_hashes(cursor) -> set:
+    """Return the declaration hashes of the types of *cursor*'s FIELD_DECL children."""
+    return {child.type.get_declaration().hash for child in cursor.get_children() if child.kind == CursorKind.FIELD_DECL}
+
+
+def _is_anonymous_member_record(child, field_decl_type_hashes: set) -> bool:
+    """Return True if *child* is a truly anonymous union/struct member.
+
+    libclang exposes ``union { int a; };`` as a record child with no matching
+    ``FIELD_DECL``, whereas ``union { int a; } u;`` yields both the record and a
+    ``FIELD_DECL`` named ``u``.  Comparing the record's hash against the
+    declaration hashes of its sibling fields separates the two cases; the
+    spelling cannot be used because libclang reports both as
+    ``"(anonymous union at path:line:col)"``.
+    """
+    return child.kind in _RECORD_KINDS and child.is_anonymous() and child.hash not in field_decl_type_hashes
+
+
+def _field_from_cursor(cursor, is_static: bool = False) -> IRField:
+    return IRField(
+        name=cursor.spelling,
+        type_spelling=cursor.type.spelling,
+        is_const="const" in cursor.type.spelling,
+        is_static=is_static,
+        attributes=_get_attributes(cursor),
+    )
+
+
+def _anonymous_member_fields(cursor) -> List[IRField]:
+    """Return the fields of an anonymous union/struct member, flattened.
+
+    C++ injects the names declared inside an anonymous member into the
+    enclosing class scope, so these become plain fields of the parent class.
+    Recursion handles an anonymous struct nested inside an anonymous union,
+    whose names are injected all the way up.
+    """
+    field_decl_type_hashes = _field_decl_type_hashes(cursor)
+    fields: List[IRField] = []
+    for child in cursor.get_children():
+        if child.kind == CursorKind.FIELD_DECL:
+            fields.append(_field_from_cursor(child))
+        elif _is_anonymous_member_record(child, field_decl_type_hashes):
+            fields.extend(_anonymous_member_fields(child))
+    return fields
+
+
+def _canonicalize_operator(spelling: str, num_params: int, *, is_member: bool = True) -> str:
+    """Return a canonical operator type string, disambiguating unary/binary cases.
+
+    A free operator declares its left-hand operand as an extra leading
+    parameter, so *num_params* is normalised to the member convention before
+    dispatch: free ``operator-(const Foo&)`` is unary while free
+    ``operator-(const Foo&, const Foo&)`` is binary.
+    """
+    arity = num_params if is_member else max(num_params - 1, 0)
+    if spelling in ("operator-", "operator+") and arity == 0:
         return f"{spelling}unary"
-    if spelling == "operator++" and num_params == 0:
+    if spelling == "operator++" and arity == 0:
         return "operator++prefix"
-    if spelling == "operator++" and num_params == 1:
+    if spelling == "operator++" and arity == 1:
         return "operator++postfix"
-    if spelling == "operator--" and num_params == 0:
+    if spelling == "operator--" and arity == 0:
         return "operator--prefix"
-    if spelling == "operator--" and num_params == 1:
+    if spelling == "operator--" and arity == 1:
         return "operator--postfix"
     return spelling
 
@@ -563,30 +619,19 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         AccessSpecifier.PRIVATE if cursor.kind == CursorKind.CLASS_DECL else AccessSpecifier.PUBLIC
     )
     _tracked_access: object = _default_access
+    _field_type_hashes = _field_decl_type_hashes(cursor)
     for child in cursor.get_children():
         if child.kind == CursorKind.CXX_ACCESS_SPEC_DECL:
             _tracked_access = child.access_specifier
         elif child.kind == CursorKind.FIELD_DECL and _tracked_access == AccessSpecifier.PUBLIC:
-            ir_class.fields.append(
-                IRField(
-                    name=child.spelling,
-                    type_spelling=child.type.spelling,
-                    is_const="const" in child.type.spelling,
-                    is_static=False,
-                    attributes=_get_attributes(child),
-                )
-            )
+            ir_class.fields.append(_field_from_cursor(child))
         elif child.kind == CursorKind.VAR_DECL and _tracked_access == AccessSpecifier.PUBLIC:
             # Static member variables (class-level, not instance fields)
-            ir_class.fields.append(
-                IRField(
-                    name=child.spelling,
-                    type_spelling=child.type.spelling,
-                    is_const="const" in child.type.spelling,
-                    is_static=True,
-                    attributes=_get_attributes(child),
-                )
-            )
+            ir_class.fields.append(_field_from_cursor(child, is_static=True))
+        elif _tracked_access == AccessSpecifier.PUBLIC and _is_anonymous_member_record(child, _field_type_hashes):
+            # An anonymous union/struct member has no FIELD_DECL of its own; its
+            # members are injected into this class' scope and bind as our fields.
+            ir_class.fields.extend(_anonymous_member_fields(child))
 
     # --- Using declarations ---
     for child in cursor.get_children():
@@ -613,10 +658,15 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
             ir_class.enums.append(_parse_enum(child, qualified))
 
     # --- Inner classes ---
+    # Anonymous records are excluded: an anonymous member is flattened into our
+    # fields above, and a named field of an unnamed struct type (``struct {...} s;``)
+    # cannot be referred to by name at all, so it would only yield a bogus inner
+    # class called "(unnamed struct at ...)".
     for child in cursor.get_children():
         if (
             child.kind in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL)
             and child.access_specifier == AccessSpecifier.PUBLIC
+            and not child.is_anonymous()
         ):
             ir_class.inner_classes.append(_parse_class(child, namespace, parent_name=qualified))
 
@@ -778,7 +828,9 @@ def parse_translation_unit(
             qualified = f"{scope_path}::{fn_cursor.spelling}" if scope_path else fn_cursor.spelling
             fn_params = _parse_parameters(fn_cursor)
             fn_is_op = fn_cursor.spelling.startswith("operator") and not fn_cursor.spelling[len("operator") :].isalpha()
-            fn_op_type = _canonicalize_operator(fn_cursor.spelling, len(fn_params)) if fn_is_op else None
+            fn_op_type = (
+                _canonicalize_operator(fn_cursor.spelling, len(fn_params), is_member=False) if fn_is_op else None
+            )
             fn_deprecated = _is_deprecated(fn_cursor)
             module.functions.append(
                 IRFunction(
