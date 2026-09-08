@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from tsujikiri.ir import (
     IRBase,
@@ -215,6 +215,32 @@ class TIRModule(IRModule):
 # ---------------------------------------------------------------------------
 # Upgrade helpers
 # ---------------------------------------------------------------------------
+
+
+def trailing_defaulted_count(defaults: Sequence[Optional[str]]) -> int:
+    """Return how many trailing entries of *defaults* carry a default expression.
+
+    Only a trailing run counts: a C++ parameter list cannot have a defaulted
+    parameter followed by a non-defaulted one, so this is exactly the number of
+    arguments a caller may omit.
+
+    Both the generator (which emits one callable per reachable arity for target
+    languages with no defaulted-argument concept) and the manifest (which records
+    the resulting minimum arity for compatibility checks) derive their answer
+    from this one function, so the manifest can never claim an arity the
+    generator does not emit.
+    """
+    count = 0
+    for default in reversed(list(defaults)):
+        if not default:
+            break
+        count += 1
+    return count
+
+
+def minimum_arity(defaults: Sequence[Optional[str]]) -> int:
+    """Return the smallest number of arguments a call may supply."""
+    return len(list(defaults)) - trailing_defaulted_count(defaults)
 
 
 def _ir_fields_dict(ir: object) -> dict:

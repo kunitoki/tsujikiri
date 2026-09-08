@@ -31,4 +31,7 @@ operator_mappings:
   "operator<<": "__shl"
   "operator>>": "__shr"
 
+# Lua has no defaulted arguments: emit one callable per reachable arity.
+expand_default_arguments: true
+
 template_file: "luabridge3.output.tpl"

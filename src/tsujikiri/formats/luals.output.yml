@@ -50,4 +50,7 @@ operator_mappings:
   "operator~": "__bnot"
   "operator>>": "__shr"
 
+# Lua has no defaulted arguments: emit one callable per reachable arity.
+expand_default_arguments: true
+
 template_file: "luals.output.tpl"

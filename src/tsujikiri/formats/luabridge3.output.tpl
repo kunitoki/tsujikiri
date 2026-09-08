@@ -50,7 +50,7 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- if group.is_overloaded %}
       .addFunction("{{ group.name | camel_to_snake }}",
 {%- for fn in group.functions %}
-{% block function_overloaded scoped %}        luabridge::overload<{{ fn.params | map(attribute='type') | join(', ') }}>(&{{ fn.spelling }}){{ fn.overload_separator }}
+{% block function_overloaded scoped %}        {% if fn.is_default_expansion %}[]({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p.raw_type }} {{ p | param_name('name', loop.index0) }}{% endfor %}) -> decltype(auto) { return {{ fn.spelling }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p | param_name('name', loop.index0) }}{% endfor %}); }{% else %}luabridge::overload<{{ fn.params | map(attribute='type') | join(', ') }}>(&{{ fn.spelling }}){% endif %}{{ fn.overload_separator }}
 {%- endblock %}
 {%- endfor %}
       )
@@ -59,7 +59,7 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- if fn.wrapper_code %}
       .addFunction("{{ group.name | camel_to_snake }}", {{ fn.wrapper_code }})
 {%- else %}
-      .addFunction("{{ group.name | camel_to_snake }}", &{{ fn.spelling }})
+      .addFunction("{{ group.name | camel_to_snake }}", {% if fn.is_operator and fn.is_cpp_overloaded %}luabridge::overload<{{ fn.params | map(attribute='type') | join(', ') }}>(&{{ fn.spelling }}){% else %}&{{ fn.spelling }}{% endif %})
 {%- endif %}
 {%- endif %}
 {%- endblock %}
@@ -96,7 +96,7 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- if group.is_overloaded %}
         .addStaticFunction("{{ group.name | camel_to_snake }}",
 {%- for method in group.methods %}
-{% block class_overloaded_static_method scoped %}          {% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
+{% block class_overloaded_static_method scoped %}          {% if method.is_default_expansion %}[]({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p.raw_type }} {{ p | param_name('name', loop.index0) }}{% endfor %}) -> decltype(auto) { return {{ cls.qualified_name }}::{{ method.spelling }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p | param_name('name', loop.index0) }}{% endfor %}); }{% else %}{% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){% endif %}{{ method.overload_separator }}
 {%- endblock %}
 {%- endfor %}
         )
@@ -121,7 +121,7 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- else %}
         .addFunction("{{ method0.operator_name }}",
 {%- for method in group.methods %}
-{% block class_overloaded_metamethod scoped %}          {% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
+{% block class_overloaded_metamethod scoped %}          {% if method.is_default_expansion %}[]({{ cls.qualified_name }}{% if method.is_const %} const{% endif %}* self{% if method.params %}, {% endif %}{% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p.raw_type }} {{ p | param_name('name', loop.index0) }}{% endfor %}) -> decltype(auto) { return self->{{ method.spelling }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p | param_name('name', loop.index0) }}{% endfor %}); }{% else %}{% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){% endif %}{{ method.overload_separator }}
 {%- endblock %}
 {%- endfor %}
         )
@@ -130,7 +130,7 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- else %}
         .addFunction("{{ group.name | camel_to_snake }}",
 {%- for method in group.methods %}
-{% block class_overloaded_method scoped %}          {% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){{ method.overload_separator }}
+{% block class_overloaded_method scoped %}          {% if method.is_default_expansion %}[]({{ cls.qualified_name }}{% if method.is_const %} const{% endif %}* self{% if method.params %}, {% endif %}{% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p.raw_type }} {{ p | param_name('name', loop.index0) }}{% endfor %}) -> decltype(auto) { return self->{{ method.spelling }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p | param_name('name', loop.index0) }}{% endfor %}); }{% else %}{% if method.overload_kind == "const" %}luabridge::constOverload{% elif method.overload_kind == "nonconst" %}luabridge::nonConstOverload{% else %}luabridge::overload{% endif %}<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){% endif %}{{ method.overload_separator }}
 {%- endblock %}
 {%- endfor %}
         )
@@ -141,7 +141,7 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- elif method.is_operator and method.operator_name == "__tostring" %}
         .addFunction("__tostring", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
 {%- elif method.is_operator and method.operator_name %}
-        .addFunction("{{ method.operator_name }}", {% if method.wrapper_code %}{{ method.wrapper_code }}{% else %}&{{ cls.qualified_name }}::{{ method.spelling }}{% endif %})
+        .addFunction("{{ method.operator_name }}", {% if method.wrapper_code %}{{ method.wrapper_code }}{% elif method.is_cpp_overloaded %}luabridge::overload<{{ method.params | map(attribute='type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){% else %}&{{ cls.qualified_name }}::{{ method.spelling }}{% endif %})
 {%- elif method.is_operator %}
 {%- elif method.wrapper_code %}
         .addFunction("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }})
@@ -152,6 +152,25 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- endif %}
 {%- endblock %}
 {%- endif %}
+{%- endfor %}
+{%- endblock %}
+{%- block class_free_operators scoped %}
+{%- for group in cls.free_operator_groups %}
+{%- block class_free_operator_group scoped %}
+{%- if group.operator_name %}
+{%- if group.is_overloaded %}
+        .addFunction("{{ group.operator_name }}",
+{%- for fn in group.functions %}
+{% block class_free_operator_overloaded scoped %}          luabridge::overload<{{ fn.params | map(attribute='type') | join(', ') }}>(&{{ fn.spelling }}){{ fn.overload_separator }}
+{%- endblock %}
+{%- endfor %}
+        )
+{%- else %}
+{%- set fn = group.functions[0] %}
+        .addFunction("{{ group.operator_name }}", &{{ fn.spelling }})
+{%- endif %}
+{%- endif %}
+{%- endblock %}
 {%- endfor %}
 {%- endblock %}
 {%- block class_fields scoped %}

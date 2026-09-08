@@ -345,6 +345,7 @@ class OutputConfig:
     operator_mappings: Dict[str, str] = field(default_factory=dict)  # C++ operator → binding name
     unsupported_types: List[str] = field(default_factory=list)
     template: str = ""  # full Jinja2 template (single-template system)
+    expand_default_arguments: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------
@@ -758,4 +759,5 @@ def load_output_config(config_file: Path) -> OutputConfig:
         operator_mappings=data.get("operator_mappings", {}),
         unsupported_types=data.get("unsupported_types", []),
         template=template,
+        expand_default_arguments=data.get("expand_default_arguments"),
     )

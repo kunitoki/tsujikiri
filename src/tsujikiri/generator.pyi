@@ -4,7 +4,7 @@ from _typeshed import Incomplete
 from pathlib import Path
 from tsujikiri.configurations import GenerationConfig as GenerationConfig, OutputConfig as OutputConfig, load_output_config as load_output_config
 from tsujikiri.generator_filters import camel_to_snake as camel_to_snake, code_at as code_at, param_name as param_name, param_pairs as param_pairs, snake_to_camel as snake_to_camel
-from tsujikiri.tir import TIRClass as TIRClass, TIREnum as TIREnum, TIRFunction as TIRFunction, TIRMethod as TIRMethod, TIRModule as TIRModule
+from tsujikiri.tir import TIRClass as TIRClass, TIREnum as TIREnum, TIRFunction as TIRFunction, TIRMethod as TIRMethod, TIRModule as TIRModule, trailing_defaulted_count as trailing_defaulted_count
 from tsujikiri.typesystem import TypesystemConfig as TypesystemConfig
 from typing import Any
 

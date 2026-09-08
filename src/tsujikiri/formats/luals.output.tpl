@@ -118,6 +118,21 @@ function {{ cls.name }}:{{ group.name }}({% if method.params %}{{ method.params 
 
 {%- endfor %}
 {%- endblock %}
+{% block class_free_operators scoped %}
+{%- for group in cls.free_operator_groups %}
+{%- block class_free_operator_group scoped %}
+{%- if group.operator_name %}
+{%- set fn = group.functions[0] %}
+{% for p in fn.params[1:] %}---@param {{ p.name }} {{ p.type }}
+{% endfor -%}---@return {{ fn.return_type }}
+{%- for ov in group.functions[1:] %}
+---@overload fun(self: {{ cls.name }}{% if ov.params[1:] %}, {{ ov.params[1:] | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
+{%- endfor %}
+function {{ cls.name }}:{{ group.operator_name }}({% if fn.params[1:] %}{{ fn.params[1:] | param_pairs('name', '', '', ', ') }}{% endif %}) end
+{%- endif %}
+{%- endblock %}
+{%- endfor %}
+{%- endblock %}
 {{ cls.code_injections | code_at("end") }}
 {%- endblock %}
 {%- endfor %}

@@ -19,6 +19,7 @@ never sees them.
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -29,12 +30,17 @@ from tsujikiri.typesystem import TypesystemConfig
 from tsujikiri.formats import _FORMATS_DIR
 from tsujikiri.generator_filters import camel_to_snake, snake_to_camel, code_at, param_name, param_pairs
 from tsujikiri.tir import (
+    trailing_defaulted_count,
     TIRClass,
     TIREnum,
     TIRFunction,
     TIRMethod,
     TIRModule,
 )
+
+
+# C array declarators, e.g. "int[2]" or "const char *[]".
+_ARRAY_TYPE_RE = re.compile(r"\[\s*\d*\s*\]$")
 
 
 class ItemFirstEnvironment(jinja2.Environment):
@@ -205,19 +211,26 @@ class Generator:
         """Build a plain-data context dict from the IR for template rendering."""
         vir = self._version_in_range  # shorthand
         topo = self._topo_sort(module.classes, module.class_by_name)
-        flat_classes: List[Dict[str, Any]] = []
-        for cls in topo:
-            if cls.emit and vir(api_version, cls.api_since, cls.api_until):
-                flat_classes.extend(self._flatten_class_ctx(cls, module.functions, api_version))
 
         active_enums = [e for e in module.enums if e.emit and vir(api_version, e.api_since, e.api_until)]
         active_fns = [fn for fn in module.functions if fn.emit and vir(api_version, fn.api_since, fn.api_until)]
+
+        # Free operators bind as metamethods on the class of their first operand
+        # rather than as module-level functions.
+        attachments = self._free_operator_attachments(topo, active_fns, api_version)
+        attached_ids = {id(fn) for fns in attachments.values() for fn in fns}
+        module_fns = [fn for fn in active_fns if id(fn) not in attached_ids]
+
+        flat_classes: List[Dict[str, Any]] = []
+        for cls in topo:
+            if cls.emit and vir(api_version, cls.api_since, cls.api_until):
+                flat_classes.extend(self._flatten_class_ctx(cls, module.functions, api_version, attachments))
 
         return {
             "module_name": module.name,
             "includes": list(self.generation.includes) if self.generation else [],
             "enums": [self._build_enum_ctx(e) for e in active_enums],
-            "function_groups": self._build_function_group_ctxs(active_fns),
+            "function_groups": self._build_function_group_ctxs(module_fns),
             "classes": flat_classes,
             "api_version": api_version,
             "operator_mappings": dict(self.cfg.operator_mappings),
@@ -250,14 +263,68 @@ class Generator:
         ir_class: TIRClass,
         module_functions: Optional[List[TIRFunction]] = None,
         api_version: str = "",
+        free_operators: Optional[Dict[str, List[TIRFunction]]] = None,
     ) -> List[Dict[str, Any]]:
         """Return class ctx followed by inner-class ctxs (recursive, flattened)."""
-        result = [self._build_class_ctx(ir_class, module_functions, api_version)]
+        result = [self._build_class_ctx(ir_class, module_functions, api_version, free_operators)]
         vir = self._version_in_range
         for inner in ir_class.inner_classes:
             if inner.emit and vir(api_version, inner.api_since, inner.api_until):
-                result.extend(self._flatten_class_ctx(inner, module_functions, api_version))
+                result.extend(self._flatten_class_ctx(inner, module_functions, api_version, free_operators))
         return result
+
+    @staticmethod
+    def _iter_all_classes(classes: List[TIRClass]) -> List[TIRClass]:
+        """Return *classes* plus every inner class, recursively."""
+        result: List[TIRClass] = []
+        for cls in classes:
+            result.append(cls)
+            result.extend(Generator._iter_all_classes(cls.inner_classes))
+        return result
+
+    @staticmethod
+    def _operand_class_spelling(type_spelling: str) -> str:
+        """Return the bare class name an operator operand parameter refers to."""
+        s = type_spelling.strip()
+        if s.startswith("const "):
+            s = s[len("const ") :]
+        return s.rstrip("&* ").strip()
+
+    def _free_operator_attachments(
+        self, classes: List[TIRClass], functions: List[TIRFunction], api_version: str = ""
+    ) -> Dict[str, List[TIRFunction]]:
+        """Return bound-class qualified name → free operator functions to attach.
+
+        A free operator binds as a metamethod on the class named by its first
+        parameter.  Keys are qualified names only: ``_flatten_class_ctx`` also
+        emits inner classes, so matching a bare ``Inner`` would false-match a
+        same-named class in another scope.  An unqualified operand spelling is
+        resolved against the free function's own namespace.
+
+        Operators that this format does not map, and operators whose first
+        operand names no bound class, are left alone — they stay in the
+        module-level function groups exactly as before.
+        """
+        vir = self._version_in_range
+        bound = {
+            cls.qualified_name
+            for cls in self._iter_all_classes(classes)
+            if cls.emit and vir(api_version, cls.api_since, cls.api_until)
+        }
+        attachments: Dict[str, List[TIRFunction]] = {}
+        for fn in functions:
+            if not fn.is_operator or not self.cfg.operator_mappings.get(fn.operator_type or ""):
+                continue
+            params = [p for p in fn.parameters if p.emit]
+            if not params:
+                continue
+            operand = self._operand_class_spelling(params[0].type_override or params[0].type_spelling)
+            candidates = [f"{fn.namespace}::{operand}", operand] if fn.namespace else [operand]
+            qualified = next((c for c in candidates if c in bound), "")
+            if not qualified:
+                continue
+            attachments.setdefault(qualified, []).append(fn)
+        return attachments
 
     @staticmethod
     def _decompose(namespace: str, qualified_name: str) -> tuple[list[str], list[str], Optional[str]]:
@@ -318,10 +385,12 @@ class Generator:
     def _build_function_group_ctxs(self, functions: List[TIRFunction]) -> List[Dict[str, Any]]:
         effective_return_fn = lambda fn: fn.return_type_override or fn.return_type  # noqa: E731
         active = [fn for fn in functions if fn.emit and not self._is_unsupported(effective_return_fn(fn))]
-        groups: Dict[str, List[TIRFunction]] = {}
-        order: List[str] = []
+        groups: Dict[tuple, List[TIRFunction]] = {}
+        order: List[tuple] = []
         for fn in active:
-            key = fn.binding_name
+            # Split on the canonical operator type as well, so a free unary and a
+            # free binary operator of the same spelling stay separate.
+            key = (fn.binding_name, fn.operator_type or "")
             if key not in groups:
                 groups[key] = []
                 order.append(key)
@@ -330,7 +399,7 @@ class Generator:
         result = []
         for key in order:
             group = groups[key]
-            is_overloaded = len(group) > 1
+            group_name, _operator_type = key
             fns = []
             for i, fn in enumerate(group):
                 is_last = i == len(group) - 1
@@ -365,24 +434,90 @@ class Generator:
                         "overload_kind": "overload",
                         "overload_separator": "" if is_last else ",",
                         "overload_index": i,
+                        "is_operator": fn.is_operator,
+                        # See the method context: a group split by operator_type can
+                        # hold a single function whose C++ spelling is overloaded.
+                        "is_cpp_overloaded": fn.is_overload,
                         "is_noexcept": fn.is_noexcept,
                         "is_deprecated": fn.is_deprecated,
                         "deprecation_message": fn.deprecation_message or "",
                         "doc": fn.doc,
                         "attributes": list(fn.attributes),
+                        "is_default_expansion": False,
+                        "omitted_params": [],
                     }
                 )
+            fns = self._expand_default_arguments(fns)
             result.append(
                 {
-                    "name": key,
-                    "is_overloaded": is_overloaded,
+                    "name": group_name,
+                    "is_overloaded": len(fns) > 1,
                     "functions": fns,
                 }
             )
         return result
 
+    def _expand_default_arguments(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Return *entries* with one extra entry per truncated defaulted arity.
+
+        Target languages with no defaulted-argument concept must register a
+        callable for every arity the C++ signature can be invoked with, so
+        ``f(int a, float b = 1.0f)`` becomes ``f(a, b)`` plus ``f(a)``.  Each
+        synthetic entry drops one more trailing defaulted parameter than the one
+        before it and is inserted directly after the entry it derives from, in
+        descending arity.
+
+        This runs on the finished context dicts rather than on the TIR so that
+        ``_compute_overload_kind`` never sees a synthetic entry: synthetics render
+        as lambdas and must not influence the const / non-const cast chosen for
+        the real entries.
+        """
+        if not self.cfg.expand_default_arguments:
+            return entries
+
+        def _signature(entry: Dict[str, Any]) -> tuple:
+            return (
+                tuple(p["raw_type"] for p in entry["params"]),
+                entry.get("is_const", False),
+                entry.get("is_static", False),
+            )
+
+        seen = {_signature(e) for e in entries}
+        result: List[Dict[str, Any]] = []
+        for entry in entries:
+            result.append(entry)
+            params = entry["params"]
+            defaulted = trailing_defaulted_count([p["default"] for p in params])
+            for drop in range(1, defaulted + 1):
+                keep = len(params) - drop
+                synthetic = dict(entry)
+                synthetic["params"] = params[:keep]
+                synthetic["omitted_params"] = [
+                    {"name": p["name"], "type": p["type"], "raw_type": p["raw_type"], "default": p["default"]}
+                    for p in params[keep:]
+                ]
+                synthetic["is_default_expansion"] = True
+                signature = _signature(synthetic)
+                # ``void f(int); void f(int, float = 1.0f);`` — the truncation
+                # collides with a real declaration, which already covers the arity.
+                if signature in seen:
+                    continue
+                seen.add(signature)
+                result.append(synthetic)
+
+        # Re-stamp across the expanded list: the last real entry no longer
+        # terminates it, so its (empty) separator would break the argument list.
+        for i, entry in enumerate(result):
+            entry["overload_index"] = i
+            entry["overload_separator"] = "" if i == len(result) - 1 else ","
+        return result
+
     def _build_class_ctx(
-        self, ir_class: TIRClass, module_functions: Optional[List[TIRFunction]] = None, api_version: str = ""
+        self,
+        ir_class: TIRClass,
+        module_functions: Optional[List[TIRFunction]] = None,
+        api_version: str = "",
+        free_operators: Optional[Dict[str, List[TIRFunction]]] = None,
     ) -> Dict[str, Any]:
         name = ir_class.binding_name
 
@@ -418,11 +553,12 @@ class Generator:
             if m.access == "public_via_trampoline":
                 exposed_protected_ctx.append({"spelling": m.spelling})
 
-        # Constructor group
+        # Constructor group.  Truncated arities need no lambda: both
+        # ``addConstructor<void(*)(int)>`` and ``py::init<int>()`` resolve the C++
+        # default arguments themselves, so only the signature list is shortened.
         ctors = [c for c in ir_class.constructors if c.emit]
-        ctor_group = {
-            "is_overloaded": len(ctors) > 1,
-            "constructors": [
+        ctor_ctxs = self._expand_default_arguments(
+            [
                 {
                     "params": [
                         {
@@ -442,9 +578,15 @@ class Generator:
                     "is_explicit": ctor.is_explicit,
                     "doc": ctor.doc,
                     "code_injections": [{"position": c.position, "code": c.code} for c in ctor.code_injections],
+                    "is_default_expansion": False,
+                    "omitted_params": [],
                 }
                 for i, ctor in enumerate(ctors)
-            ],
+            ]
+        )
+        ctor_group = {
+            "is_overloaded": len(ctor_ctxs) > 1,
+            "constructors": ctor_ctxs,
         }
 
         # Method groups (preserving original order)
@@ -461,7 +603,11 @@ class Generator:
         mgroups: Dict[tuple, List[TIRMethod]] = {}
         morder: List[tuple] = []
         for m in methods:
-            key = (m.binding_name, m.is_static)
+            # The canonical operator type is part of the key so that, e.g., unary
+            # ``operator-()`` and binary ``operator-(int)`` land in distinct groups
+            # and therefore bind to distinct metamethods.  It is "" for every
+            # non-operator, leaving their grouping unchanged.
+            key = (m.binding_name, m.is_static, m.operator_type or "")
             if key not in mgroups:
                 mgroups[key] = []
                 morder.append(key)
@@ -470,8 +616,7 @@ class Generator:
         method_groups = []
         for key in morder:
             group = mgroups[key]
-            group_name, is_static = key
-            is_overloaded = len(group) > 1
+            group_name, is_static, _operator_type = key
             method_ctxs = []
             for i, m in enumerate(group):
                 is_last = i == len(group) - 1
@@ -510,6 +655,10 @@ class Generator:
                         "is_noexcept": m.is_noexcept,
                         "access": m.access or "public",
                         "is_operator": m.is_operator,
+                        # Spelling-level C++ overload flag: a group split by
+                        # operator_type may hold a single method whose C++ spelling
+                        # is still overloaded, so &Cls::op needs disambiguating.
+                        "is_cpp_overloaded": m.is_overload,
                         "operator_type": m.operator_type or "",
                         "operator_name": self.cfg.operator_mappings.get(m.operator_type or "", "")
                         if m.is_operator
@@ -522,21 +671,79 @@ class Generator:
                         "doc": m.doc,
                         "attributes": list(m.attributes),
                         "code_injections": [{"position": c.position, "code": c.code} for c in m.code_injections],
+                        "is_default_expansion": False,
+                        "omitted_params": [],
                     }
                 )
+            method_ctxs = self._expand_default_arguments(method_ctxs)
             method_groups.append(
                 {
                     "name": group_name,
-                    "is_overloaded": is_overloaded,
+                    "is_overloaded": len(method_ctxs) > 1,
                     "is_static": is_static,
                     "methods": method_ctxs,
                 }
             )
 
+        # Free operators attached to this class, grouped by canonical operator type
+        free_operator_groups = []
+        fgroups: Dict[str, List[TIRFunction]] = {}
+        forder: List[str] = []
+        for fn in (free_operators or {}).get(ir_class.qualified_name, []):
+            fkey = fn.operator_type or ""
+            if fkey not in fgroups:
+                fgroups[fkey] = []
+                forder.append(fkey)
+            fgroups[fkey].append(fn)
+
+        for fkey in forder:
+            fgroup = fgroups[fkey]
+            fn_ctxs = []
+            for i, fn in enumerate(fgroup):
+                eff_return = fn.return_type_override or fn.return_type
+                fn_ctxs.append(
+                    {
+                        "name": fn.binding_name,
+                        # The fully qualified free function name — these are bound
+                        # via &ns::operator+, not via a member pointer.
+                        "spelling": fn.qualified_name,
+                        "params": [
+                            {
+                                "name": p.binding_name,
+                                "original_name": p.name,
+                                "type": self._map_type(p.type_override or p.type_spelling),
+                                "raw_type": p.type_override or p.type_spelling,
+                                "index": p.index,
+                                "default": p.default_override or p.default_value,
+                            }
+                            for p in fn.parameters
+                            if p.emit
+                        ],
+                        "return_type": self._map_type(eff_return),
+                        "raw_return_type": eff_return,
+                        "overload_separator": "" if i == len(fgroup) - 1 else ",",
+                        "overload_index": i,
+                        "is_noexcept": fn.is_noexcept,
+                        "doc": fn.doc,
+                    }
+                )
+            free_operator_groups.append(
+                {
+                    "name": fgroup[0].binding_name,
+                    "operator_type": fkey,
+                    "operator_name": self.cfg.operator_mappings.get(fkey, ""),
+                    "is_overloaded": len(fn_ctxs) > 1,
+                    "functions": fn_ctxs,
+                }
+            )
+
         # Fields (excluding unsupported types and emit=False)
+        # C array fields are skipped: neither a luabridge3 setter lambda taking
+        # ``const int[2]&`` nor pybind11's def_readwrite has a valid form for them.
         fields = []
         for f in ir_class.fields:
-            if not f.emit or self._is_unsupported(f.type_override or f.type_spelling):
+            eff_field_type = f.type_override or f.type_spelling
+            if not f.emit or self._is_unsupported(eff_field_type) or _ARRAY_TYPE_RE.search(eff_field_type):
                 continue
             f_parts, f_namespaces, f_parent_class = self._decompose(
                 ir_class.namespace, f"{ir_class.qualified_name}::{f.name}"
@@ -622,6 +829,7 @@ class Generator:
             "has_exposed_protected": len(exposed_protected_ctx) > 0,
             "constructor_group": ctor_group,
             "method_groups": method_groups,
+            "free_operator_groups": free_operator_groups,
             "fields": fields,
             "properties": properties,
             "enums": [self._build_enum_ctx(e, ir_class.namespace) for e in ir_class.enums if e.emit],

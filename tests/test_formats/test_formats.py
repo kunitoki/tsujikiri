@@ -191,3 +191,51 @@ class TestApplyFormatInheritance:
         assert "operator+" in result.operator_mappings
         # Child type mapping preserved
         assert result.type_mappings["MyStr"] == "string"
+
+
+class TestExpandDefaultArgumentsInheritance:
+    def test_child_inherits_true_from_base(self, tmp_path):
+        _write_fmt(tmp_path, "base", "format_name: base\nexpand_default_arguments: true\n")
+        _write_fmt(tmp_path, "child", "format_name: child\nextends: base\n")
+        from tsujikiri.configurations import load_output_config
+
+        cfg = load_output_config(tmp_path / "child.output.yml")
+        result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
+        assert result.expand_default_arguments is True
+
+    def test_child_false_overrides_true_base(self, tmp_path):
+        _write_fmt(tmp_path, "base", "format_name: base\nexpand_default_arguments: true\n")
+        _write_fmt(tmp_path, "child", "format_name: child\nextends: base\nexpand_default_arguments: false\n")
+        from tsujikiri.configurations import load_output_config
+
+        cfg = load_output_config(tmp_path / "child.output.yml")
+        result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
+        assert result.expand_default_arguments is False
+
+    def test_child_true_overrides_absent_base(self, tmp_path):
+        _write_fmt(tmp_path, "base", "format_name: base\n")
+        _write_fmt(tmp_path, "child", "format_name: child\nextends: base\nexpand_default_arguments: true\n")
+        from tsujikiri.configurations import load_output_config
+
+        cfg = load_output_config(tmp_path / "child.output.yml")
+        result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
+        assert result.expand_default_arguments is True
+
+    def test_stays_none_when_neither_sets_it(self, tmp_path):
+        _write_fmt(tmp_path, "base", "format_name: base\n")
+        _write_fmt(tmp_path, "child", "format_name: child\nextends: base\n")
+        from tsujikiri.configurations import load_output_config
+
+        cfg = load_output_config(tmp_path / "child.output.yml")
+        result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
+        assert result.expand_default_arguments is None
+
+    def test_inherits_through_a_chain(self, tmp_path):
+        _write_fmt(tmp_path, "grand", "format_name: grand\nexpand_default_arguments: true\n")
+        _write_fmt(tmp_path, "mid", "format_name: mid\nextends: grand\n")
+        _write_fmt(tmp_path, "leaf", "format_name: leaf\nextends: mid\n")
+        from tsujikiri.configurations import load_output_config
+
+        cfg = load_output_config(tmp_path / "leaf.output.yml")
+        result = apply_format_inheritance(cfg, extra_dirs=[tmp_path])
+        assert result.expand_default_arguments is True

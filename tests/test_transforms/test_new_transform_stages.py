@@ -247,6 +247,11 @@ class TestSetTypeHintExtended:
         SetTypeHintStage(**{"class": "Foo", "generate_hash": True}).apply(mod)
         assert mod.classes[0].generate_hash is True
 
+    def test_holder_type(self):
+        mod = _module_with_class()
+        SetTypeHintStage(**{"class": "Foo", "holder_type": "std::shared_ptr"}).apply(mod)
+        assert mod.classes[0].holder_type == "std::shared_ptr"
+
     def test_smart_pointer_kind(self):
         mod = _module_with_class()
         SetTypeHintStage(**{"class": "Foo", "smart_pointer_kind": "shared"}).apply(mod)

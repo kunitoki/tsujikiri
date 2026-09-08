@@ -464,6 +464,16 @@ def main() -> None:
 
     base_gen = input_config.generation
 
+    # --- dump-ir ---
+    if args.dump_ir is not None:
+        ir_dict = _ir_to_dict(merged)
+        ir_json = json.dumps(ir_dict, indent=2, default=str)
+        if args.dump_ir == "-":
+            sys.stdout.write(ir_json + "\n")
+        else:
+            Path(args.dump_ir).write_text(ir_json + "\n", encoding="utf-8")
+            print(f"IR written to {args.dump_ir}", file=sys.stderr)
+
     # --- dry-run ---
     if args.dry_run:
         emitted_classes = [c.name for c in merged.classes if c.emit]
@@ -475,20 +485,12 @@ def main() -> None:
         print(f"Functions: {len(emitted_functions)} — {', '.join(emitted_functions) or '(none)'}")
         print(f"Enums   : {len(emitted_enums)} — {', '.join(emitted_enums) or '(none)'}")
         print(f"Version : {manifest['version']}")
-        return
-
-    # --- dump-ir ---
-    if args.dump_ir is not None:
-        ir_dict = _ir_to_dict(merged)
-        ir_json = json.dumps(ir_dict, indent=2, default=str)
-        if args.dump_ir == "-":
-            sys.stdout.write(ir_json + "\n")
-        else:
-            Path(args.dump_ir).write_text(ir_json + "\n", encoding="utf-8")
-            print(f"IR written to {args.dump_ir}", file=sys.stderr)
 
     if has_breaking:
         sys.exit(1)
+
+    if args.dry_run:
+        return
 
     # --- Generate for each target ---
     for target_idx, (fmt, outfile) in enumerate(args.target):
