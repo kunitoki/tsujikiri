@@ -15,6 +15,7 @@ running the filter/attribute/transform pipeline.
 from __future__ import annotations
 
 import dataclasses
+import functools
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
 
@@ -243,13 +244,23 @@ def minimum_arity(defaults: Sequence[Optional[str]]) -> int:
     return len(list(defaults)) - trailing_defaulted_count(defaults)
 
 
-def _ir_fields_dict(ir: object) -> dict:
-    """Return a dict of init-visible dataclass fields from *ir*."""
-    return {
-        f.name: getattr(ir, f.name)
-        for f in dataclasses.fields(ir)  # type: ignore[arg-type]
-        if f.init
-    }
+@functools.lru_cache(maxsize=None)
+def _init_field_names(cls: type) -> tuple[str, ...]:
+    """Return the init-visible dataclass field names of *cls*.
+
+    Fixed per class, so caching avoids re-walking ``dataclasses.fields`` for
+    every node upgraded.
+    """
+    return tuple(f.name for f in dataclasses.fields(cls) if f.init)  # type: ignore[arg-type]
+
+
+def _ir_fields_dict(ir: object, exclude: frozenset[str] = frozenset()) -> dict:
+    """Return a dict of init-visible dataclass fields from *ir*.
+
+    Names in *exclude* are skipped: ``upgrade_class`` overwrites its collection
+    fields immediately, and passing them through would alias the IR's lists.
+    """
+    return {name: getattr(ir, name) for name in _init_field_names(type(ir)) if name not in exclude}
 
 
 def upgrade_parameter(ir: IRParameter, index: int = 0) -> TIRParameter:
@@ -308,8 +319,15 @@ def upgrade_using_declaration(ir: IRUsingDeclaration) -> TIRUsingDeclaration:
     return tir
 
 
+# Collections upgrade_class rebuilds on the lines right below the constructor
+# call; passing them in would hand TIRClass the IR's own list objects.
+_CLASS_COLLECTION_FIELDS = frozenset(
+    {"bases", "methods", "fields", "enums", "constructors", "inner_classes", "using_declarations"}
+)
+
+
 def upgrade_class(ir: IRClass) -> TIRClass:
-    tir = TIRClass(**_ir_fields_dict(ir))
+    tir = TIRClass(**_ir_fields_dict(ir, exclude=_CLASS_COLLECTION_FIELDS))
     tir.origin = ir
     tir.bases = [upgrade_base(b) for b in ir.bases]  # type: ignore[assignment]
     tir.inner_classes = [upgrade_class(c) for c in ir.inner_classes]  # type: ignore[assignment]

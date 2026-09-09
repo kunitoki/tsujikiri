@@ -68,6 +68,13 @@ version = { attr = "tsujikiri.__version__" }
 testpaths = ["tests"]
 norecursedirs = ["_deps", "*/build", "__pycache__", ".venv"]
 
+[tool.coverage.run]
+branch = true
+source = ["tsujikiri"]
+
+[tool.coverage.report]
+exclude_also = ["if TYPE_CHECKING:"]
+
 [tool.uv]
 conflicts = [
   [

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ctypes
 import io
+import subprocess as _subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,19 +14,26 @@ from clang import cindex as ci
 from clang.cindex import AccessSpecifier, CursorKind
 
 from tsujikiri.configurations import SourceConfig
+from tsujikiri.ir import IRClass, IRModule
+from tsujikiri.tir import TIRModule, upgrade_module
 from tsujikiri.parser import (
     parse_translation_unit,
+    parse_translation_unit_ir,
+    _bind_cursor_predicate,
     _canonicalize_operator,
     _collect_attr_blocks,
     _get_attributes,
     _get_default_value,
     _get_deprecation_message,
+    _get_sdk_path,
+    _is_inline_namespace,
     _is_scoped_enum,
     _param_types_from_fn_tokens,
     _parse_class,
     _parse_enum,
     _parse_parameters,
     _read_source_lines,
+    _reset_caches,
     _source_file,
     _type_from_tokens,
     _SOURCE_CACHE,
@@ -592,44 +601,129 @@ class TestBundledLibcxx:
 # ---------------------------------------------------------------------------
 
 
+class TestGetSdkPath:
+    """_get_sdk_path is called directly, so these cover it on every platform.
+
+    Going through parse_translation_unit would only reach this code on macOS,
+    leaving it uncovered on the Linux and Windows CI legs.
+    """
+
+    def test_returns_stripped_sdk_path(self) -> None:
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="/some/sdk\n") as mock_xcrun:
+            assert _get_sdk_path() == "/some/sdk"
+        mock_xcrun.assert_called_once()
+
+    def test_empty_output_returns_empty_string(self) -> None:
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="  \n"):
+            assert _get_sdk_path() == ""
+
+    def test_subprocess_error_returns_none(self) -> None:
+        with patch(
+            "tsujikiri.parser.subprocess.check_output",
+            side_effect=_subprocess.SubprocessError("xcrun failed"),
+        ):
+            assert _get_sdk_path() is None
+
+    def test_file_not_found_returns_none(self) -> None:
+        with patch(
+            "tsujikiri.parser.subprocess.check_output",
+            side_effect=FileNotFoundError("xcrun not found"),
+        ):
+            assert _get_sdk_path() is None
+
+    def test_result_is_memoised_across_calls(self) -> None:
+        """The whole point of the cache: xcrun runs once, not once per source."""
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="/sdk\n") as mock_xcrun:
+            assert _get_sdk_path() == "/sdk"
+            assert _get_sdk_path() == "/sdk"
+            assert _get_sdk_path() == "/sdk"
+        mock_xcrun.assert_called_once()
+
+    def test_reset_caches_clears_the_memo(self) -> None:
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="/first\n"):
+            assert _get_sdk_path() == "/first"
+        _reset_caches()
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="/second\n"):
+            assert _get_sdk_path() == "/second"
+
+
 class TestDarwinSysroot:
+    """The -isysroot call site.
+
+    platform.system is patched in every test so the Darwin branch is exercised
+    on Linux and Windows too; without it these assertions pass vacuously off macOS.
+    """
+
+    @staticmethod
+    def _darwin():
+        return patch("tsujikiri.parser.platform.system", return_value="Darwin")
+
     def test_isysroot_already_in_args_skips_xcrun(self, tmp_path: Path) -> None:
-        """Branch 735->745: -isysroot already present — xcrun not called."""
+        """-isysroot already present — xcrun is not consulted."""
         hpp = tmp_path / "sysroot.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/some/sdk"])
-        with patch("tsujikiri.parser.subprocess.check_output") as mock_xcrun:
+        with self._darwin(), patch("tsujikiri.parser.subprocess.check_output") as mock_xcrun:
             module = parse_translation_unit(src, ["ns"], "isysroot_preset")
         mock_xcrun.assert_not_called()
         assert module is not None
 
-    def test_empty_sdk_path_not_added(self, tmp_path: Path) -> None:
-        """Branch 740->745: xcrun returns empty string — -isysroot not appended."""
+    def test_sdk_path_is_appended(self, tmp_path: Path, capsys) -> None:
+        """A non-empty SDK path is passed to clang as -isysroot."""
+        hpp = tmp_path / "sysroot0.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with self._darwin(), patch("tsujikiri.parser.subprocess.check_output", return_value="/fake/sdk\n"):
+            module = parse_translation_unit(src, ["ns"], "sdk_added", verbose=True)
+        assert module is not None
+        err = capsys.readouterr().err
+        assert "-isysroot" in err
+        assert "/fake/sdk" in err
+
+    def test_empty_sdk_path_not_added(self, tmp_path: Path, capsys) -> None:
+        """xcrun returns an empty string — -isysroot is not appended."""
         hpp = tmp_path / "sysroot2.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.subprocess.check_output", return_value="  \n"):
-            module = parse_translation_unit(src, ["ns"], "empty_sdk")
+        with self._darwin(), patch("tsujikiri.parser.subprocess.check_output", return_value="  \n"):
+            module = parse_translation_unit(src, ["ns"], "empty_sdk", verbose=True)
         assert module is not None
+        assert "-isysroot" not in capsys.readouterr().err
 
     def test_xcrun_subprocess_error_silenced(self, tmp_path: Path) -> None:
-        """Lines 742-743: SubprocessError from xcrun is caught and ignored."""
-        import subprocess as _subprocess
-
+        """SubprocessError from xcrun is caught and parsing continues."""
         hpp = tmp_path / "sysroot3.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.subprocess.check_output", side_effect=_subprocess.SubprocessError("xcrun failed")):
+        with self._darwin(), patch(
+            "tsujikiri.parser.subprocess.check_output",
+            side_effect=_subprocess.SubprocessError("xcrun failed"),
+        ):
             module = parse_translation_unit(src, ["ns"], "xcrun_error")
         assert module is not None
 
     def test_xcrun_file_not_found_silenced(self, tmp_path: Path) -> None:
-        """Lines 742-743: FileNotFoundError (xcrun not installed) is caught and ignored."""
+        """FileNotFoundError (xcrun not installed) is caught and parsing continues."""
         hpp = tmp_path / "sysroot4.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.subprocess.check_output", side_effect=FileNotFoundError("xcrun not found")):
+        with self._darwin(), patch(
+            "tsujikiri.parser.subprocess.check_output",
+            side_effect=FileNotFoundError("xcrun not found"),
+        ):
             module = parse_translation_unit(src, ["ns"], "xcrun_missing")
+        assert module is not None
+
+    def test_non_darwin_never_calls_xcrun(self, tmp_path: Path) -> None:
+        """The other side of the platform branch, covered on macOS too."""
+        hpp = tmp_path / "sysroot5.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("tsujikiri.parser.platform.system", return_value="Linux"), patch(
+            "tsujikiri.parser.subprocess.check_output"
+        ) as mock_xcrun:
+            module = parse_translation_unit(src, ["ns"], "linux_no_xcrun")
+        mock_xcrun.assert_not_called()
         assert module is not None
 
 
@@ -1351,3 +1445,105 @@ class TestParseClassUsingDeclNoTypeRef:
 
         assert len(ir_cls.using_declarations) == 1
         assert ir_cls.using_declarations[0].member_name == "process"
+
+
+# ---------------------------------------------------------------------------
+# parse_translation_unit_ir — the pre-upgrade seam used by the parse cache
+# ---------------------------------------------------------------------------
+
+
+class TestParseTranslationUnitIrSeam:
+    """parse_translation_unit must stay exactly upgrade_module(parse_..._ir(...))."""
+
+    @staticmethod
+    def _source() -> SourceConfig:
+        return SourceConfig(
+            path=str(Path(__file__).parent / "nested_namespaces.hpp"),
+            parse_args=["-std=c++20"],
+        )
+
+    def test_returns_a_plain_ir_module(self) -> None:
+        module = parse_translation_unit_ir(self._source(), ["outer::inner"], "seam")
+        assert type(module) is IRModule
+        assert not isinstance(module, TIRModule)
+
+    def test_ir_classes_are_plain_ir_classes(self) -> None:
+        module = parse_translation_unit_ir(self._source(), ["outer::inner"], "seam")
+        assert [c.name for c in module.classes] == ["Deep"]
+        assert type(module.classes[0]) is IRClass
+
+    def test_wrapper_equals_manual_upgrade(self) -> None:
+        namespaces = ["outer::inner"]
+        wrapped = parse_translation_unit(self._source(), namespaces, "seam")
+        manual = upgrade_module(parse_translation_unit_ir(self._source(), namespaces, "seam"))
+        assert isinstance(wrapped, TIRModule)
+        assert wrapped.name == manual.name
+        assert wrapped.namespaces == manual.namespaces
+        assert [c.name for c in wrapped.classes] == [c.name for c in manual.classes]
+        assert [c.qualified_name for c in wrapped.classes] == [c.qualified_name for c in manual.classes]
+        assert [e.name for e in wrapped.enums] == [e.name for e in manual.enums]
+        assert [f.name for f in wrapped.functions] == [f.name for f in manual.functions]
+
+    def test_class_by_name_identity_is_preserved(self) -> None:
+        module = parse_translation_unit_ir(self._source(), ["outer::inner"], "seam")
+        assert module.classes[0] is module.class_by_name["Deep"]
+
+    def test_missing_source_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            parse_translation_unit_ir(SourceConfig(path=str(tmp_path / "nope.hpp")), [], "seam")
+
+    def test_clang_errors_are_collected(self, tmp_path: Path) -> None:
+        bad = tmp_path / "bad.hpp"
+        bad.write_text('#error "seam test error"\n', encoding="utf-8")
+        errors: list[str] = []
+        parse_translation_unit_ir(SourceConfig(path=str(bad)), [], "seam", clang_errors=errors)
+        assert any("seam test error" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# _is_inline_namespace — C API binding and its token-scan fallback
+# ---------------------------------------------------------------------------
+
+
+class TestBindCursorPredicate:
+    def test_missing_symbol_returns_none(self) -> None:
+        """An older libclang without the symbol must fall back, not raise."""
+        assert _bind_cursor_predicate(object(), "clang_NoSuchSymbol_xyz") is None
+
+    def test_present_symbol_is_bound(self) -> None:
+        fn = _bind_cursor_predicate(ci.conf.lib, "clang_Cursor_isInlineNamespace")
+        assert fn is not None
+        assert fn.restype is ctypes.c_uint
+
+
+class TestIsInlineNamespaceFallback:
+    """The token-scan branch runs on any clang whose libclang lacks the symbol."""
+
+    @staticmethod
+    def _namespace(name: str):
+        fixture = Path(__file__).parent / "nested_namespaces.hpp"
+        tu = ci.Index.create().parse(str(fixture), args=["-x", "c++", "-std=c++20"])
+        outer = next(c for c in tu.cursor.get_children() if c.spelling == "outer")
+        return next(c for c in outer.get_children() if c.spelling == name)
+
+    def test_fallback_detects_inline_namespace(self, monkeypatch) -> None:
+        monkeypatch.setattr("tsujikiri.parser._CLANG_IS_INLINE_NAMESPACE", None)
+        assert _is_inline_namespace(self._namespace("v2")) is True
+
+    def test_fallback_rejects_plain_namespace(self, monkeypatch) -> None:
+        monkeypatch.setattr("tsujikiri.parser._CLANG_IS_INLINE_NAMESPACE", None)
+        assert _is_inline_namespace(self._namespace("inner")) is False
+
+    def test_fallback_handles_an_empty_token_stream(self, monkeypatch) -> None:
+        monkeypatch.setattr("tsujikiri.parser._CLANG_IS_INLINE_NAMESPACE", None)
+        cursor = MagicMock()
+        cursor.get_tokens.return_value = iter([])
+        assert _is_inline_namespace(cursor) is False
+
+    def test_c_api_and_fallback_agree_on_the_fixture(self, monkeypatch) -> None:
+        """Both paths must classify hand-written `inline namespace` identically."""
+        for name, expected in (("v2", True), ("inner", False)):
+            assert _is_inline_namespace(self._namespace(name)) is expected
+            monkeypatch.setattr("tsujikiri.parser._CLANG_IS_INLINE_NAMESPACE", None)
+            assert _is_inline_namespace(self._namespace(name)) is expected
+            monkeypatch.undo()

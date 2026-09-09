@@ -1,12 +1,12 @@
-![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=24)
+![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=25)
 
-[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=24)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
-[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=24)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
-[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=24)](https://codecov.io/gh/kunitoki/tsujikiri)
-[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=24)](https://tsujikiri.readthedocs.io/en/latest/)
-[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=24)](https://pypi.org/project/tsujikiri/)
-[![Downloads](https://img.shields.io/pypi/dw/tsujikiri?x=24)](https://pypistats.org/packages/tsujikiri)
-[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=24)](https://pypi.org/project/tsujikiri/)
+[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=25)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
+[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=25)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
+[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=25)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=25)](https://tsujikiri.readthedocs.io/en/latest/)
+[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=25)](https://pypi.org/project/tsujikiri/)
+[![Downloads](https://img.shields.io/pypi/dw/tsujikiri?x=25)](https://pypistats.org/packages/tsujikiri)
+[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=25)](https://pypi.org/project/tsujikiri/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 # tsujikiri — 辻斬り
@@ -228,7 +228,8 @@ tsujikiri -i project.input.yml --target myformat out/bindings.cpp -f ./my_format
 
 ```
 usage: tsujikiri [-h] [--input FILE] [--target FORMAT FILE] [--formats-dir DIR] [--list-formats] [--dry-run] [--manifest-file FILE]
-                 [--check-compat] [--embed-version] [--trace-transforms] [--dump-ir [FILE]] [--validate-config] [--verbose] [--api-version VERSION]
+                 [--check-compat] [--embed-version] [--trace-transforms] [--dump-ir [FILE]] [--validate-config] [--verbose]
+                 [--api-version VERSION] [--pretty [FORMAT ...]] [--strict] [--jobs N]
 
 辻斬り — Generic C++ Binding Generator
 
@@ -237,7 +238,8 @@ options:
   --input FILE, -i FILE
                         Input config YAML (e.g. myproject.input.yml)
   --target FORMAT FILE, -t FORMAT FILE
-                        Output target: FORMAT is a built-in name (luabridge3) or path to .output.yml; FILE is the output path ('-' for stdout). Repeatable.
+                        Output target: FORMAT is a built-in name (luabridge3) or path to .output.yml; FILE is the output path ('-' for
+                        stdout). Repeatable.
   --formats-dir DIR, -f DIR
                         Additional directory to search for .output.yml format files (repeatable)
   --list-formats        Print available built-in output formats and exit
@@ -252,6 +254,12 @@ options:
   --verbose, -v         Enable verbose output during parsing (currently only applies to Clang diagnostics)
   --api-version VERSION
                         Target API version (semver). Entities with api_since > VERSION or api_until <= VERSION are excluded.
+  --pretty [FORMAT ...]
+                        Enable pretty printing. With no FORMAT args, enable for all targets. With FORMAT names (e.g. --pretty luabridge3
+                        pybind11), enable only for those targets. Overrides the input.yml `pretty` setting.
+  --strict              Exit 1 if clang reports any errors during parsing; no output is written
+  --jobs N, -j N        Parse sources using N worker processes, or 'auto' for one per CPU. Default: 1 (serial). Output is identical for
+                        any N.
 ```
 
 ---
@@ -279,7 +287,7 @@ The test suite covers parsing, filtering, transforms, generation, CLI integratio
 
 ## Coverage
 
-[![Coverage tree](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?x=24&token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Coverage tree](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?x=25&token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
 
 ---
 

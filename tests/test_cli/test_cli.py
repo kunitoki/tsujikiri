@@ -1232,6 +1232,62 @@ class TestVerbose:
         )
         assert "[filter] emitted:" in stderr
 
+    def test_source_is_parsed_once_per_run(self, simple_input_yml: Path) -> None:
+        """One source, one target: exactly one parse (was 2 — manifest + target)."""
+        _, stderr = _run("--input", str(simple_input_yml), "--target", "luabridge3", "-", "--verbose")
+        assert stderr.count("simple.hpp: args=") == 1
+
+    def test_source_is_parsed_once_across_two_targets(self, simple_input_yml: Path, tmp_path: Path) -> None:
+        """N sources and T targets used to cost N + N*T parses; now it is N."""
+        _, stderr = _run(
+            "--input",
+            str(simple_input_yml),
+            "--target",
+            "luabridge3",
+            str(tmp_path / "out.cpp"),
+            "--target",
+            "luals",
+            str(tmp_path / "out.lua"),
+            "--verbose",
+        )
+        assert stderr.count("simple.hpp: args=") == 1
+
+    def test_dry_run_returns_before_later_targets_are_resolved(self, simple_input_yml: Path) -> None:
+        """--dry-run must not resolve target 1, so an unknown format there is fine.
+
+        Only the first target's OutputConfig is loaded up front; prefetching keys
+        for the manifest pass must not start resolving the rest.
+        """
+        stdout, _ = _run(
+            "--input",
+            str(simple_input_yml),
+            "--dry-run",
+            "--target",
+            "luabridge3",
+            "-",
+            "--target",
+            "definitely_bogus_xyz",
+            "-",
+        )
+        assert "Classes :" in stdout
+
+    def test_source_is_parsed_once_across_three_targets(self, simple_input_yml: Path, tmp_path: Path) -> None:
+        _, stderr = _run(
+            "--input",
+            str(simple_input_yml),
+            "--target",
+            "luabridge3",
+            str(tmp_path / "a.cpp"),
+            "--target",
+            "luabridge3",
+            str(tmp_path / "b.cpp"),
+            "--target",
+            "luals",
+            str(tmp_path / "c.lua"),
+            "--verbose",
+        )
+        assert stderr.count("simple.hpp: args=") == 1
+
 
 # ---------------------------------------------------------------------------
 # --pretty CLI flag (global and per-format)
