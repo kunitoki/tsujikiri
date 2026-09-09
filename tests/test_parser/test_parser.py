@@ -695,9 +695,12 @@ class TestDarwinSysroot:
         hpp = tmp_path / "sysroot3.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with self._darwin(), patch(
-            "tsujikiri.parser.subprocess.check_output",
-            side_effect=_subprocess.SubprocessError("xcrun failed"),
+        with (
+            self._darwin(),
+            patch(
+                "tsujikiri.parser.subprocess.check_output",
+                side_effect=_subprocess.SubprocessError("xcrun failed"),
+            ),
         ):
             module = parse_translation_unit(src, ["ns"], "xcrun_error")
         assert module is not None
@@ -707,9 +710,12 @@ class TestDarwinSysroot:
         hpp = tmp_path / "sysroot4.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with self._darwin(), patch(
-            "tsujikiri.parser.subprocess.check_output",
-            side_effect=FileNotFoundError("xcrun not found"),
+        with (
+            self._darwin(),
+            patch(
+                "tsujikiri.parser.subprocess.check_output",
+                side_effect=FileNotFoundError("xcrun not found"),
+            ),
         ):
             module = parse_translation_unit(src, ["ns"], "xcrun_missing")
         assert module is not None
@@ -719,9 +725,10 @@ class TestDarwinSysroot:
         hpp = tmp_path / "sysroot5.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.platform.system", return_value="Linux"), patch(
-            "tsujikiri.parser.subprocess.check_output"
-        ) as mock_xcrun:
+        with (
+            patch("tsujikiri.parser.platform.system", return_value="Linux"),
+            patch("tsujikiri.parser.subprocess.check_output") as mock_xcrun,
+        ):
             module = parse_translation_unit(src, ["ns"], "linux_no_xcrun")
         mock_xcrun.assert_not_called()
         assert module is not None
