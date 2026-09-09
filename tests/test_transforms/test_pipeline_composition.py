@@ -92,6 +92,39 @@ class TestPipelineBasics:
         with pytest.raises(ValueError, match="Unknown transform stage"):
             build_pipeline_from_config([TransformSpec(stage="nonexistent_xyz")])
 
+    def test_build_pipeline_missing_required_option_raises(self):
+        spec = TransformSpec(stage="inject_code", kwargs={"code": "// hi", "position": "end"})
+        with pytest.raises(ValueError) as excinfo:
+            build_pipeline_from_config([spec])
+        message = str(excinfo.value)
+        assert "inject_code" in message
+        assert "missing required option 'target'" in message
+        assert "given: code, position" in message
+
+    def test_build_pipeline_missing_required_option_without_kwargs(self):
+        with pytest.raises(ValueError, match=r"missing required option 'from' \(given: none\)"):
+            build_pipeline_from_config([TransformSpec(stage="rename_method")])
+
+    def test_build_pipeline_invalid_option_value_raises(self):
+        spec = TransformSpec(
+            stage="overload_priority",
+            kwargs={"method": "foo", "signature": "void foo()", "priority": "high"},
+        )
+        with pytest.raises(ValueError) as excinfo:
+            build_pipeline_from_config([spec])
+        message = str(excinfo.value)
+        assert "overload_priority" in message
+        assert "invalid literal" in message
+
+    def test_build_pipeline_stage_validation_error_is_prefixed(self):
+        spec = TransformSpec(stage="exception_policy", kwargs={"policy": "explode"})
+        with pytest.raises(ValueError) as excinfo:
+            build_pipeline_from_config([spec])
+        message = str(excinfo.value)
+        assert message.startswith("transform stage 'exception_policy': ")
+        assert "must be one of" in message
+        assert "(given: policy)" in message
+
 
 # ---------------------------------------------------------------------------
 # Rename → Suppress chain

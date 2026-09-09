@@ -28,6 +28,17 @@ Key properties:
 - Transforms **see all IR nodes** regardless of `emit` flag — they decide whether to act on them.
 - Stages run on the merged module (all sources combined).
 
+The key tables below mark which options a stage requires. A stage missing a
+required option (or given an invalid value for one) is reported as an error
+naming the stage and the option, and generation stops:
+
+```
+tsujikiri: error: transform stage 'inject_code': missing required option 'target' (given: code)
+```
+
+`tsujikiri --input <file> --validate-config` reports these errors without
+parsing the C++ sources.
+
 ---
 
 ## Pattern Matching in Transforms
@@ -273,7 +284,7 @@ transforms:
 
 ## `inject_method`
 
-Appends a synthetic `TIRMethod` to a class. The method appears in the output exactly as specified. The caller is responsible for ensuring the corresponding C++ symbol exists (or providing a `wrapper_code` via a subsequent `modify_method` stage).
+Appends a synthetic `TIRMethod` to a class. The method appears in the output exactly as specified. The caller is responsible for ensuring the corresponding C++ symbol exists, or for supplying `wrapper_code` with a callable that implements it.
 
 ```yaml
 - stage: inject_method
@@ -297,6 +308,7 @@ Appends a synthetic `TIRMethod` to a class. The method appears in the output exa
 | `return_type` | string | `"void"` | C++ return type spelling |
 | `parameters` | list | `[]` | Each item has `name` (string) and `type` (string) |
 | `is_static` | bool | `false` | Whether to register as a static method |
+| `wrapper_code` | string | `null` | Complete callable expression (e.g. a lambda) bound instead of `&Class::method` |
 
 **Example — inject a static factory method not present in the original C++ API:**
 ```yaml
@@ -309,9 +321,21 @@ transforms:
     is_static: true
 ```
 
-This injects a method named `unit` into `Circle`. The generated binding will call `&Circle::unit`, so this function must exist in your C++ code (or be provided via `wrapper_code`).
+This injects a method named `unit` into `Circle`. The generated binding will call `&Circle::unit`, so this function must exist in your C++ code.
 
-> **Tip:** Combine `inject_method` with `modify_method` to provide a `wrapper_code` for the injected method when no real C++ function exists.
+**Example — the same injection, but with `wrapper_code` supplying the implementation:**
+```yaml
+transforms:
+  - stage: inject_method
+    class: Circle
+    name: unit
+    return_type: "Circle"
+    parameters: []
+    is_static: true
+    wrapper_code: "+[] () { return Circle{1.0}; }"
+```
+
+`wrapper_code` is spliced into the binding as the callable itself, so it must be a complete expression — typically a capture-less lambda prefixed with `+`. When present, no `&Circle::unit` reference is emitted, so no such C++ symbol is needed.
 
 ---
 

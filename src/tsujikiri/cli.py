@@ -272,6 +272,11 @@ def _validate_config_action(args: argparse.Namespace, extra_dirs: List[Path]) ->
     for spec in all_transform_specs:
         if spec.stage not in _REGISTRY:
             errors.append(f"Unknown transform stage '{spec.stage}'. Available: {sorted(_REGISTRY.keys())}")
+            continue
+        try:
+            build_pipeline_from_config([spec])
+        except ValueError as exc:
+            errors.append(str(exc))
 
     # Validate target formats (if any specified)
     for fmt, _outfile in args.target or []:
@@ -480,53 +485,57 @@ def main() -> None:
     clang_errors: List[str] = []
     cache = ParseCache(verbose=args.verbose, jobs=_resolve_jobs(args.jobs))
 
-    if has_output_groups:
-        # Prefetch the union of every group's keys in one batch so parallelism
-        # spans groups instead of being capped at the width of the widest group.
-        prefetch_keys: List[ParseKey] = []
-        for group in input_config.output_groups:
-            prefetch_keys.extend(
-                _source_parse_keys(
+    try:
+        if has_output_groups:
+            # Prefetch the union of every group's keys in one batch so parallelism
+            # spans groups instead of being capped at the width of the widest group.
+            prefetch_keys: List[ParseKey] = []
+            for group in input_config.output_groups:
+                prefetch_keys.extend(
+                    _source_parse_keys(
+                        input_config,
+                        input_config.resolve_group_sources(group),
+                        first_output_config,
+                        module_name,
+                        output_name=group.name,
+                    )
+                )
+            cache.prefetch(prefetch_keys, clang_errors)
+
+            manifest_modules: List[TIRModule] = []
+            all_includes: list[str] = []
+            for group in input_config.output_groups:
+                group_merged, _ = _process_sources(
                     input_config,
                     input_config.resolve_group_sources(group),
                     first_output_config,
                     module_name,
+                    trace_stream,
+                    cache,
+                    verbose=args.verbose,
                     output_name=group.name,
+                    clang_errors=clang_errors,
                 )
+                manifest_modules.append(group_merged)
+            merged = merge_tir_modules(manifest_modules)
+        else:
+            cache.prefetch(
+                _source_parse_keys(input_config, source_entries, first_output_config, module_name),
+                clang_errors,
             )
-        cache.prefetch(prefetch_keys, clang_errors)
-
-        manifest_modules: List[TIRModule] = []
-        all_includes: list[str] = []
-        for group in input_config.output_groups:
-            group_merged, _ = _process_sources(
+            merged, all_includes = _process_sources(
                 input_config,
-                input_config.resolve_group_sources(group),
+                source_entries,
                 first_output_config,
                 module_name,
                 trace_stream,
                 cache,
                 verbose=args.verbose,
-                output_name=group.name,
                 clang_errors=clang_errors,
             )
-            manifest_modules.append(group_merged)
-        merged = merge_tir_modules(manifest_modules)
-    else:
-        cache.prefetch(
-            _source_parse_keys(input_config, source_entries, first_output_config, module_name),
-            clang_errors,
-        )
-        merged, all_includes = _process_sources(
-            input_config,
-            source_entries,
-            first_output_config,
-            module_name,
-            trace_stream,
-            cache,
-            verbose=args.verbose,
-            clang_errors=clang_errors,
-        )
+    except ValueError as exc:
+        print(f"tsujikiri: error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     if args.strict and clang_errors:
         sys.exit(1)

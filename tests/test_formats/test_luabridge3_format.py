@@ -326,3 +326,39 @@ class TestFreeFunctionWrapperCode:
         mod.functions = [fn]
         out = _gen(mod, lua_cfg)
         assert "&myFunc" in out
+
+
+# ---------------------------------------------------------------------------
+# Method wrapper_code support
+# ---------------------------------------------------------------------------
+
+
+class TestMethodWrapperCode:
+    def test_instance_method_wrapper_code_emitted(self, lua_cfg) -> None:
+        method = TIRMethod(
+            name="doThing",
+            spelling="doThing",
+            qualified_name="ns::Foo::doThing",
+            return_type="void",
+            wrapper_code="+[] (ns::Foo& self) { self.doThing(); }",
+        )
+        cls = _simple_class(methods=[method])
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, lua_cfg)
+        assert '.addFunction("do_thing", +[] (ns::Foo& self) { self.doThing(); })' in out
+        assert "&ns::Foo::doThing" not in out
+
+    def test_static_method_wrapper_code_emitted(self, lua_cfg) -> None:
+        method = TIRMethod(
+            name="create",
+            spelling="create",
+            qualified_name="ns::Foo::create",
+            return_type="ns::Foo*",
+            is_static=True,
+            wrapper_code="+[] () { return new ns::Foo(); }",
+        )
+        cls = _simple_class(methods=[method])
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, lua_cfg)
+        assert '.addStaticFunction("create", +[] () { return new ns::Foo(); })' in out
+        assert "&ns::Foo::create" not in out
