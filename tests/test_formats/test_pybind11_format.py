@@ -295,6 +295,21 @@ class TestClassBinding:
         out = _gen(mod, pybind11_output_config)
         assert '.def_static("create"' in out
 
+    def test_wrapper_code_static_method(self, pybind11_output_config):
+        method = TIRMethod(
+            name="create",
+            spelling="create",
+            qualified_name="ns::Foo::create",
+            return_type="ns::Foo*",
+            is_static=True,
+            wrapper_code="+[]() { return new ns::Foo(); }",
+        )
+        cls = _simple_class(methods=[method])
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"Foo": cls})
+        out = _gen(mod, pybind11_output_config)
+        assert '.def_static("create", +[]() { return new ns::Foo(); }' in out
+        assert "&ns::Foo::create" not in out
+
     def test_readwrite_field(self, pybind11_output_config):
         field = TIRField(name="x_", type_spelling="int")
         cls = _simple_class(fields=[field])

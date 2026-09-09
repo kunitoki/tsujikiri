@@ -59,6 +59,7 @@ class InjectMethodStage(TransformStage):
     return_type: str
     parameters: list[dict[str, str]]
     is_static: bool
+    wrapper_code: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 

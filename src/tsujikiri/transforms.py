@@ -90,7 +90,15 @@ def build_pipeline_from_config(specs: List[TransformSpec]) -> TransformPipeline:
         cls = _REGISTRY.get(spec.stage)
         if cls is None:
             raise ValueError(f"Unknown transform stage: '{spec.stage}'. Available: {sorted(_REGISTRY)}")
-        stages.append(cls(**spec.kwargs))
+        given = ", ".join(sorted(spec.kwargs)) or "none"
+        try:
+            stages.append(cls(**spec.kwargs))
+        except KeyError as exc:
+            raise ValueError(
+                f"transform stage '{spec.stage}': missing required option {exc.args[0]!r} (given: {given})"
+            ) from exc
+        except ValueError as exc:
+            raise ValueError(f"transform stage '{spec.stage}': {exc} (given: {given})") from exc
     return TransformPipeline(stages)
 
 
@@ -251,6 +259,7 @@ class InjectMethodStage(TransformStage):
         - name: value
           type: int
       is_static: true
+      wrapper_code: "+[](int value) { return new MyClass(value); }"  # optional: emit lambda instead of &Class::method
     """
 
     name = "inject_method"
@@ -261,6 +270,7 @@ class InjectMethodStage(TransformStage):
         self.return_type: str = kwargs.get("return_type", "void")
         self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
         self.is_static: bool = kwargs.get("is_static", False)
+        self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern):
@@ -272,6 +282,7 @@ class InjectMethodStage(TransformStage):
                 return_type=self.return_type,
                 parameters=params,  # type: ignore[arg-type]
                 is_static=self.is_static,
+                wrapper_code=self.wrapper_code,
             )
             cls.methods.append(method)  # type: ignore[arg-type]
 

@@ -184,6 +184,27 @@ class TestInjectMethodStage:
         injected = next(m for m in _get_cls(mod).methods if m.name == "reset")
         assert injected.parameters == []
 
+    def test_injects_method_with_wrapper_code(self):
+        mod = _simple_module()
+        stage = InjectMethodStage(
+            **{
+                "class": "Cls",
+                "name": "reset",
+                "return_type": "void",
+                "wrapper_code": "+[](Cls& self) { self.reset(); }",
+            }
+        )
+        stage.apply(mod)
+        injected = next(m for m in _get_cls(mod).methods if m.name == "reset")
+        assert injected.wrapper_code == "+[](Cls& self) { self.reset(); }"
+
+    def test_injects_method_without_wrapper_code(self):
+        mod = _simple_module()
+        stage = InjectMethodStage(**{"class": "Cls", "name": "reset", "return_type": "void"})
+        stage.apply(mod)
+        injected = next(m for m in _get_cls(mod).methods if m.name == "reset")
+        assert injected.wrapper_code is None
+
 
 # ---------------------------------------------------------------------------
 # AddTypeMappingStage

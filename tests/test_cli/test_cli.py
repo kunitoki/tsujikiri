@@ -1032,6 +1032,25 @@ class TestDumpIR:
         assert "functions" in ir or "classes" in ir
 
 
+class TestTransformOptionErrors:
+    def test_missing_transform_option_reports_error(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int x(); }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["api"]},
+            "transforms": [{"stage": "inject_code", "code": "// hi"}],
+        }
+        p = tmp_path / "missing_opt.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--target", "luabridge3", "-", expected_exit=1)
+        assert "tsujikiri: error:" in stderr
+        assert "inject_code" in stderr
+        assert "missing required option 'target'" in stderr
+        assert "Traceback" not in stderr
+
+
 # ---------------------------------------------------------------------------
 # --validate-config
 # ---------------------------------------------------------------------------
@@ -1122,6 +1141,21 @@ class TestValidateConfig:
 
         _, stderr = _run("--input", str(p), "--validate-config", expected_exit=1)
         assert "bad_stage_xyz" in stderr
+
+    def test_missing_transform_option_exits_1(self, tmp_path):
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text("namespace api { int x(); }\n")
+        data = {
+            "source": {"path": str(hpp), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["api"]},
+            "transforms": [{"stage": "inject_code", "code": "// hi"}],
+        }
+        p = tmp_path / "missing_opt.input.yml"
+        p.write_text(yaml.dump(data), encoding="utf-8")
+
+        _, stderr = _run("--input", str(p), "--validate-config", expected_exit=1)
+        assert "ERROR" in stderr
+        assert "missing required option 'target'" in stderr
 
     def test_format_override_transforms_validated(self, tmp_path):
         hpp = tmp_path / "api.hpp"
