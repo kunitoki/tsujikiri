@@ -149,7 +149,11 @@ class ParseCache:
             # An explicit spawn context: already the default on macOS and Windows,
             # and forcing it on Linux avoids fork() interacting with libclang's
             # threads while keeping behaviour identical across the CI matrix.
-            with ProcessPoolExecutor(max_workers=self._jobs, mp_context=get_context("spawn")) as pool:
+            # Never start more workers than there is work: each one holds a full
+            # libclang translation unit, so idle workers would cost memory for
+            # nothing on a machine with many more cores than sources.
+            workers = min(self._jobs, len(missing))
+            with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as pool:
                 futures = [pool.submit(parse_worker, key, self._verbose) for key in missing]
                 for key, future in zip(missing, futures):
                     self.misses += 1

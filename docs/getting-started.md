@@ -275,6 +275,12 @@ Output does not depend on `-j`: results are always consumed in source order, so
 generated files, `--verbose` output and `--strict` error order are identical
 whether you run serially or in parallel.
 
+Each worker holds one libclang translation unit, so peak memory grows with the
+worker count — roughly `min(jobs, number_of_sources)` translation units live at
+once. On a machine with many cores and large headers, prefer an explicit
+`-j 8` over `-j auto`. Note also that with `-j` set, `--verbose` output is no
+longer streamed live: it is buffered per source and replayed in source order.
+
 **Custom format from a local directory:**
 ```bash
 tsujikiri -i project.input.yml --target myfmt out/bindings.cpp -f ./my_formats/

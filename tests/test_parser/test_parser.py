@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import io
+import subprocess as _subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +25,7 @@ from tsujikiri.parser import (
     _get_attributes,
     _get_default_value,
     _get_deprecation_message,
+    _get_sdk_path,
     _is_inline_namespace,
     _is_scoped_enum,
     _param_types_from_fn_tokens,
@@ -31,6 +33,7 @@ from tsujikiri.parser import (
     _parse_enum,
     _parse_parameters,
     _read_source_lines,
+    _reset_caches,
     _source_file,
     _type_from_tokens,
     _SOURCE_CACHE,
@@ -598,44 +601,129 @@ class TestBundledLibcxx:
 # ---------------------------------------------------------------------------
 
 
+class TestGetSdkPath:
+    """_get_sdk_path is called directly, so these cover it on every platform.
+
+    Going through parse_translation_unit would only reach this code on macOS,
+    leaving it uncovered on the Linux and Windows CI legs.
+    """
+
+    def test_returns_stripped_sdk_path(self) -> None:
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="/some/sdk\n") as mock_xcrun:
+            assert _get_sdk_path() == "/some/sdk"
+        mock_xcrun.assert_called_once()
+
+    def test_empty_output_returns_empty_string(self) -> None:
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="  \n"):
+            assert _get_sdk_path() == ""
+
+    def test_subprocess_error_returns_none(self) -> None:
+        with patch(
+            "tsujikiri.parser.subprocess.check_output",
+            side_effect=_subprocess.SubprocessError("xcrun failed"),
+        ):
+            assert _get_sdk_path() is None
+
+    def test_file_not_found_returns_none(self) -> None:
+        with patch(
+            "tsujikiri.parser.subprocess.check_output",
+            side_effect=FileNotFoundError("xcrun not found"),
+        ):
+            assert _get_sdk_path() is None
+
+    def test_result_is_memoised_across_calls(self) -> None:
+        """The whole point of the cache: xcrun runs once, not once per source."""
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="/sdk\n") as mock_xcrun:
+            assert _get_sdk_path() == "/sdk"
+            assert _get_sdk_path() == "/sdk"
+            assert _get_sdk_path() == "/sdk"
+        mock_xcrun.assert_called_once()
+
+    def test_reset_caches_clears_the_memo(self) -> None:
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="/first\n"):
+            assert _get_sdk_path() == "/first"
+        _reset_caches()
+        with patch("tsujikiri.parser.subprocess.check_output", return_value="/second\n"):
+            assert _get_sdk_path() == "/second"
+
+
 class TestDarwinSysroot:
+    """The -isysroot call site.
+
+    platform.system is patched in every test so the Darwin branch is exercised
+    on Linux and Windows too; without it these assertions pass vacuously off macOS.
+    """
+
+    @staticmethod
+    def _darwin():
+        return patch("tsujikiri.parser.platform.system", return_value="Darwin")
+
     def test_isysroot_already_in_args_skips_xcrun(self, tmp_path: Path) -> None:
-        """Branch 735->745: -isysroot already present — xcrun not called."""
+        """-isysroot already present — xcrun is not consulted."""
         hpp = tmp_path / "sysroot.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17", "-isysroot", "/some/sdk"])
-        with patch("tsujikiri.parser.subprocess.check_output") as mock_xcrun:
+        with self._darwin(), patch("tsujikiri.parser.subprocess.check_output") as mock_xcrun:
             module = parse_translation_unit(src, ["ns"], "isysroot_preset")
         mock_xcrun.assert_not_called()
         assert module is not None
 
-    def test_empty_sdk_path_not_added(self, tmp_path: Path) -> None:
-        """Branch 740->745: xcrun returns empty string — -isysroot not appended."""
+    def test_sdk_path_is_appended(self, tmp_path: Path, capsys) -> None:
+        """A non-empty SDK path is passed to clang as -isysroot."""
+        hpp = tmp_path / "sysroot0.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with self._darwin(), patch("tsujikiri.parser.subprocess.check_output", return_value="/fake/sdk\n"):
+            module = parse_translation_unit(src, ["ns"], "sdk_added", verbose=True)
+        assert module is not None
+        err = capsys.readouterr().err
+        assert "-isysroot" in err
+        assert "/fake/sdk" in err
+
+    def test_empty_sdk_path_not_added(self, tmp_path: Path, capsys) -> None:
+        """xcrun returns an empty string — -isysroot is not appended."""
         hpp = tmp_path / "sysroot2.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.subprocess.check_output", return_value="  \n"):
-            module = parse_translation_unit(src, ["ns"], "empty_sdk")
+        with self._darwin(), patch("tsujikiri.parser.subprocess.check_output", return_value="  \n"):
+            module = parse_translation_unit(src, ["ns"], "empty_sdk", verbose=True)
         assert module is not None
+        assert "-isysroot" not in capsys.readouterr().err
 
     def test_xcrun_subprocess_error_silenced(self, tmp_path: Path) -> None:
-        """Lines 742-743: SubprocessError from xcrun is caught and ignored."""
-        import subprocess as _subprocess
-
+        """SubprocessError from xcrun is caught and parsing continues."""
         hpp = tmp_path / "sysroot3.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.subprocess.check_output", side_effect=_subprocess.SubprocessError("xcrun failed")):
+        with self._darwin(), patch(
+            "tsujikiri.parser.subprocess.check_output",
+            side_effect=_subprocess.SubprocessError("xcrun failed"),
+        ):
             module = parse_translation_unit(src, ["ns"], "xcrun_error")
         assert module is not None
 
     def test_xcrun_file_not_found_silenced(self, tmp_path: Path) -> None:
-        """Lines 742-743: FileNotFoundError (xcrun not installed) is caught and ignored."""
+        """FileNotFoundError (xcrun not installed) is caught and parsing continues."""
         hpp = tmp_path / "sysroot4.hpp"
         hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
         src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
-        with patch("tsujikiri.parser.subprocess.check_output", side_effect=FileNotFoundError("xcrun not found")):
+        with self._darwin(), patch(
+            "tsujikiri.parser.subprocess.check_output",
+            side_effect=FileNotFoundError("xcrun not found"),
+        ):
             module = parse_translation_unit(src, ["ns"], "xcrun_missing")
+        assert module is not None
+
+    def test_non_darwin_never_calls_xcrun(self, tmp_path: Path) -> None:
+        """The other side of the platform branch, covered on macOS too."""
+        hpp = tmp_path / "sysroot5.hpp"
+        hpp.write_text("namespace ns { int foo(); }\n", encoding="utf-8")
+        src = SourceConfig(path=str(hpp), parse_args=["-std=c++17"])
+        with patch("tsujikiri.parser.platform.system", return_value="Linux"), patch(
+            "tsujikiri.parser.subprocess.check_output"
+        ) as mock_xcrun:
+            module = parse_translation_unit(src, ["ns"], "linux_no_xcrun")
+        mock_xcrun.assert_not_called()
         assert module is not None
 
 
