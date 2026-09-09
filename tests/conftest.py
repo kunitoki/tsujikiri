@@ -10,6 +10,23 @@ import pytest
 TESTS_DIR = Path(__file__).parent
 
 
+@pytest.fixture(autouse=True)
+def _reset_parser_caches():
+    """Clear parser module-level caches around every test.
+
+    The parser memoises source lines, the macOS SDK path and type-spelling
+    normalisation. Without this, a test that patches ``subprocess.check_output``
+    or writes a fixture file at a path a previous test used would silently read
+    another test's cached value — an order dependency that only shows up under
+    ``pytest -n auto``.
+    """
+    from tsujikiri.parser import _reset_caches
+
+    _reset_caches()
+    yield
+    _reset_caches()
+
+
 # ---------------------------------------------------------------------------
 # Shared output-config fixtures (built-in formats)
 # ---------------------------------------------------------------------------

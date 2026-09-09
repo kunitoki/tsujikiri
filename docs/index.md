@@ -59,7 +59,7 @@ manifest-and-versioning
 
 | Document | What it covers |
 |----------|---------------|
-| [Getting Started](getting-started.md) | Installation, your first binding (step-by-step), complete CLI reference |
+| [Getting Started](getting-started.md) | Installation, your first binding (step-by-step), complete CLI reference including `--jobs` for parallel parsing |
 | [Input File Reference](input-file-reference.md) | Every key in `.input.yml` — `source`, `sources`, `filters`, `transforms`, `generation`, `attributes`, `format_overrides` — with types, defaults, and examples |
 | [Filtering](filtering.md) | How the filter system works; all filter types: `namespaces`, `sources`, `classes` (whitelist/blacklist/internal), `methods`, `fields`, `constructors`, `functions`, `enums` |
 | [Transforms](transforms.md) | All 32 built-in transform stages with full key reference and practical examples: class/method stages (`rename_method`, `rename_class`, `suppress_method`, `suppress_class`, `inject_method`, `inject_constructor`, `inject_property`, `suppress_base`, `add_type_mapping`, `modify_method`, `modify_argument`, `modify_field`, `modify_constructor`, `remove_overload`, `inject_code`, `set_type_hint`, `mark_deprecated`, `expand_spaceship`, `expose_protected`, `resolve_using_declarations`, `overload_priority`, `exception_policy`), enum stages (`rename_enum`, `rename_enum_value`, `suppress_enum`, `suppress_enum_value`, `modify_enum`), free function stages (`rename_function`, `suppress_function`, `modify_function`, `inject_function`, `register_exception`) |

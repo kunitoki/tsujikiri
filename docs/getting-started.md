@@ -241,6 +241,7 @@ tsujikiri [OPTIONS]
 | `--verbose` | `-v` | | Enable verbose Clang diagnostic output during parsing |
 | `--api-version` | | `VERSION` | Override the API version string used for `--embed-version` and `api_since`/`api_until` semver filtering |
 | `--pretty` | | `[FORMAT...]` | Enable pretty printing. No FORMAT args = all targets; with FORMAT names = only those targets. Overrides `pretty` in input YAML. |
+| `--jobs` | `-j` | `N` | Parse sources using `N` worker processes, or `auto` for one per CPU. Default `1` (serial). Output is byte-identical for any `N`. |
 | `--help` | `-h` | | Show help and exit |
 
 ### Common Patterns
@@ -262,10 +263,17 @@ tsujikiri -i project.input.yml \
   --target luals      types/myproject.lua
 ```
 
-**Single class (useful during development):**
+**Speed up large multi-header projects:**
 ```bash
-tsujikiri -i project.input.yml --target luabridge3 - -c Vec3
+tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp -j auto
 ```
+
+Each source header is parsed at most once per run and the results are shared
+across every target and output group, so adding targets no longer multiplies
+parsing cost. `-j auto` spreads those parses over one worker process per CPU.
+Output does not depend on `-j`: results are always consumed in source order, so
+generated files, `--verbose` output and `--strict` error order are identical
+whether you run serially or in parallel.
 
 **Custom format from a local directory:**
 ```bash

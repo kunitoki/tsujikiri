@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 import re
 import sys
 from io import StringIO
@@ -27,12 +28,36 @@ from tsujikiri.formats import apply_format_inheritance, resolve_format_path, lis
 from tsujikiri.generator import Generator
 from tsujikiri.tir import TIRFunction, TIRModule, TIRParameter, merge_tir_modules, upgrade_module
 from tsujikiri.manifest import compare_manifests, compute_manifest, load_manifest, save_manifest, suggest_version_bump
-from tsujikiri.parser import parse_translation_unit
+from tsujikiri.parse_cache import ParseCache, ParseKey
 from tsujikiri.transforms import _REGISTRY, build_pipeline_from_config
 
 
 def _is_directory_target(path: str) -> bool:
     return path != "-" and path.endswith("/")
+
+
+def _parse_jobs(value: str) -> int:
+    """argparse type for ``--jobs``: ``auto`` or a non-negative integer.
+
+    ``auto`` and ``0`` both mean "decide at run time" and are normalised to 0;
+    :func:`_resolve_jobs` turns that into a worker count.
+    """
+    if value == "auto":
+        return 0
+    try:
+        jobs = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid jobs value: {value!r} (expected 'auto' or a non-negative integer)")
+    if jobs < 0:
+        raise argparse.ArgumentTypeError(f"invalid jobs value: {value!r} (expected 'auto' or a non-negative integer)")
+    return jobs
+
+
+def _resolve_jobs(jobs: int) -> int:
+    """Turn a parsed ``--jobs`` value into a concrete worker count."""
+    if jobs <= 0:
+        return os.cpu_count() or 1
+    return jobs
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -139,6 +164,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--strict",
         action="store_true",
         help="Exit 1 if clang reports any errors during parsing; no output is written",
+    )
+    p.add_argument(
+        "--jobs",
+        "-j",
+        type=_parse_jobs,
+        default=1,
+        metavar="N",
+        help=(
+            "Parse sources using N worker processes, or 'auto' for one per CPU. "
+            "Default: 1 (serial). Output is identical for any N."
+        ),
     )
     return p
 
@@ -252,12 +288,67 @@ def _validate_config_action(args: argparse.Namespace, extra_dirs: List[Path]) ->
     print("Config is valid.", file=sys.stderr)
 
 
+def _effective_filters(input_config, entry, fmt_filters):
+    """Resolve the filter config for *entry*: format override beats entry beats global."""
+    if fmt_filters is not None:
+        return fmt_filters
+    return entry.filters if entry.filters is not None else input_config.filters
+
+
+def _source_parse_keys(
+    input_config,
+    source_entries,
+    output_config,
+    module_name: str,
+    output_name: Optional[str] = None,
+) -> List[ParseKey]:
+    """Return the parse keys _process_sources will ask for, in order.
+
+    Shares :func:`_effective_filters` with ``_process_sources`` so a prefetched
+    key can never drift from the key later looked up.
+    """
+    fmt_override = input_config.format_override_for(output_config.format_name, output_name)
+    fmt_filters = fmt_override.filters if fmt_override else None
+    return [
+        ParseKey.from_source(
+            input_config.effective_source(entry),
+            _effective_filters(input_config, entry, fmt_filters).namespaces,
+            module_name,
+        )
+        for entry in source_entries
+    ]
+
+
+def _inject_declared_functions(module: TIRModule, typesystem) -> None:
+    """Append the typesystem's declared functions to *module*.
+
+    Called once per module handed to a generator.  Keeping it a function (rather
+    than inline in ``main``) is what lets every target receive the declared
+    functions without a module reused from the parse cache accumulating them twice.
+    """
+    for fn_decl in typesystem.declared_functions:
+        params = [TIRParameter(name=p["name"], type_spelling=p.get("type", "")) for p in fn_decl.parameters]
+        qualified = f"{fn_decl.namespace}::{fn_decl.name}" if fn_decl.namespace else fn_decl.name
+        module.functions.append(
+            TIRFunction(  # type: ignore[arg-type]
+                name=fn_decl.name,
+                qualified_name=qualified,
+                namespace=fn_decl.namespace,
+                return_type=fn_decl.return_type,
+                parameters=params,
+                wrapper_code=fn_decl.wrapper_code,
+                doc=fn_decl.doc,
+            )
+        )
+
+
 def _process_sources(
     input_config,
     source_entries,
     output_config,
     module_name: str,
     trace_stream: Optional[IO],
+    cache: ParseCache,
     verbose: bool = False,
     output_name: Optional[str] = None,
     clang_errors: Optional[List[str]] = None,
@@ -272,22 +363,20 @@ def _process_sources(
     all_includes: List[str] = list(input_config.generation.includes)
 
     for entry in source_entries:
-        effective_filters = entry.filters if entry.filters is not None else input_config.filters
-        if fmt_filters is not None:
-            effective_filters = fmt_filters
+        effective_filters = _effective_filters(input_config, entry, fmt_filters)
 
         effective_transforms = entry.transforms if entry.transforms is not None else input_config.transforms
         if fmt_transforms_list:
             effective_transforms = list(effective_transforms) + fmt_transforms_list
 
-        ir_module = parse_translation_unit(
+        key = ParseKey.from_source(
             input_config.effective_source(entry),
             effective_filters.namespaces,
             module_name,
-            verbose=verbose,
-            clang_errors=clang_errors,
         )
-        module = upgrade_module(ir_module)
+        # Upgrade per consumer: the cache holds the shared pre-upgrade IR, and
+        # each target needs its own mutable TIR tree to filter and transform.
+        module = upgrade_module(cache.get(key, clang_errors))
 
         FilterEngine(effective_filters).apply(module)
 
@@ -389,8 +478,24 @@ def main() -> None:
     first_output_config = apply_format_inheritance(load_output_config(first_fmt_path), extra_dirs=extra_dirs)
 
     clang_errors: List[str] = []
+    cache = ParseCache(verbose=args.verbose, jobs=_resolve_jobs(args.jobs))
 
     if has_output_groups:
+        # Prefetch the union of every group's keys in one batch so parallelism
+        # spans groups instead of being capped at the width of the widest group.
+        prefetch_keys: List[ParseKey] = []
+        for group in input_config.output_groups:
+            prefetch_keys.extend(
+                _source_parse_keys(
+                    input_config,
+                    input_config.resolve_group_sources(group),
+                    first_output_config,
+                    module_name,
+                    output_name=group.name,
+                )
+            )
+        cache.prefetch(prefetch_keys, clang_errors)
+
         manifest_modules: List[TIRModule] = []
         all_includes: list[str] = []
         for group in input_config.output_groups:
@@ -400,6 +505,7 @@ def main() -> None:
                 first_output_config,
                 module_name,
                 trace_stream,
+                cache,
                 verbose=args.verbose,
                 output_name=group.name,
                 clang_errors=clang_errors,
@@ -407,12 +513,17 @@ def main() -> None:
             manifest_modules.append(group_merged)
         merged = merge_tir_modules(manifest_modules)
     else:
+        cache.prefetch(
+            _source_parse_keys(input_config, source_entries, first_output_config, module_name),
+            clang_errors,
+        )
         merged, all_includes = _process_sources(
             input_config,
             source_entries,
             first_output_config,
             module_name,
             trace_stream,
+            cache,
             verbose=args.verbose,
             clang_errors=clang_errors,
         )
@@ -421,20 +532,7 @@ def main() -> None:
         sys.exit(1)
 
     # --- Inject declared functions from typesystem ---
-    for fn_decl in input_config.typesystem.declared_functions:
-        params = [TIRParameter(name=p["name"], type_spelling=p.get("type", "")) for p in fn_decl.parameters]
-        qualified = f"{fn_decl.namespace}::{fn_decl.name}" if fn_decl.namespace else fn_decl.name
-        merged.functions.append(
-            TIRFunction(  # type: ignore[arg-type]
-                name=fn_decl.name,
-                qualified_name=qualified,
-                namespace=fn_decl.namespace,
-                return_type=fn_decl.return_type,
-                parameters=params,
-                wrapper_code=fn_decl.wrapper_code,
-                doc=fn_decl.doc,
-            )
-        )
+    _inject_declared_functions(merged, input_config.typesystem)
 
     # --- Manifest: compute, compare, and optionally embed version ---
     manifest = compute_manifest(merged)
@@ -534,6 +632,7 @@ def main() -> None:
                     output_config,
                     module_name,
                     trace_stream,
+                    cache,
                     verbose=args.verbose,
                     output_name=group.name,
                 )
@@ -594,18 +693,19 @@ def main() -> None:
                 else input_config.typesystem
             )
 
-            if target_idx == 0:
-                target_merged = merged
-                target_includes = all_includes
-            else:
-                target_merged, target_includes = _process_sources(
-                    input_config,
-                    source_entries,
-                    output_config,
-                    module_name,
-                    trace_stream,
-                    verbose=args.verbose,
-                )
+            # Every target builds its own module; the parse behind it is a cache
+            # hit, and each target gets the declared functions (target 0 used to
+            # reuse `merged`, so targets >= 1 silently missed them).
+            target_merged, target_includes = _process_sources(
+                input_config,
+                source_entries,
+                output_config,
+                module_name,
+                trace_stream,
+                cache,
+                verbose=args.verbose,
+            )
+            _inject_declared_functions(target_merged, input_config.typesystem)
 
             if fmt_generation:
                 effective_gen_includes = list(target_includes) + list(fmt_generation.includes)

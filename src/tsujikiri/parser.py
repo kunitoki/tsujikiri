@@ -6,13 +6,15 @@ Filtering happens in filters.py after the full IR is built.
 
 from __future__ import annotations
 
+import ctypes
+import functools
 import platform
 import re
 import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import clang
 from clang import cindex
@@ -35,6 +37,23 @@ from tsujikiri.ir import (
 from tsujikiri.tir import TIRModule, upgrade_module
 
 
+def _bind_cursor_predicate(lib: object, symbol: str) -> Optional[Callable[..., int]]:
+    """Bind a libclang ``unsigned f(CXCursor)`` predicate, or None if unavailable.
+
+    The repo supports clang 19-22; a symbol missing from an older libclang makes
+    this return None so the caller falls back to a token scan.
+    """
+    if not hasattr(lib, symbol):
+        return None
+    fn = getattr(lib, symbol)
+    fn.argtypes = [cindex.Cursor]
+    fn.restype = ctypes.c_uint
+    return fn
+
+
+_CLANG_IS_INLINE_NAMESPACE = _bind_cursor_predicate(cindex.conf.lib, "clang_Cursor_isInlineNamespace")
+
+
 def _to_camel_case(string: str) -> str:
     parts = string.split("_")
     return parts[0] + "".join(f"{x[0].title()}{x[1:]}" for x in parts[1:] if x)
@@ -46,14 +65,16 @@ def _source_file(cursor) -> Optional[str]:
     return None
 
 
-def _get_default_value(cursor) -> Optional[str]:
+def _get_default_value(cursor, tokens: Optional[List] = None) -> Optional[str]:
     """Return the raw C++ default expression for a parameter cursor, or None.
 
     libclang does not expose a dedicated default-value API, so we scan the
     parameter cursor's token stream for a ``=`` token and collect everything
-    that follows it within the cursor's extent.
+    that follows it within the cursor's extent.  *tokens* may carry an
+    already-materialised token list to avoid re-tokenising the cursor.
     """
-    tokens = list(cursor.get_tokens())
+    if tokens is None:
+        tokens = list(cursor.get_tokens())
     for i, tok in enumerate(tokens):
         if tok.spelling == "=":
             rest = [t.spelling for t in tokens[i + 1 :]]
@@ -61,40 +82,61 @@ def _get_default_value(cursor) -> Optional[str]:
     return None
 
 
+_WS_RE = re.compile(r"\s+")
+_SCOPE_RE = re.compile(r"\s*::\s*")
+_QUAL_SCOPE_RE = re.compile(r"\b(const|volatile)::")
+_ANGLE_OPEN_RE = re.compile(r"\s*<\s*")
+_ANGLE_CLOSE_RE = re.compile(r"\s+>")
+_ANGLE_CLOSE2_RE = re.compile(r"\s+>>")
+_COMMA_RE = re.compile(r"\s*,\s*")
+_PAREN_OPEN_RE = re.compile(r"\(\s*")
+_PAREN_CLOSE_RE = re.compile(r"\s+\)")
+_RREF_RE = re.compile(r"\s*&&")
+_LREF_RE = re.compile(r"\s*&")
+_STAR_RE = re.compile(r"\s*\*")
+
+
+@functools.lru_cache(maxsize=None)
 def _normalize_type_spelling(spelling: str) -> str:
-    """Return a stable C++ type spelling independent of libclang token spacing."""
-    s = re.sub(r"\s+", " ", spelling).strip()
+    """Return a stable C++ type spelling independent of libclang token spacing.
+
+    Pure over *spelling*, so the result is memoised: the same handful of type
+    strings recur across every cursor in a translation unit.
+    """
+    s = _WS_RE.sub(" ", spelling).strip()
     if not s:
         return s
 
-    s = re.sub(r"\s*::\s*", "::", s)
+    s = _SCOPE_RE.sub("::", s)
     # Preserve the space between qualifiers and a leading global qualifier:
     # ``const ::std::string`` is valid, ``const::std::string`` is not.
-    s = re.sub(r"\b(const|volatile)::", r"\1 ::", s)
+    s = _QUAL_SCOPE_RE.sub(r"\1 ::", s)
 
-    s = re.sub(r"\s*<\s*", "<", s)
-    s = re.sub(r"\s+>", ">", s)
-    s = re.sub(r"\s+>>", ">>", s)
-    s = re.sub(r"\s*,\s*", ", ", s)
-    s = re.sub(r"\(\s*", "(", s)
-    s = re.sub(r"\s+\)", ")", s)
+    s = _ANGLE_OPEN_RE.sub("<", s)
+    s = _ANGLE_CLOSE_RE.sub(">", s)
+    s = _ANGLE_CLOSE2_RE.sub(">>", s)
+    s = _COMMA_RE.sub(", ", s)
+    s = _PAREN_OPEN_RE.sub("(", s)
+    s = _PAREN_CLOSE_RE.sub(")", s)
 
-    s = re.sub(r"\s*&&", " __RREF__", s)
-    s = re.sub(r"\s*&", " &", s)
+    s = _RREF_RE.sub(" __RREF__", s)
+    s = _LREF_RE.sub(" &", s)
     s = s.replace("__RREF__", "&&")
-    s = re.sub(r"\s*\*", " *", s)
-    return re.sub(r"\s+", " ", s).strip()
+    s = _STAR_RE.sub(" *", s)
+    return _WS_RE.sub(" ", s).strip()
 
 
-def _type_from_tokens(cursor) -> str:
+def _type_from_tokens(cursor, tokens: Optional[List] = None) -> str:
     """Extract parameter type spelling from source tokens.
 
     Works around a libclang bug where some parameter types in constructors
     with initializer lists using std::move are reported with the wrong type
     (e.g. 'int' instead of 'std::string'). Source tokens are always correct.
+    *tokens* may carry an already-materialised token list.
     """
     name = cursor.spelling
-    tokens = list(cursor.get_tokens())
+    if tokens is None:
+        tokens = list(cursor.get_tokens())
     if not name or not tokens:
         return _normalize_type_spelling(cursor.type.spelling)
     for i, tok in enumerate(tokens):
@@ -167,26 +209,29 @@ def _parse_parameters(cursor) -> List[IRParameter]:
     # libclang bug where constructors with initializer lists using std::move
     # cause parameter types to be reported incorrectly via cursor.type.spelling.
     args = [arg for arg in cursor.get_children() if arg.kind == CursorKind.PARM_DECL]
+    # Tokenise each parameter exactly once and thread the list through to
+    # _type_from_tokens and _get_default_value below.
+    arg_tokens = [list(arg.get_tokens()) for arg in args]
 
     # libclang 19 bug: unnamed PARM_DECL children whose type is a complex template
     # (e.g. ::std::function<T(U...)>) get a zero source extent and empty token
     # stream, so _type_from_tokens falls back to cursor.type.spelling which also
     # returns the wrong type ('int'). In that case we fall back to parsing the
     # parent function cursor's token stream.
-    has_zero_extent_unnamed = any(not arg.spelling and not list(arg.get_tokens()) for arg in args)
-    fallback_types: List[str] = _param_types_from_fn_tokens(cursor) if has_zero_extent_unnamed else []
+    zero_extent_unnamed = [not arg.spelling and not toks for arg, toks in zip(args, arg_tokens)]
+    fallback_types: List[str] = _param_types_from_fn_tokens(cursor) if any(zero_extent_unnamed) else []
 
     result: List[IRParameter] = []
-    for i, arg in enumerate(args):
-        if not arg.spelling and not list(arg.get_tokens()) and i < len(fallback_types):
+    for i, (arg, toks) in enumerate(zip(args, arg_tokens)):
+        if zero_extent_unnamed[i] and i < len(fallback_types):
             type_spelling = fallback_types[i]
         else:
-            type_spelling = _type_from_tokens(arg)
+            type_spelling = _type_from_tokens(arg, tokens=toks)
         result.append(
             IRParameter(
                 name=arg.spelling,
                 type_spelling=type_spelling,
-                default_value=_get_default_value(arg),
+                default_value=_get_default_value(arg, tokens=toks),
             )
         )
     return result
@@ -201,6 +246,26 @@ _ATTR_BLOCK_RE = re.compile(r"\[\[([^\[\]]+?)\]\]")
 
 # Per-parse file cache to avoid re-reading the same file for each cursor.
 _SOURCE_CACHE: Dict[str, List[str]] = {}
+
+
+@functools.lru_cache(maxsize=1)
+def _get_sdk_path() -> Optional[str]:
+    """Return the macOS SDK path from ``xcrun``, or None if unavailable.
+
+    Constant for the life of the process, so the subprocess runs at most once
+    instead of once per source file.
+    """
+    try:
+        return subprocess.check_output(["xcrun", "--show-sdk-path"], text=True, stderr=subprocess.DEVNULL).strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return None
+
+
+def _reset_caches() -> None:
+    """Clear every module-level parse cache. Used to isolate tests."""
+    _SOURCE_CACHE.clear()
+    _get_sdk_path.cache_clear()
+    _normalize_type_spelling.cache_clear()
 
 
 def _read_source_lines(file_path: str) -> List[str]:
@@ -250,10 +315,13 @@ def _get_attributes(cursor) -> List[str]:
     if not lines:
         return []
 
-    start_line = cursor.extent.start.line  # 1-indexed
-    end_line = cursor.extent.end.line  # 1-indexed
-    start_col = cursor.extent.start.column  # 1-indexed
-    end_col = cursor.extent.end.column  # 1-indexed
+    # cursor.extent builds a fresh SourceRange on every access; bind it once.
+    extent_start = cursor.extent.start
+    extent_end = cursor.extent.end
+    start_line = extent_start.line  # 1-indexed
+    end_line = extent_end.line  # 1-indexed
+    start_col = extent_start.column  # 1-indexed
+    end_col = extent_end.column  # 1-indexed
 
     attrs: List[str] = []
 
@@ -342,9 +410,9 @@ def _is_explicit(cursor) -> bool:
 _RECORD_KINDS = (CursorKind.UNION_DECL, CursorKind.STRUCT_DECL, CursorKind.CLASS_DECL)
 
 
-def _field_decl_type_hashes(cursor) -> set:
-    """Return the declaration hashes of the types of *cursor*'s FIELD_DECL children."""
-    return {child.type.get_declaration().hash for child in cursor.get_children() if child.kind == CursorKind.FIELD_DECL}
+def _field_decl_type_hashes(children) -> set:
+    """Return the declaration hashes of the types of the FIELD_DECLs in *children*."""
+    return {child.type.get_declaration().hash for child in children if child.kind == CursorKind.FIELD_DECL}
 
 
 def _is_anonymous_member_record(child, field_decl_type_hashes: set) -> bool:
@@ -378,9 +446,10 @@ def _anonymous_member_fields(cursor) -> List[IRField]:
     Recursion handles an anonymous struct nested inside an anonymous union,
     whose names are injected all the way up.
     """
-    field_decl_type_hashes = _field_decl_type_hashes(cursor)
+    children = list(cursor.get_children())
+    field_decl_type_hashes = _field_decl_type_hashes(children)
     fields: List[IRField] = []
-    for child in cursor.get_children():
+    for child in children:
         if child.kind == CursorKind.FIELD_DECL:
             fields.append(_field_from_cursor(child))
         elif _is_anonymous_member_record(child, field_decl_type_hashes):
@@ -420,12 +489,12 @@ def _access_str(access_specifier) -> str:
 
 def _is_scoped_enum(cursor) -> bool:
     """Return True if the enum is declared as 'enum class' or 'enum struct'."""
-    tokens = list(cursor.get_tokens())
-    for i, tok in enumerate(tokens):
+    after_enum = False
+    for tok in cursor.get_tokens():
+        if after_enum:
+            return tok.spelling in ("class", "struct")
         if tok.spelling == "enum":
-            if i + 1 < len(tokens) and tokens[i + 1].spelling in ("class", "struct"):
-                return True
-            break
+            after_enum = True
     return False
 
 
@@ -482,8 +551,12 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         attributes=_get_attributes(cursor),
     )
 
+    # Walk the cursor's children once; every section below reuses this list, so
+    # iteration order — and therefore IR ordering — is exactly as before.
+    children = list(cursor.get_children())
+
     # --- Bases ---
-    for child in cursor.get_children():
+    for child in children:
         if child.kind == CursorKind.CXX_BASE_SPECIFIER:
             ir_class.bases.append(
                 IRBase(
@@ -494,7 +567,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
 
     # --- Methods ---
     methods_by_name: Dict[str, list] = defaultdict(list)
-    for child in cursor.get_children():
+    for child in children:
         if child.kind == CursorKind.CXX_METHOD:
             methods_by_name[child.spelling].append(child)
 
@@ -534,7 +607,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 ir_class.methods.append(method)
 
     # --- Conversion operators ---
-    for child in cursor.get_children():
+    for child in children:
         if child.kind == CursorKind.CONVERSION_FUNCTION and child.access_specifier == AccessSpecifier.PUBLIC:
             deprecated = _is_deprecated(child)
             method = IRMethod(
@@ -561,11 +634,15 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
             ir_class.methods.append(method)
 
     # --- Constructors ---
-    all_ctors = [c for c in cursor.get_children() if c.kind == CursorKind.CONSTRUCTOR]
+    all_ctors = [c for c in children if c.kind == CursorKind.CONSTRUCTOR]
+    # Parse parameters and the deleted flag once per constructor: both the
+    # copy/move detection below and the public-constructor list need them.
+    ctor_params = [_parse_parameters(c) for c in all_ctors]
+    ctor_deleted = [_is_deleted(c) for c in all_ctors]
+
     # Detect deleted copy/move constructors for move-only type inference
     class_name_for_ctor = class_name
-    for ctor in all_ctors:
-        params = _parse_parameters(ctor)
+    for ctor, params, deleted in zip(all_ctors, ctor_params, ctor_deleted):
         if len(params) == 1:
             t = params[0].type_spelling
             # Copy constructor: takes const ClassName& or ClassName const&
@@ -574,20 +651,24 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 or f"{class_name_for_ctor} const &" in t
                 or t.strip() == f"const {class_name_for_ctor} &"
             ):
-                if _is_deleted(ctor) or ctor.access_specifier != AccessSpecifier.PUBLIC:
+                if deleted or ctor.access_specifier != AccessSpecifier.PUBLIC:
                     ir_class.has_deleted_copy_constructor = True
             # Move constructor: takes ClassName&&
             elif f"{class_name_for_ctor} &&" in t or f"{class_name_for_ctor}&&" in t:
-                if _is_deleted(ctor) or ctor.access_specifier != AccessSpecifier.PUBLIC:
+                if deleted or ctor.access_specifier != AccessSpecifier.PUBLIC:
                     ir_class.has_deleted_move_constructor = True
 
-    public_ctors = [c for c in all_ctors if c.access_specifier == AccessSpecifier.PUBLIC and not _is_deleted(c)]
+    public_ctors = [
+        (c, params)
+        for c, params, deleted in zip(all_ctors, ctor_params, ctor_deleted)
+        if c.access_specifier == AccessSpecifier.PUBLIC and not deleted
+    ]
     is_ctor_overload = len(public_ctors) > 1
-    for ctor in public_ctors:
+    for ctor, ctor_parameters in public_ctors:
         deprecated = _is_deprecated(ctor)
         ir_class.constructors.append(
             IRConstructor(
-                parameters=_parse_parameters(ctor),
+                parameters=ctor_parameters,
                 is_overload=is_ctor_overload,
                 is_noexcept=_is_noexcept(ctor),
                 is_explicit=_is_explicit(ctor),
@@ -619,8 +700,8 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         AccessSpecifier.PRIVATE if cursor.kind == CursorKind.CLASS_DECL else AccessSpecifier.PUBLIC
     )
     _tracked_access: object = _default_access
-    _field_type_hashes = _field_decl_type_hashes(cursor)
-    for child in cursor.get_children():
+    _field_type_hashes = _field_decl_type_hashes(children)
+    for child in children:
         if child.kind == CursorKind.CXX_ACCESS_SPEC_DECL:
             _tracked_access = child.access_specifier
         elif child.kind == CursorKind.FIELD_DECL and _tracked_access == AccessSpecifier.PUBLIC:
@@ -634,7 +715,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
             ir_class.fields.extend(_anonymous_member_fields(child))
 
     # --- Using declarations ---
-    for child in cursor.get_children():
+    for child in children:
         if child.kind == CursorKind.USING_DECLARATION:
             access = _access_str(child.access_specifier)
             member_name = child.spelling
@@ -653,7 +734,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
             )
 
     # --- Nested enums ---
-    for child in cursor.get_children():
+    for child in children:
         if child.kind == CursorKind.ENUM_DECL and child.access_specifier == AccessSpecifier.PUBLIC:
             ir_class.enums.append(_parse_enum(child, qualified))
 
@@ -662,7 +743,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     # fields above, and a named field of an unnamed struct type (``struct {...} s;``)
     # cannot be referred to by name at all, so it would only yield a bogus inner
     # class called "(unnamed struct at ...)".
-    for child in cursor.get_children():
+    for child in children:
         if (
             child.kind in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL)
             and child.access_specifier == AccessSpecifier.PUBLIC
@@ -683,9 +764,16 @@ _CLANG_SEVERITY: dict[int, str] = {
 
 
 def _is_inline_namespace(cursor: "cindex.Cursor") -> bool:
-    """Return True if this NAMESPACE cursor is declared as 'inline namespace ...'."""
-    tokens = list(cursor.get_tokens())
-    return bool(tokens) and tokens[0].spelling == "inline"
+    """Return True if this NAMESPACE cursor is declared as 'inline namespace ...'.
+
+    The C API is authoritative: it also reports macro-defined inline namespaces
+    such as libcxx's ``inline namespace __1``, which a token scan cannot see
+    because the tokens at the cursor start are the unexpanded macro name.
+    """
+    if _CLANG_IS_INLINE_NAMESPACE is not None:
+        return bool(_CLANG_IS_INLINE_NAMESPACE(cursor))
+    first = next(cursor.get_tokens(), None)
+    return first is not None and first.spelling == "inline"
 
 
 def _namespace_in_filter(path: str, filters: List[str]) -> bool:
@@ -742,19 +830,22 @@ def _iter_scope_decls(cursors, filter_prefixes: List[str], current_path: str = "
                 yield (cursor, current_path)
 
 
-def parse_translation_unit(
+def parse_translation_unit_ir(
     source: SourceConfig,
     namespaces: List[str],
     module_name: str,
     *,
     verbose: bool = False,
     clang_errors: Optional[List[str]] = None,
-) -> TIRModule:
+) -> IRModule:
     """Parse a C++ translation unit and return a fully populated IRModule.
 
     No filtering is applied — all discovered entities are added with emit=True.
     When *verbose* is True, all clang diagnostics are printed to stderr; errors
     and fatals are always printed regardless of *verbose*.
+
+    Returns the pre-upgrade IR so callers can cache it and run ``upgrade_module``
+    once per consumer; see :mod:`tsujikiri.parse_cache`.
     """
     source_path = Path(source.path)
     if not source_path.exists():
@@ -783,14 +874,9 @@ def parse_translation_unit(
     # locate those headers, causing "undeclared identifier 'FILE'", 'BUFSIZ', and
     # similar errors in any third-party C header that includes standard C headers.
     if platform.system() == "Darwin" and not any("-isysroot" in a for a in args):
-        try:
-            sdk_path = subprocess.check_output(
-                ["xcrun", "--show-sdk-path"], text=True, stderr=subprocess.DEVNULL
-            ).strip()
-            if sdk_path:
-                args += ["-isysroot", sdk_path]
-        except (subprocess.SubprocessError, FileNotFoundError):
-            pass
+        sdk_path = _get_sdk_path()
+        if sdk_path:
+            args += ["-isysroot", sdk_path]
 
     if verbose:
         print(f"[parse] {source_path}: args={args}", file=sys.stderr)
@@ -799,7 +885,14 @@ def parse_translation_unit(
     # CXTranslationUnit_KeepGoing (0x200): continue past fatal "too many errors" stops.
     # libclang  hits the error limit from cascading stdlib header failures and aborts
     # before processing all namespaces in the translation unit.
-    tu = index.parse(str(source_path.absolute()), args=args, options=0x200)
+    # PARSE_SKIP_FUNCTION_BODIES: only declarations are read, so parsing bodies is
+    # pure cost. Declaration token streams (= default / = delete / explicit /
+    # default arguments / enum bases) are unaffected.
+    tu = index.parse(
+        str(source_path.absolute()),
+        args=args,
+        options=0x200 | cindex.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES,
+    )
 
     # Print diagnostics only when verbose; always collect errors for --strict.
     for diag in tu.diagnostics:
@@ -882,4 +975,24 @@ def parse_translation_unit(
             file=sys.stderr,
         )
 
-    return upgrade_module(module)
+    return module
+
+
+def parse_translation_unit(
+    source: SourceConfig,
+    namespaces: List[str],
+    module_name: str,
+    *,
+    verbose: bool = False,
+    clang_errors: Optional[List[str]] = None,
+) -> TIRModule:
+    """Parse a C++ translation unit and return the upgraded TIRModule."""
+    return upgrade_module(
+        parse_translation_unit_ir(
+            source,
+            namespaces,
+            module_name,
+            verbose=verbose,
+            clang_errors=clang_errors,
+        )
+    )
