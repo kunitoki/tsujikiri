@@ -183,3 +183,25 @@ def warning_input_yml(tmp_path) -> Path:
     p = tmp_path / "warning.input.yml"
     p.write_text(yaml.dump(data), encoding="utf-8")
     return p
+
+
+@pytest.fixture
+def annotate_input_yml(tmp_path) -> Path:
+    """Input YAML pointing to annotate.hpp, which uses [[clang::annotate(...)]]."""
+    data = {
+        "source": {
+            "path": str(HERE / "annotate.hpp"),
+            "parse_args": ["-std=c++17"],
+        },
+        "filters": {
+            "namespaces": ["annotated"],
+            "constructors": {"include": True},
+            "methods": {"global_blacklist": ["exported"]},
+        },
+        "attributes": {
+            "handlers": {"mygame::export": "keep"},
+        },
+    }
+    p = tmp_path / "annotate.input.yml"
+    p.write_text(yaml.dump(data), encoding="utf-8")
+    return p

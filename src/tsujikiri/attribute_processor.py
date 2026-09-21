@@ -7,12 +7,20 @@ override attribute decisions).
 Built-in attribute handlers (always active):
   ``[[tsujikiri::skip]]``                          — set emit=False
   ``[[tsujikiri::keep]]``                          — set emit=True (re-enable suppressed node)
+  ``[[tsujikiri::emit]]``                          — alias for tsujikiri::keep
   ``[[tsujikiri::rename("newName")]]``             — set rename field to first string argument
   ``[[tsujikiri::readonly]]``                      — set read_only=True on IRField
   ``[[tsujikiri::thread_safe]]``                   — set allow_thread=True on IRMethod/IRFunction
   ``[[tsujikiri::doc("text")]]``                   — set doc field on any node
   ``[[tsujikiri::rename_argument("old", "new")]]`` — rename a parameter by name
   ``[[tsujikiri::type_map("CppType", "Target")]]`` — override type of matching params/return/field
+
+``[[clang::annotate("<spec>")]]`` is an alias for ``[[<spec>]]``: the payload is
+processed exactly like a declared attribute, and an unqualified payload that
+names a built-in is resolved in the ``tsujikiri::`` namespace (so
+``[[clang::annotate("skip")]]`` == ``[[tsujikiri::skip]]``).  This is useful
+because custom namespace attributes such as ``[[mygame::export]]`` trigger
+``-Wunknown-attributes``, which Clang and MSVC cannot silence per-namespace.
 
 Custom handlers are configured in ``input.yml`` under ``attributes.handlers``
 and map attribute names to the same three simple actions:
@@ -36,6 +44,7 @@ from tsujikiri.tir import TIRClass, TIRModule
 _BUILTIN_HANDLERS: Dict[str, str] = {
     "tsujikiri::skip": "skip",
     "tsujikiri::keep": "keep",
+    "tsujikiri::emit": "keep",  # alias for tsujikiri::keep
     "tsujikiri::rename": "rename",
 }
 
@@ -51,6 +60,22 @@ _COMPLEX_BUILTINS = frozenset(
         "tsujikiri::hashable",
     }
 )
+
+_KNOWN_BUILTINS = frozenset(_BUILTIN_HANDLERS) | _COMPLEX_BUILTINS
+
+
+def _qualify_builtin(attr_name: str, handlers: Dict[str, str]) -> str:
+    """Resolve an unqualified attribute name to its ``tsujikiri::`` built-in.
+
+    libclang spells ``[[clang::annotate("skip")]]`` as the bare payload ``skip``,
+    so unqualified names that name a built-in are qualified here.  Names already
+    containing ``::`` and bare names that a custom handler registered explicitly
+    are returned unchanged.
+    """
+    if "::" in attr_name or not attr_name or attr_name in handlers:
+        return attr_name
+    qualified = f"tsujikiri::{attr_name}"
+    return qualified if qualified in _KNOWN_BUILTINS else attr_name
 
 
 def _parse_attribute(attr: str) -> Tuple[str, List[str]]:
@@ -105,6 +130,7 @@ def _apply_attrs(node: Any, handlers: Dict[str, str]) -> None:
     """Apply handler actions to a single IR node based on its attributes list."""
     for raw_attr in getattr(node, "attributes", []):
         attr_name, args = _parse_attribute(raw_attr)
+        attr_name = _qualify_builtin(attr_name, handlers)
         if attr_name in _COMPLEX_BUILTINS:
             _apply_complex_builtin(attr_name, args, node)
         else:

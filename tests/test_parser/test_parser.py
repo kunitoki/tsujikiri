@@ -384,6 +384,21 @@ class TestCollectAttrBlocks:
         result = _collect_attr_blocks("[[ns::a, ]]")
         assert result == ["ns::a"]
 
+    def test_clang_annotate_parts_are_dropped(self):
+        """``clang::annotate(...)`` is reported by libclang, not by the text scan."""
+        result = _collect_attr_blocks('[[clang::annotate("tsujikiri::skip")]]')
+        assert result == []
+
+    def test_clang_annotate_dropped_among_other_attrs(self):
+        """A namespace attribute in the same block survives, annotate does not."""
+        result = _collect_attr_blocks('[[tsujikiri::skip, clang::annotate("keep")]]')
+        assert result == ["tsujikiri::skip"]
+
+    def test_similar_but_unrelated_name_is_kept(self):
+        """Only the exact ``clang::annotate`` prefix is dropped, not lookalikes."""
+        result = _collect_attr_blocks("[[clang::annotated]]")
+        assert result == ["clang::annotated"]
+
 
 class TestReadSourceLines:
     def test_oserror_returns_empty(self):
@@ -426,6 +441,94 @@ class TestGetAttributesHelpers:
         shape = next(c for c in parsed_module.classes if c.name == "Shape")
         setScale = next(m for m in shape.methods if m.name == "setScale")
         assert any("mygame::no_export" in a for a in setScale.attributes)
+
+    def test_annotate_attr_children_are_unwrapped(self, tmp_path):
+        """ANNOTATE_ATTR children contribute their payload; empty ones are skipped."""
+        f = tmp_path / "annotate.hpp"
+        f.write_text("void f();\n")
+        _SOURCE_CACHE.pop(str(f), None)
+
+        empty = MagicMock()
+        empty.kind = CursorKind.ANNOTATE_ATTR
+        empty.spelling = ""
+
+        annotate = MagicMock()
+        annotate.kind = CursorKind.ANNOTATE_ATTR
+        annotate.spelling = "tsujikiri::skip"
+
+        other = MagicMock()
+        other.kind = CursorKind.PARM_DECL
+
+        cursor = MagicMock()
+        cursor.location.file.name = str(f)
+        cursor.extent.start.line = 1
+        cursor.extent.start.column = 1
+        cursor.extent.end.line = 1
+        cursor.extent.end.column = 1
+        cursor.get_children.return_value = [other, empty, annotate]
+
+        assert _get_attributes(cursor) == ["tsujikiri::skip"]
+
+
+# ---------------------------------------------------------------------------
+# [[clang::annotate(...)]] attribute extraction (annotations.hpp)
+# ---------------------------------------------------------------------------
+
+
+class TestClangAnnotateAttributes:
+    """``[[clang::annotate("<spec>")]]`` is an alias for ``[[<spec>]]``."""
+
+    def _hidden(self, annotations_module):
+        return next(c for c in annotations_module.classes if c.name == "Hidden")
+
+    def test_class_annotate_is_detected_mid_line(self, annotations_module):
+        # Placed as ``class [[clang::annotate(...)]] Hidden`` — the text scanner
+        # cannot see that position, so this exercises the cursor path.
+        assert self._hidden(annotations_module).attributes == ["tsujikiri::skip"]
+
+    def test_constructor_annotate_detected(self, annotations_module):
+        ctor = self._hidden(annotations_module).constructors[0]
+        assert "tsujikiri::skip" in ctor.attributes
+
+    def test_method_annotate_with_argument(self, annotations_module):
+        area = next(m for m in self._hidden(annotations_module).methods if m.name == "area")
+        assert area.attributes == ['tsujikiri::rename("Alias")']
+
+    def test_field_annotate_detected(self, annotations_module):
+        radius = next(f for f in self._hidden(annotations_module).fields if f.name == "radius_")
+        assert radius.attributes == ["tsujikiri::readonly"]
+
+    def test_custom_namespace_payload(self, annotations_module):
+        method = next(m for m in self._hidden(annotations_module).methods if m.name == "internalUpdate")
+        assert method.attributes == ["mygame::no_export"]
+
+    def test_bare_payload_kept_verbatim(self, annotations_module):
+        # Qualification happens in AttributeProcessor, not the parser.
+        method = next(m for m in self._hidden(annotations_module).methods if m.name == "bareSkip")
+        assert method.attributes == ["skip"]
+
+    def test_enum_value_annotate_detected(self, annotations_module):
+        color = next(e for e in annotations_module.enums if e.name == "Color")
+        red = next(v for v in color.values if v.name == "Red")
+        assert red.attributes == ["tsujikiri::skip"]
+
+    def test_free_function_annotate_detected(self, annotations_module):
+        fn = next(f for f in annotations_module.functions if f.name == "freeHelper")
+        assert fn.attributes == ['tsujikiri::doc("Free helper")']
+
+    def test_raw_annotate_form_never_leaks(self, annotations_module):
+        """No node keeps the wrapped ``clang::annotate(...)`` spelling."""
+        hidden = self._hidden(annotations_module)
+        for method in hidden.methods:
+            assert not any(a.startswith("clang::annotate") for a in method.attributes)
+        for ctor in hidden.constructors:
+            assert not any(a.startswith("clang::annotate") for a in ctor.attributes)
+        for field in hidden.fields:
+            assert not any(a.startswith("clang::annotate") for a in field.attributes)
+        for fn in annotations_module.functions:
+            assert not any(a.startswith("clang::annotate") for a in fn.attributes)
+        for enum in annotations_module.enums:
+            assert not any(a.startswith("clang::annotate") for a in enum.attributes)
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ from tsujikiri.attribute_processor import (
     AttributeProcessor,
     _apply_complex_builtin,
     _parse_attribute,
+    _qualify_builtin,
 )
 from tsujikiri.configurations import AttributeHandlerConfig
 from tsujikiri.tir import (
@@ -573,3 +574,104 @@ class TestHashableAttribute:
         method = _make_method()
         _apply_complex_builtin("tsujikiri::hashable", [], method)
         # No generate_hash on TIRMethod — should be a no-op
+
+
+# ---------------------------------------------------------------------------
+# Unqualified payloads ([[clang::annotate("<bare>")]] → tsujikiri built-ins)
+# ---------------------------------------------------------------------------
+
+
+class TestQualifyBuiltin:
+    def test_qualified_name_is_returned_unchanged(self):
+        assert _qualify_builtin("mygame::export", {}) == "mygame::export"
+
+    def test_bare_builtin_is_qualified(self):
+        assert _qualify_builtin("skip", {}) == "tsujikiri::skip"
+
+    def test_bare_complex_builtin_is_qualified(self):
+        assert _qualify_builtin("readonly", {}) == "tsujikiri::readonly"
+
+    def test_bare_alias_is_qualified(self):
+        assert _qualify_builtin("emit", {}) == "tsujikiri::emit"
+
+    def test_unknown_bare_name_is_returned_unchanged(self):
+        assert _qualify_builtin("no_such_attr", {}) == "no_such_attr"
+
+    def test_empty_name_is_returned_unchanged(self):
+        assert _qualify_builtin("", {}) == ""
+
+    def test_explicitly_registered_bare_name_wins(self):
+        # A custom handler for the bare name takes precedence over the builtin.
+        assert _qualify_builtin("skip", {"skip": "keep"}) == "skip"
+
+
+class TestAnnotateBarePayloads:
+    """Bare payloads coming from ``[[clang::annotate("<bare>")]]``."""
+
+    def test_bare_skip_suppresses(self):
+        method = _make_method(attrs=["skip"])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.emit is False
+
+    def test_bare_keep_re_enables(self):
+        method = _make_method(attrs=["keep"])
+        method.emit = False
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.emit is True
+
+    def test_bare_emit_re_enables(self):
+        method = _make_method(attrs=["emit"])
+        method.emit = False
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.emit is True
+
+    def test_bare_rename_with_argument(self):
+        method = _make_method(attrs=['rename("luaName")'])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.rename == "luaName"
+
+    def test_bare_readonly_sets_field_flag(self):
+        field = TIRField(name="x", type_spelling="int", attributes=["readonly"])
+        cls = _make_class(fields=[field])
+        _processor().apply(_make_module(cls))
+        assert field.read_only is True
+
+    def test_bare_doc_sets_doc(self):
+        method = _make_method(attrs=['doc("Do it")'])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.doc == "Do it"
+
+    def test_bare_unknown_name_is_ignored(self):
+        method = _make_method(attrs=["mystery"])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.emit is True
+        assert method.rename is None
+
+    def test_empty_attribute_string_is_ignored(self):
+        method = _make_method(attrs=[""])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.emit is True
+
+
+class TestEmitAlias:
+    """``tsujikiri::emit`` is a documented alias for ``tsujikiri::keep``."""
+
+    def test_emit_alias_re_enables_suppressed_node(self):
+        method = _make_method(attrs=["tsujikiri::emit"])
+        method.emit = False
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.emit is True
+
+    def test_emit_alias_is_noop_on_emitting_node(self):
+        method = _make_method(attrs=["tsujikiri::emit"])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.emit is True

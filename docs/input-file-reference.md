@@ -376,13 +376,15 @@ generation:
 Maps C++ attribute names to actions. tsujikiri supports several built-in attributes automatically:
 
 - `[[tsujikiri::skip]]` — suppress a node
-- `[[tsujikiri::keep]]` — force-include a node (overrides filters)
+- `[[tsujikiri::keep]]` / `[[tsujikiri::emit]]` — force-include a node (overrides filters)
 - `[[tsujikiri::rename("name")]]` — rename a node
 - `[[tsujikiri::readonly]]` — mark a field read-only
 - `[[tsujikiri::thread_safe]]` — mark a method/function as thread-safe
 - `[[tsujikiri::doc("text")]]` — attach a documentation string
 - `[[tsujikiri::rename_argument("old", "new")]]` — rename a parameter
 - `[[tsujikiri::type_map("CppType", "Target")]]` — override a type for one declaration
+
+`[[clang::annotate("...")]]` is an alias for `[[...]]`: the payload — namespaced (`"tsujikiri::skip"`, `"mygame::export"`) or bare (`"skip"`, which resolves to the `tsujikiri::` built-ins) — is processed exactly like a declared attribute. Use it to avoid `-Wunknown-attributes` on compilers that cannot silence it per namespace (Clang, MSVC).
 
 This section registers **additional** attribute names for your project:
 

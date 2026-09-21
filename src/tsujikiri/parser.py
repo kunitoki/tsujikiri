@@ -244,6 +244,12 @@ def _parse_parameters(cursor) -> List[IRParameter]:
 # Matches [[content]] where content has no unbalanced brackets.
 _ATTR_BLOCK_RE = re.compile(r"\[\[([^\[\]]+?)\]\]")
 
+# ``clang::annotate("<spec>")`` is an alias for the ``[[<spec>]]`` attribute.
+# libclang surfaces it as an ANNOTATE_ATTR child cursor (whose spelling is the
+# unescaped payload) rather than through the source text, so _collect_attr_blocks
+# drops the raw source form and _get_attributes re-adds the payload.
+_ANNOTATE_RE = re.compile(r"clang::annotate\b")
+
 # Per-parse file cache to avoid re-reading the same file for each cursor.
 _SOURCE_CACHE: Dict[str, List[str]] = {}
 
@@ -282,15 +288,19 @@ def _read_source_lines(file_path: str) -> List[str]:
 def _collect_attr_blocks(text: str) -> List[str]:
     """Return attribute name strings found in ``[[...]]`` blocks in *text*.
 
-    A single block ``[[a, b]]`` yields two entries.  The text is assumed to
-    not start inside a line comment; callers are responsible for that check.
+    A single block ``[[a, b]]`` yields two entries.  ``clang::annotate(...)``
+    entries are omitted — libclang reports them as ANNOTATE_ATTR child cursors
+    instead, so _get_attributes picks up their payload separately.  The text is
+    assumed to not start inside a line comment; callers are responsible for that
+    check.
     """
     result = []
     for m in _ATTR_BLOCK_RE.finditer(text):
         for part in m.group(1).split(","):
             part = part.strip()
-            if part:
-                result.append(part)
+            if not part or _ANNOTATE_RE.match(part):
+                continue
+            result.append(part)
     return result
 
 
@@ -307,6 +317,9 @@ def _get_attributes(cursor) -> List[str]:
         void method();
 
     libclang does not expose custom namespace attributes as child cursors, so we parse the source text directly.
+    ``[[clang::annotate("<spec>")]]`` is the exception: libclang exposes it as an
+    ANNOTATE_ATTR child cursor, so its (unescaped) payload is collected here and
+    treated as the attribute spec itself.
     """
     if cursor.location.file is None:
         return []
@@ -354,6 +367,16 @@ def _get_attributes(cursor) -> List[str]:
         inside_comment = has_bracket and comment_pos != -1 and comment_pos < bracket_pos
         if has_bracket and not has_terminator and not inside_comment:
             attrs.extend(_collect_attr_blocks(prev))
+
+    # ``[[clang::annotate("<spec>")]]`` is exposed by libclang as an
+    # ANNOTATE_ATTR child cursor whose spelling is the *unescaped* payload.
+    # Treat that payload as the attribute spec itself, making annotate(...) an
+    # alias for ``[[...]]``.  Reading it from the cursor (rather than the source
+    # text) also covers placements the scanner cannot see, such as
+    # ``class [[clang::annotate("skip")]] Name`` and enum/enumerator attributes.
+    for child in cursor.get_children():
+        if child.kind == CursorKind.ANNOTATE_ATTR and child.spelling:
+            attrs.append(child.spelling)
 
     return attrs
 
