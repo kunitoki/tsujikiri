@@ -22,7 +22,7 @@ Source files are read once per parse and cached. The scanner extracts all `[[...
 
 **Attribute arguments:** `[[tsujikiri::rename("newName")]]` — the argument `"newName"` is extracted from the first quoted string.
 
-**`clang::annotate`:** `[[clang::annotate("<spec>")]]` is *not* read from the source text. libclang exposes it as an `AnnotateAttr` child cursor, so tsujikiri reads its unescaped payload from the cursor instead — which also means it works in positions the text scanner cannot see (e.g. `class [[clang::annotate("skip")]] Name`). See [clang::annotate](#clangannotate) below.
+**`clang::annotate`:** `[[clang::annotate("<spec>")]]` is *not* read from the source text. libclang exposes it as an `AnnotateAttr` child cursor, so tsujikiri reads its unescaped payload from the cursor instead — which also means it works in positions the text scanner cannot see (e.g. `class [[clang::annotate("skip")]] Name`). See [clang::annotate](#clang-annotate) below.
 
 ### What the Scanner Looks For
 
@@ -217,6 +217,7 @@ public:
 
 ---
 
+(clang-annotate)=
 ## `clang::annotate`
 
 Custom namespace attributes such as `[[mygame::export]]` are not part of C++ — every translation unit that includes the header emits `-Wunknown-attributes`. GCC can silence that warning for a whole namespace, but **Clang and MSVC cannot**. `[[clang::annotate("...")]]` is a standard Clang attribute that never warns, and tsujikiri treats its payload as if it were written as a `[[...]]` attribute:
@@ -381,7 +382,7 @@ Content inside `//` line comments is not filtered out by the scanner (the raw li
 
 ### Only Double-Bracket Style
 
-Only `[[namespace::name]]` and `[[namespace::name("arg")]]` syntax is detected, plus `[[clang::annotate("...")]]` (see [clang::annotate](#clangannotate)). GNU `__attribute__((x))`, MSVC `__declspec(x)`, and pragma annotations are not supported.
+Only `[[namespace::name]]` and `[[namespace::name("arg")]]` syntax is detected, plus `[[clang::annotate("...")]]` (see [clang::annotate](#clang-annotate)). GNU `__attribute__((x))`, MSVC `__declspec(x)`, and pragma annotations are not supported.
 
 ### clang::annotate Placement
 
