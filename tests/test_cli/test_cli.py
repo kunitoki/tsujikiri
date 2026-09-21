@@ -335,6 +335,32 @@ class TestFormatOverrides:
 
 
 # ---------------------------------------------------------------------------
+# [[clang::annotate(...)]] attributes, end to end
+# ---------------------------------------------------------------------------
+
+
+class TestClangAnnotateAttributes:
+    def test_rename_payload_is_applied(self, annotate_input_yml):
+        stdout, _ = _run("--input", str(annotate_input_yml), "--target", "luabridge3", "-")
+        # The binding name is the alias; the C++ name only survives as the pointer target.
+        assert '"identifier", &annotated::Widget::getId' in stdout
+        assert '"getId"' not in stdout
+
+    def test_namespaced_skip_payload_hides_method(self, annotate_input_yml):
+        stdout, _ = _run("--input", str(annotate_input_yml), "--target", "luabridge3", "-")
+        assert "internal" not in stdout
+
+    def test_bare_skip_payload_hides_method(self, annotate_input_yml):
+        stdout, _ = _run("--input", str(annotate_input_yml), "--target", "luabridge3", "-")
+        assert "bareInternal" not in stdout
+
+    def test_custom_handler_payload_re_enables_filtered_method(self, annotate_input_yml):
+        # "exported" is blacklisted by the filter but kept by the annotate handler.
+        stdout, _ = _run("--input", str(annotate_input_yml), "--target", "luabridge3", "-")
+        assert "exported" in stdout
+
+
+# ---------------------------------------------------------------------------
 # Declared functions with parameters (cli.py lines 303-308)
 # ---------------------------------------------------------------------------
 

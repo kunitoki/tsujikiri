@@ -58,3 +58,12 @@ def anonymous_records_module():
 
     src = SourceConfig(path=str(HERE / "anonymous_records.hpp"), parse_args=["-std=c++17"])
     return parse_translation_unit(src, ["mylib"], "anonymous_records")
+
+
+@pytest.fixture(scope="module")
+def annotations_module():
+    from tsujikiri.configurations import SourceConfig
+    from tsujikiri.parser import parse_translation_unit
+
+    src = SourceConfig(path=str(HERE / "annotations.hpp"), parse_args=["-std=c++17"])
+    return parse_translation_unit(src, ["mylib"], "annotations")

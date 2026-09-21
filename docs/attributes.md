@@ -22,6 +22,8 @@ Source files are read once per parse and cached. The scanner extracts all `[[...
 
 **Attribute arguments:** `[[tsujikiri::rename("newName")]]` — the argument `"newName"` is extracted from the first quoted string.
 
+**`clang::annotate`:** `[[clang::annotate("<spec>")]]` is *not* read from the source text. libclang exposes it as an `AnnotateAttr` child cursor, so tsujikiri reads its unescaped payload from the cursor instead — which also means it works in positions the text scanner cannot see (e.g. `class [[clang::annotate("skip")]] Name`). See [clang::annotate](#clangannotate) below.
+
 ### What the Scanner Looks For
 
 Attributes must use the `[[double-bracket]]` C++17 syntax. GNU-style `__attribute__((x))` annotations are not detected.
@@ -85,6 +87,8 @@ public:
 ```
 
 When `[[tsujikiri::skip]]` and `[[tsujikiri::keep]]` both appear on the same line (e.g. `[[tsujikiri::skip, tsujikiri::keep]]`), the **last one processed wins** — they are applied in attribute list order.
+
+`[[tsujikiri::emit]]` is an accepted alias for `[[tsujikiri::keep]]` — both set `emit=True`.
 
 ### `[[tsujikiri::rename("newName")]]`
 
@@ -210,6 +214,38 @@ public:
     void setName(juce::String name);
 };
 ```
+
+---
+
+## `clang::annotate`
+
+Custom namespace attributes such as `[[mygame::export]]` are not part of C++ — every translation unit that includes the header emits `-Wunknown-attributes`. GCC can silence that warning for a whole namespace, but **Clang and MSVC cannot**. `[[clang::annotate("...")]]` is a standard Clang attribute that never warns, and tsujikiri treats its payload as if it were written as a `[[...]]` attribute:
+
+```cpp
+// equivalent to [[tsujikiri::skip]]
+[[clang::annotate("tsujikiri::skip")]]
+void internalOptimize();
+
+// equivalent to [[mygame::export]] (assuming a custom handler is registered)
+[[clang::annotate("mygame::export")]]
+void play(const std::string& soundName);
+
+// equivalent to [[tsujikiri::rename("Vector3")]]
+[[clang::annotate("tsujikiri::rename(\"Vector3\")")]]
+class Vec3 { ... };
+
+// equivalent to [[tsujikiri::doc("Compute the area.")]]
+[[clang::annotate("tsujikiri::doc(\"Compute the area.\")")]]
+double area() const;
+```
+
+### Rules
+
+- **The payload is an attribute spec.** It may be namespaced (`"tsujikiri::skip"`, `"mygame::export"`) or bare (`"skip"`).
+- **Bare payloads resolve to the built-ins.** An unqualified payload that names a built-in is looked up in the `tsujikiri::` namespace, so `"skip"` == `"tsujikiri::skip"`, `"keep"`/`"emit"` == `"tsujikiri::keep"`, `"rename(\"X\")"` == `"tsujikiri::rename(\"X\")"`, and so on. A bare payload that a custom handler registered explicitly wins over the built-in.
+- **Arguments live inside the string.** Embedding `\"` lets the payload carry its own argument list, e.g. `[[clang::annotate("tsujikiri::rename(\"Vector3\")")]]`.
+- **Detection uses `AnnotateAttr`.** libclang exposes `clang::annotate` as an `AnnotateAttr` cursor child, so tsujikiri reads it directly — this works for every declaration kind and every placement, including `class [[clang::annotate("skip")]] Name` and enumerators, which the source-text scanner cannot reach.
+- **Everything else applies.** Like any other attribute, the payload is processed after filtering and before transforms, so it can both suppress and re-enable nodes.
 
 ---
 
@@ -345,7 +381,11 @@ Content inside `//` line comments is not filtered out by the scanner (the raw li
 
 ### Only Double-Bracket Style
 
-Only `[[namespace::name]]` and `[[namespace::name("arg")]]` syntax is detected. GNU `__attribute__((x))`, MSVC `__declspec(x)`, and pragma annotations are not supported.
+Only `[[namespace::name]]` and `[[namespace::name("arg")]]` syntax is detected, plus `[[clang::annotate("...")]]` (see [clang::annotate](#clangannotate)). GNU `__attribute__((x))`, MSVC `__declspec(x)`, and pragma annotations are not supported.
+
+### clang::annotate Placement
+
+Because `clang::annotate` is read from the `AnnotateAttr` cursor rather than the source text, it is not subject to the scanner's placement heuristics: it is detected wherever libclang reports it, including `class [[clang::annotate("skip")]] Name` and enumerator attributes.
 
 ### Inner Classes
 
