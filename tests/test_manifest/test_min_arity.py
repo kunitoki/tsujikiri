@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from tsujikiri.manifest import compare_manifests, compute_manifest
+from tsujikiri.manifest import CompatibilityReport, compare_manifests, compute_manifest, suggest_version_bump
 from tsujikiri.tir import (
     TIRClass,
     TIRConstructor,
@@ -34,14 +34,19 @@ def _params(spec: List[Any]) -> List[TIRParameter]:
     return out
 
 
-def _method(spec: List[Any], name: str = "f") -> TIRMethod:
+def _method(spec: List[Any], name: str = "f", return_type: str = "int", is_static: bool = False) -> TIRMethod:
     return TIRMethod(
         name=name,
         spelling=name,
         qualified_name=f"C::{name}",
-        return_type="int",
+        return_type=return_type,
         parameters=_params(spec),
+        is_static=is_static,
     )
+
+
+def _function(spec: List[Any], return_type: str = "int") -> TIRFunction:
+    return TIRFunction(name="g", qualified_name="g", namespace="", return_type=return_type, parameters=_params(spec))
 
 
 def _module(
@@ -252,3 +257,183 @@ class TestMinArityComparison:
         b.is_static = True
         r = compare_manifests(_module(methods=[a]), _module(methods=[b]))
         assert "static C.f" in r.breaking_changes[0]
+
+
+# ---------------------------------------------------------------------------
+# Arity coverage across overloads
+# ---------------------------------------------------------------------------
+
+
+def _compare_methods(old: List[TIRMethod], new: List[TIRMethod]) -> CompatibilityReport:
+    return compare_manifests(_module(methods=old), _module(methods=new))
+
+
+class TestArityCoverageAdditive:
+    """Existing calls still resolve, so the change must not be breaking."""
+
+    def test_trailing_defaulted_param_appended_to_method(self) -> None:
+        r = _compare_methods([_method([])], [_method([("bool", "false")])])
+        assert r.is_compatible
+        assert r.additive_changes == [
+            "Method 'C.f() -> int' is still callable via 'C.f(bool) -> int' (defaulted parameter(s) added)"
+        ]
+
+    def test_several_trailing_defaulted_params_appended(self) -> None:
+        r = _compare_methods([_method(["int"])], [_method(["int", ("bool", "false"), ("char", "'a'")])])
+        assert r.is_compatible
+        assert r.additive_changes == [
+            "Method 'C.f(int) -> int' is still callable via 'C.f(int, bool, char) -> int' "
+            "(defaulted parameter(s) added)"
+        ]
+
+    def test_signature_with_defaults_extended_by_another_default(self) -> None:
+        """One new overload serves every arity the old one accepted."""
+        r = _compare_methods(
+            [_method(["int", ("bool", "false")])],
+            [_method(["int", ("bool", "false"), ("char", "'a'")])],
+        )
+        assert r.is_compatible
+        assert r.additive_changes == [
+            "Method 'C.f(int, bool) -> int' is still callable via 'C.f(int, bool, char) -> int' "
+            "(defaulted parameter(s) added)"
+        ]
+
+    def test_static_method_extended(self) -> None:
+        r = _compare_methods([_method([], is_static=True)], [_method([("bool", "false")], is_static=True)])
+        assert r.is_compatible
+        assert r.additive_changes == [
+            "Method 'static C.f() -> int' is still callable via 'static C.f(bool) -> int' "
+            "(defaulted parameter(s) added)"
+        ]
+
+    def test_constructor_extended(self) -> None:
+        r = compare_manifests(
+            _module(ctors=[TIRConstructor(parameters=_params(["int"]))]),
+            _module(ctors=[TIRConstructor(parameters=_params(["int", ("bool", "false")]))]),
+        )
+        assert r.is_compatible
+        assert r.additive_changes == [
+            "Constructor 'C(int)' is still callable via 'C(int, bool)' (defaulted parameter(s) added)"
+        ]
+
+    def test_function_extended(self) -> None:
+        r = compare_manifests(
+            _module(functions=[_function([])]),
+            _module(functions=[_function([("bool", "false"), ("int", "0")])]),
+        )
+        assert r.is_compatible
+        assert r.additive_changes == [
+            "Function 'g() -> int' is still callable via 'g(bool, int) -> int' (defaulted parameter(s) added)"
+        ]
+
+    def test_overloads_merged_into_defaulted_signature(self) -> None:
+        r = _compare_methods([_method([]), _method(["int"])], [_method([("int", "0")])])
+        assert r.is_compatible
+        assert sorted(r.additive_changes) == [
+            "Method 'C.f() -> int' is still callable via 'C.f(int) -> int' (defaulted parameter(s) added)",
+            "Method 'C.f(int)' now accepts 0 argument(s): a parameter default was added (minimum arity 1 -> 0)",
+        ]
+
+    def test_default_split_into_explicit_overloads(self) -> None:
+        """The dropped one-argument call is still served, by the new f(int)."""
+        r = _compare_methods([_method(["int", ("bool", "false")])], [_method(["int"]), _method(["int", "bool"])])
+        assert r.breaking_changes == []
+        assert r.additive_changes == ["Method 'C.f(int) -> int' overload was added"]
+
+    def test_arities_served_by_several_overloads(self) -> None:
+        r = _compare_methods(
+            [_method(["int", ("bool", "false")])],
+            [_method(["int"]), _method(["int", "bool", ("char", "'a'")])],
+        )
+        assert r.is_compatible
+        assert r.additive_changes == [
+            "Method 'C.f(int, bool) -> int' is still callable via 'C.f(int) -> int', "
+            "'C.f(int, bool, char) -> int' (defaulted parameter(s) added)"
+        ]
+
+    def test_legacy_old_manifest_extended_is_covered(self) -> None:
+        """Without min_arity only the full old arity is claimed, and it is still served."""
+        old = _strip_min_arity(_module(methods=[_method(["int"])]))
+        r = compare_manifests(old, _module(methods=[_method(["int", ("bool", "false")])]))
+        assert r.is_compatible
+        assert r.additive_changes == [
+            "Method 'C.f(int) -> int' is still callable via 'C.f(int, bool) -> int' (defaulted parameter(s) added)"
+        ]
+
+    def test_legacy_old_constructor_extended_is_covered(self) -> None:
+        old = _strip_min_arity(_module(ctors=[TIRConstructor(parameters=_params([]))]))
+        new = _module(ctors=[TIRConstructor(parameters=_params([("int", "0")]))])
+        r = compare_manifests(old, new)
+        assert r.is_compatible
+        assert r.additive_changes == ["Constructor 'C()' is still callable via 'C(int)' (defaulted parameter(s) added)"]
+
+    def test_extended_method_suggests_minor_bump(self) -> None:
+        old = _module(methods=[_method([])])
+        old["version"] = "1.2.3"
+        r = compare_manifests(old, _module(methods=[_method([("bool", "false")])]))
+        assert suggest_version_bump(old, r) == "1.3.0"
+
+
+class TestArityCoverageBreaking:
+    """Some call that used to resolve no longer does."""
+
+    def test_extended_with_changed_return_type(self) -> None:
+        r = _compare_methods([_method([])], [_method([("bool", "false")], return_type="bool")])
+        assert r.breaking_changes == ["Method 'C.f() -> int' signature was removed or changed"]
+        assert r.additive_changes == ["Method 'C.f(bool) -> bool' overload was added"]
+
+    def test_parameter_prepended_instead_of_appended(self) -> None:
+        r = _compare_methods([_method(["int"])], [_method(["bool", ("int", "0")])])
+        assert r.breaking_changes == ["Method 'C.f(int) -> int' signature was removed or changed"]
+        assert r.additive_changes == ["Method 'C.f(bool, int) -> int' overload was added"]
+
+    def test_appended_parameter_without_default(self) -> None:
+        r = _compare_methods([_method([])], [_method(["bool"])])
+        assert r.breaking_changes == ["Method 'C.f() -> int' signature was removed or changed"]
+
+    def test_legacy_old_manifest_extended_without_default(self) -> None:
+        old = _strip_min_arity(_module(methods=[_method(["int"])]))
+        r = compare_manifests(old, _module(methods=[_method(["int", "bool"])]))
+        assert r.breaking_changes == ["Method 'C.f(int) -> int' signature was removed or changed"]
+
+    def test_instance_method_cannot_cover_static(self) -> None:
+        r = _compare_methods([_method([], is_static=True)], [_method([("bool", "false")])])
+        assert r.breaking_changes == ["Method 'static C.f' was removed"]
+
+    def test_static_method_cannot_cover_instance(self) -> None:
+        r = _compare_methods([_method([])], [_method([("bool", "false")], is_static=True)])
+        assert r.breaking_changes == ["Method 'C.f' was removed"]
+
+    def test_min_arity_lowered_only_partway(self) -> None:
+        """f(int, bool = x) accepted one argument; f(int, bool, char = y) needs two."""
+        r = _compare_methods([_method(["int", ("bool", "false")])], [_method(["int", "bool", ("char", "'a'")])])
+        assert r.breaking_changes == ["Method 'C.f(int, bool) -> int' signature was removed or changed"]
+
+    def test_new_manifest_without_min_arity_is_not_covering(self) -> None:
+        """An unknown new min_arity is assumed to require every parameter."""
+        new = _strip_min_arity(_module(methods=[_method([("bool", "false")])]))
+        r = compare_manifests(_module(methods=[_method([])]), new)
+        assert r.breaking_changes == ["Method 'C.f() -> int' signature was removed or changed"]
+
+    def test_default_removed_and_middle_arity_not_served(self) -> None:
+        """f(int) still serves one argument, but nothing serves two any more."""
+        r = _compare_methods(
+            [_method(["int", ("bool", "false"), ("char", "'a'")])],
+            [_method(["int", "bool", "char"]), _method(["int"])],
+        )
+        assert r.breaking_changes == [
+            "Method 'C.f(int, bool, char)' no longer accepts 2 argument(s): "
+            "a parameter default was removed (minimum arity 1 -> 3)"
+        ]
+
+    def test_function_extended_without_default(self) -> None:
+        r = compare_manifests(_module(functions=[_function([])]), _module(functions=[_function(["bool"])]))
+        assert r.breaking_changes == ["Function 'g() -> int' signature was removed or changed"]
+
+    def test_constructor_extended_without_default(self) -> None:
+        r = compare_manifests(
+            _module(ctors=[TIRConstructor(parameters=_params(["int"]))]),
+            _module(ctors=[TIRConstructor(parameters=_params(["int", "bool"]))]),
+        )
+        assert r.breaking_changes == ["Constructor 'C(int)' was removed"]
+        assert r.additive_changes == ["Constructor 'C(int, bool)' was added"]

@@ -667,6 +667,51 @@ class TestManifestCompatibility:
         assert "WARNING" in stderr
         assert "reset" in stderr
 
+    def test_defaulted_parameter_appended_is_additive(self, tmp_path: Path) -> None:
+        """Every existing ``refresh()`` call still resolves, so this is a MINOR bump.
+
+        v1: bool refresh() const
+        v2: bool refresh(bool force = false) const
+        """
+        v1_hpp = tmp_path / "v1.hpp"
+        v1_hpp.write_text("namespace api { class Widget { public: bool refresh() const; }; }\n")
+        manifest = tmp_path / "api.json"
+
+        _run(
+            "--input",
+            str(self._input_yml(tmp_path, v1_hpp, "v1")),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+            expected_exit=0,
+        )
+
+        v2_hpp = tmp_path / "v2.hpp"
+        v2_hpp.write_text("namespace api { class Widget { public: bool refresh(bool force = false) const; }; }\n")
+
+        _, stderr = _run(
+            "--input",
+            str(self._input_yml(tmp_path, v2_hpp, "v2")),
+            "--target",
+            "luabridge3",
+            "-",
+            "--manifest-file",
+            str(manifest),
+            "--check-compat",
+            expected_exit=0,
+        )
+
+        assert "ERROR" not in stderr
+        assert "Breaking" not in stderr
+        assert (
+            "Method 'Widget.refresh() -> bool' is still callable via 'Widget.refresh(bool) -> bool' "
+            "(defaulted parameter(s) added)"
+        ) in stderr
+        assert "Suggested version bump: 0.0.0 -> 0.1.0" in stderr
+        assert json.loads(manifest.read_text())["version"] == "0.1.0"
+
     def test_breaking_without_check_compat_exits_0(self, tmp_path):
         """Without --check-compat, breaking changes are reported but do not fail."""
         v1_hpp = tmp_path / "v1.hpp"

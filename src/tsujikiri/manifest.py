@@ -549,10 +549,13 @@ def suggest_version_bump(old_manifest: Dict[str, Any], report: CompatibilityRepo
 def compare_manifests(old: Dict[str, Any], new: Dict[str, Any]) -> CompatibilityReport:
     """Compare two manifests and classify each change as breaking or additive."""
     report = CompatibilityReport()
-    _compare_classes(old.get("api", {}).get("classes", []), new.get("api", {}).get("classes", []), report)
-    _compare_functions("", old.get("api", {}).get("functions", []), new.get("api", {}).get("functions", []), report)
+    covered: _Coverage = {}
+    _compare_classes(old.get("api", {}).get("classes", []), new.get("api", {}).get("classes", []), report, covered)
+    _compare_functions(
+        "", old.get("api", {}).get("functions", []), new.get("api", {}).get("functions", []), report, covered
+    )
     _compare_enums("", old.get("api", {}).get("enums", []), new.get("api", {}).get("enums", []), report)
-    _compare_transformations(old.get("transformations", {}), new.get("transformations", {}), report)
+    _compare_transformations(old.get("transformations", {}), new.get("transformations", {}), report, covered)
     return report
 
 
@@ -560,11 +563,21 @@ def compare_manifests(old: Dict[str, Any], new: Dict[str, Any]) -> Compatibility
 # Internal comparators
 # ---------------------------------------------------------------------------
 
+# An overload signature: emitted parameter types and return type (None for constructors).
+_Signature = Tuple[Tuple[str, ...], Optional[str]]
+
+# Old signatures that lost their exact match but stay callable through another
+# overload, mapped to that overload.  Keys use the same shape as member
+# transform keys, so the transformations diff can follow a signature to the
+# overload that now serves it.
+_Coverage = Dict[Tuple[Any, ...], Tuple[Any, ...]]
+
 
 def _compare_classes(
     old_list: List[Dict],
     new_list: List[Dict],
     report: CompatibilityReport,
+    covered: _Coverage,
 ) -> None:
     old_by_name = {c["name"]: c for c in old_list}
     new_by_name = {c["name"]: c for c in new_list}
@@ -573,7 +586,7 @@ def _compare_classes(
         if name not in new_by_name:
             report.breaking_changes.append(f"Class '{name}' was removed")
             continue
-        _compare_class_members(name, old_cls, new_by_name[name], report)
+        _compare_class_members(name, old_cls, new_by_name[name], report, covered)
 
     for name in new_by_name:
         if name not in old_by_name:
@@ -585,14 +598,25 @@ def _compare_class_members(
     old_cls: Dict,
     new_cls: Dict,
     report: CompatibilityReport,
+    covered: _Coverage,
 ) -> None:
+    # Transform entries name their class by binding name, not by the dotted label.
+    owner = old_cls["name"]
     _compare_bases(class_name, old_cls.get("bases", []), new_cls.get("bases", []), report)
-    _compare_constructors(class_name, old_cls.get("constructors", []), new_cls.get("constructors", []), report)
-    _compare_methods(class_name, old_cls.get("methods", []), new_cls.get("methods", []), report)
+    for params, via in _compare_constructors(
+        class_name, old_cls.get("constructors", []), new_cls.get("constructors", []), report
+    ).items():
+        covered[("constructor", owner, params)] = ("constructor", owner, via)
+    for (name, is_static, params), via in _compare_methods(
+        class_name, old_cls.get("methods", []), new_cls.get("methods", []), report
+    ).items():
+        covered[("method", owner, name, params, is_static)] = ("method", owner, name, via, is_static)
     _compare_fields(class_name, old_cls.get("fields", []), new_cls.get("fields", []), report)
     _compare_properties(class_name, old_cls.get("properties", []), new_cls.get("properties", []), report)
     _compare_enums(class_name, old_cls.get("enums", []), new_cls.get("enums", []), report)
-    _compare_inner_classes(class_name, old_cls.get("inner_classes", []), new_cls.get("inner_classes", []), report)
+    _compare_inner_classes(
+        class_name, old_cls.get("inner_classes", []), new_cls.get("inner_classes", []), report, covered
+    )
 
 
 def _compare_bases(
@@ -614,6 +638,7 @@ def _compare_inner_classes(
     old_list: List[Dict],
     new_list: List[Dict],
     report: CompatibilityReport,
+    covered: _Coverage,
 ) -> None:
     old_by_name = {c["name"]: c for c in old_list}
     new_by_name = {c["name"]: c for c in new_list}
@@ -622,71 +647,139 @@ def _compare_inner_classes(
         if name not in new_by_name:
             report.breaking_changes.append(f"Inner class '{label}' was removed")
         else:
-            _compare_class_members(label, old_c, new_by_name[name], report)
+            _compare_class_members(label, old_c, new_by_name[name], report, covered)
     for name in new_by_name:
         if name not in old_by_name:
             report.additive_changes.append(f"Inner class '{parent_class}.{name}' was added")
 
 
-def _report_min_arity_change(
+def _signature_label(label: str, sig: _Signature) -> str:
+    params_str = ", ".join(sig[0])
+    return_str = f" -> {sig[1]}" if sig[1] is not None else ""
+    return f"{label}({params_str}){return_str}"
+
+
+def _arity_coverage(
+    params: Tuple[str, ...],
+    min_arity: Optional[int],
+    candidates: List[Tuple[Tuple[str, ...], Optional[int]]],
+) -> Dict[int, Optional[Tuple[str, ...]]]:
+    """Map every arity an old signature accepts to the first candidate that still accepts it.
+
+    A candidate serves ``k`` arguments when it starts with the same ``k``
+    parameter types, has at least ``k`` parameters and needs at most ``k``
+    arguments: the extra trailing parameters are defaulted, so every existing
+    ``k``-argument call still resolves.  An old signature without ``min_arity``
+    (legacy manifest) only claims its full arity; a candidate without it is
+    assumed to need every parameter.
+    """
+    lowest = len(params) if min_arity is None else min_arity
+    coverage: Dict[int, Optional[Tuple[str, ...]]] = {}
+    for k in range(lowest, len(params) + 1):
+        coverage[k] = next(
+            (
+                c
+                for c, c_min in candidates
+                if len(c) >= k and (len(c) if c_min is None else c_min) <= k and c[:k] == params[:k]
+            ),
+            None,
+        )
+    return coverage
+
+
+def _compare_overloads(
     kind: str,
     label: str,
-    params: Tuple[str, ...],
-    old_min: Optional[int],
-    new_min: Optional[int],
+    old_sigs: Dict[_Signature, Optional[int]],
+    new_sigs: Dict[_Signature, Optional[int]],
+    removed: str,
+    added: str,
     report: CompatibilityReport,
-) -> None:
-    """Classify a change in how few arguments a matched signature accepts.
+) -> Dict[Tuple[str, ...], Tuple[str, ...]]:
+    """Diff one overload set, mapping each value to its ``min_arity``.
 
-    ``None`` means the manifest predates ``min_arity`` and simply does not say;
-    comparing against a guess would report a spurious change for every defaulted
-    parameter the first time an old manifest meets new code.
+    An old signature only breaks callers when some arity it accepted is served
+    by no new overload with the same leading parameter types and return type,
+    so gaining trailing defaulted parameters, merging overloads into one
+    defaulted signature, or splitting a default into overloads is not breaking.
+
+    Returns the old parameter lists that lost their exact match but stay fully
+    callable, mapped to the overload that serves their full arity.
     """
-    if old_min is None or new_min is None or old_min == new_min:
-        return
-    params_str = ", ".join(params)
-    if new_min > old_min:
-        report.breaking_changes.append(
-            f"{kind} '{label}({params_str})' no longer accepts {old_min} argument(s): "
-            f"a parameter default was removed (minimum arity {old_min} -> {new_min})"
+    covered: Dict[Tuple[str, ...], Tuple[str, ...]] = {}
+    serving: Set[_Signature] = set()
+
+    for sig in sorted(old_sigs):
+        params, return_type = sig
+        old_min = old_sigs[sig]
+        # The exact match comes first so it is the preferred server of every arity.
+        candidates = sorted(
+            ((p, m) for (p, r), m in new_sigs.items() if r == return_type),
+            key=lambda c: (c[0] != params, c[0]),
         )
-    else:
+
+        if sig in new_sigs:
+            new_min = new_sigs[sig]
+            # None means the manifest predates min_arity and simply does not say;
+            # comparing against a guess would report a spurious change for every
+            # defaulted parameter the first time an old manifest meets new code.
+            if old_min is None or new_min is None:
+                continue
+            params_str = ", ".join(params)
+            uncovered = [k for k, c in _arity_coverage(params, old_min, candidates).items() if c is None]
+            if uncovered:
+                report.breaking_changes.append(
+                    f"{kind} '{label}({params_str})' no longer accepts {uncovered[0]} argument(s): "
+                    f"a parameter default was removed (minimum arity {old_min} -> {new_min})"
+                )
+            elif new_min < old_min:
+                report.additive_changes.append(
+                    f"{kind} '{label}({params_str})' now accepts {new_min} argument(s): "
+                    f"a parameter default was added (minimum arity {old_min} -> {new_min})"
+                )
+            continue
+
+        coverage = _arity_coverage(params, old_min, candidates)
+        servers = [c for c in coverage.values() if c is not None]
+        if len(servers) < len(coverage):
+            report.breaking_changes.append(f"{kind} '{_signature_label(label, sig)}' {removed}")
+            continue
+        # Arity order, so the last server is the one taking the full argument list.
+        covered[params] = servers[-1]
+        via = list(dict.fromkeys(servers))
+        serving.update((p, return_type) for p in via)
+        via_str = ", ".join(f"'{_signature_label(label, (p, return_type))}'" for p in via)
         report.additive_changes.append(
-            f"{kind} '{label}({params_str})' now accepts {new_min} argument(s): "
-            f"a parameter default was added (minimum arity {old_min} -> {new_min})"
+            f"{kind} '{_signature_label(label, sig)}' is still callable via {via_str} (defaulted parameter(s) added)"
         )
+
+    for sig in sorted(new_sigs.keys() - old_sigs.keys()):
+        if sig not in serving:
+            report.additive_changes.append(f"{kind} '{_signature_label(label, sig)}' {added}")
+
+    return covered
 
 
 def _compare_constructors(
     class_name: str,
-    old_ctors: List[List[str]],
-    new_ctors: List[List[str]],
+    old_ctors: List[Any],
+    new_ctors: List[Any],
     report: CompatibilityReport,
-) -> None:
+) -> Dict[Tuple[str, ...], Tuple[str, ...]]:
     # Manifests written before min_arity existed store each constructor as a bare
     # list of parameter types; normalise both shapes to (params, min_arity|None).
-    def _normalise(ctors: List[Any]) -> Dict[Tuple[str, ...], Optional[int]]:
-        result: Dict[Tuple[str, ...], Optional[int]] = {}
+    def _normalise(ctors: List[Any]) -> Dict[_Signature, Optional[int]]:
+        result: Dict[_Signature, Optional[int]] = {}
         for c in ctors:
             if isinstance(c, dict):
-                result[tuple(c["params"])] = c.get("min_arity")
+                result[(tuple(c["params"]), None)] = c.get("min_arity")
             else:
-                result[tuple(c)] = None
+                result[(tuple(c), None)] = None
         return result
 
-    old_by_sig = _normalise(old_ctors)
-    new_by_sig = _normalise(new_ctors)
-    old_sigs: Set[Tuple] = set(old_by_sig)
-    new_sigs: Set[Tuple] = set(new_by_sig)
-
-    for sig in old_sigs - new_sigs:
-        params = ", ".join(sig)
-        report.breaking_changes.append(f"Constructor '{class_name}({params})' was removed")
-    for sig in new_sigs - old_sigs:
-        params = ", ".join(sig)
-        report.additive_changes.append(f"Constructor '{class_name}({params})' was added")
-    for sig in old_sigs & new_sigs:
-        _report_min_arity_change("Constructor", class_name, sig, old_by_sig[sig], new_by_sig[sig], report)
+    return _compare_overloads(
+        "Constructor", class_name, _normalise(old_ctors), _normalise(new_ctors), "was removed", "was added", report
+    )
 
 
 def _compare_methods(
@@ -694,10 +787,10 @@ def _compare_methods(
     old_methods: List[Dict],
     new_methods: List[Dict],
     report: CompatibilityReport,
-) -> None:
-    # Group by (name, is_static) → set of (params_tuple, return_type)
-    def _group(methods: List[Dict]) -> Dict[Tuple, Dict[Tuple, Optional[int]]]:
-        groups: Dict[Tuple, Dict[Tuple, Optional[int]]] = {}
+) -> Dict[Tuple[str, bool, Tuple[str, ...]], Tuple[str, ...]]:
+    # Group by (name, is_static) → {(params_tuple, return_type): min_arity}
+    def _group(methods: List[Dict]) -> Dict[Tuple[str, bool], Dict[_Signature, Optional[int]]]:
+        groups: Dict[Tuple[str, bool], Dict[_Signature, Optional[int]]] = {}
         for m in methods:
             key = (m["name"], m["is_static"])
             sig = (tuple(m["params"]), m["return_type"])
@@ -707,6 +800,7 @@ def _compare_methods(
     prefix = f"{class_name}." if class_name else ""
     old_groups = _group(old_methods)
     new_groups = _group(new_methods)
+    covered: Dict[Tuple[str, bool, Tuple[str, ...]], Tuple[str, ...]] = {}
 
     for key, old_sigs in old_groups.items():
         name, is_static = key
@@ -714,23 +808,19 @@ def _compare_methods(
         if key not in new_groups:
             report.breaking_changes.append(f"Method '{label}' was removed")
             continue
-        new_sigs = new_groups[key]
-        for sig in old_sigs.keys() - new_sigs.keys():
-            params_str = ", ".join(sig[0])
-            report.breaking_changes.append(
-                f"Method '{label}({params_str}) -> {sig[1]}' signature was removed or changed"
-            )
-        for sig in new_sigs.keys() - old_sigs.keys():
-            params_str = ", ".join(sig[0])
-            report.additive_changes.append(f"Method '{label}({params_str}) -> {sig[1]}' overload was added")
-        for sig in old_sigs.keys() & new_sigs.keys():
-            _report_min_arity_change("Method", label, sig[0], old_sigs[sig], new_sigs[sig], report)
+        group_covered = _compare_overloads(
+            "Method", label, old_sigs, new_groups[key], "signature was removed or changed", "overload was added", report
+        )
+        for params, via in group_covered.items():
+            covered[(name, is_static, params)] = via
 
     for key in new_groups:
         if key not in old_groups:
             name, is_static = key
             label = f"{'static ' if is_static else ''}{prefix}{name}"
             report.additive_changes.append(f"Method '{label}' was added")
+
+    return covered
 
 
 def _compare_fields(
@@ -758,7 +848,13 @@ def _compare_fields(
         old_read_only = old_f.get("read_only", old_f["is_const"])
         new_read_only = new_f.get("read_only", new_f["is_const"])
         if old_read_only != new_read_only:
-            report.breaking_changes.append(f"Field '{label}' read-only changed: {old_read_only} -> {new_read_only}")
+            message = f"Field '{label}' read-only changed: {old_read_only} -> {new_read_only}"
+            # Becoming writable keeps every read working; with a type change the
+            # field is already reported as breaking above.
+            if old_read_only and old_f["type"] == new_f["type"]:
+                report.additive_changes.append(message)
+            else:
+                report.breaking_changes.append(message)
 
     for name in new_by_name:
         if name not in old_by_name:
@@ -785,12 +881,16 @@ def _compare_properties(
             report.breaking_changes.append(f"Property '{label}' type changed: {old_p['type']} -> {new_p['type']}")
         if old_p["getter"] != new_p["getter"]:
             report.breaking_changes.append(f"Property '{label}' getter changed: {old_p['getter']} -> {new_p['getter']}")
-        if old_p["setter"] != new_p["setter"]:
+        # A setter appearing is what makes a read-only property writable; that is
+        # reported once, as the read-only change below.
+        if old_p["setter"] != new_p["setter"] and old_p["setter"] is not None:
             report.breaking_changes.append(f"Property '{label}' setter changed: {old_p['setter']} -> {new_p['setter']}")
         if old_p["read_only"] != new_p["read_only"]:
-            report.breaking_changes.append(
-                f"Property '{label}' read-only changed: {old_p['read_only']} -> {new_p['read_only']}"
-            )
+            message = f"Property '{label}' read-only changed: {old_p['read_only']} -> {new_p['read_only']}"
+            if old_p["read_only"]:
+                report.additive_changes.append(message)
+            else:
+                report.breaking_changes.append(message)
 
     for name in new_by_name:
         if name not in old_by_name:
@@ -802,9 +902,10 @@ def _compare_functions(
     old_fns: List[Dict],
     new_fns: List[Dict],
     report: CompatibilityReport,
+    covered: _Coverage,
 ) -> None:
-    def _group(fns: List[Dict]) -> Dict[str, Dict[Tuple, Optional[int]]]:
-        groups: Dict[str, Dict[Tuple, Optional[int]]] = {}
+    def _group(fns: List[Dict]) -> Dict[str, Dict[_Signature, Optional[int]]]:
+        groups: Dict[str, Dict[_Signature, Optional[int]]] = {}
         for f in fns:
             sig = (tuple(f["params"]), f["return_type"])
             groups.setdefault(f["name"], {})[sig] = f.get("min_arity")
@@ -819,17 +920,17 @@ def _compare_functions(
         if name not in new_groups:
             report.breaking_changes.append(f"Function '{label}' was removed")
             continue
-        new_sigs = new_groups[name]
-        for sig in old_sigs.keys() - new_sigs.keys():
-            params_str = ", ".join(sig[0])
-            report.breaking_changes.append(
-                f"Function '{label}({params_str}) -> {sig[1]}' signature was removed or changed"
-            )
-        for sig in new_sigs.keys() - old_sigs.keys():
-            params_str = ", ".join(sig[0])
-            report.additive_changes.append(f"Function '{label}({params_str}) -> {sig[1]}' overload was added")
-        for sig in old_sigs.keys() & new_sigs.keys():
-            _report_min_arity_change("Function", label, sig[0], old_sigs[sig], new_sigs[sig], report)
+        group_covered = _compare_overloads(
+            "Function",
+            label,
+            old_sigs,
+            new_groups[name],
+            "signature was removed or changed",
+            "overload was added",
+            report,
+        )
+        for params, via in group_covered.items():
+            covered[("function", name, params)] = ("function", name, via)
 
     for name in new_groups:
         if name not in old_groups:
@@ -889,8 +990,123 @@ def _compare_transformation_list(
             report.additive_changes.append(f"Binding {label_fn(new_item)} was added")
 
 
+def _member_transform_body(entry: Dict[str, Any], arity: Optional[int] = None) -> Dict[str, Any]:
+    """Return what a member transform does, without where it sits.
+
+    ``params`` identifies the signature and a constructor's ``index`` is only its
+    position among constructors, so neither is compared.  With *arity*, parameter
+    transforms at or past it are dropped as well: they belong to parameters the
+    old signature did not have.  Parameter ``index`` also counts suppressed
+    parameters, so that cut is approximate around them; both sides get the same.
+    """
+    body = {k: v for k, v in entry.items() if k not in ("params", "index")}
+    if arity is not None:
+        parameters = [p for p in body.pop("parameters", []) if p["index"] < arity]
+        if parameters:
+            body["parameters"] = parameters
+    return body
+
+
+def _compare_member_transforms(
+    old_list: List[Dict[str, Any]],
+    new_list: List[Dict[str, Any]],
+    key_fn: Callable[[Dict[str, Any]], Tuple[Any, ...]],
+    label_fn: Callable[[Dict[str, Any]], str],
+    covered: _Coverage,
+    report: CompatibilityReport,
+) -> None:
+    """Diff per-member transforms: new ones are additive, changed or removed ones breaking.
+
+    An entry whose signature is still callable through another overload (see
+    ``_compare_overloads``) is compared with that overload's entry instead.
+    """
+    old_by_key = {key_fn(item): item for item in old_list}
+    new_by_key = {key_fn(item): item for item in new_list}
+    serving: Set[Tuple[Any, ...]] = set()
+
+    for key, old_item in old_by_key.items():
+        if key in new_by_key:
+            if _member_transform_body(old_item) != _member_transform_body(new_by_key[key]):
+                report.breaking_changes.append(f"Binding {label_fn(old_item)} was changed")
+            continue
+        via = covered.get(key)
+        if via is None or via not in new_by_key:
+            report.breaking_changes.append(f"Binding {label_fn(old_item)} was removed")
+            continue
+        serving.add(via)
+        arity = len(old_item["params"])
+        if _member_transform_body(old_item, arity) != _member_transform_body(new_by_key[via], arity):
+            report.breaking_changes.append(f"Binding {label_fn(old_item)} was changed")
+
+    for key, new_item in new_by_key.items():
+        if key not in old_by_key and key not in serving:
+            report.additive_changes.append(f"Binding {label_fn(new_item)} was added")
+
+
+_CLASS_MEMBER_TRANSFORMS = ("constructors", "methods", "fields", "enums")
+
+
+def _compare_class_transforms(
+    old_list: List[Dict[str, Any]],
+    new_list: List[Dict[str, Any]],
+    covered: _Coverage,
+    report: CompatibilityReport,
+) -> None:
+    old_by_name = {c["qualified_name"]: c for c in old_list}
+    new_by_name = {c["qualified_name"]: c for c in new_list}
+
+    for qualified_name, old_cls in old_by_name.items():
+        new_cls: Dict[str, Any] = new_by_name.get(qualified_name, {})
+        old_meta = {k: v for k, v in old_cls.items() if k not in _CLASS_MEMBER_TRANSFORMS}
+        new_meta = {k: v for k, v in new_cls.items() if k not in _CLASS_MEMBER_TRANSFORMS}
+        if qualified_name not in new_by_name:
+            # The entry also vanishes when its last member transform goes away;
+            # only class-level metadata makes that a removal of its own.
+            if old_meta.keys() - {"name", "qualified_name"}:
+                report.breaking_changes.append(f"Binding class transform '{qualified_name}' was removed")
+        elif old_meta != new_meta:
+            report.breaking_changes.append(f"Binding class transform '{qualified_name}' was changed")
+
+        # Field transforms only carry read_only and type, which the API field
+        # diff already classifies (relaxing read-only is additive there).
+        _compare_member_transforms(
+            old_cls.get("constructors", []),
+            new_cls.get("constructors", []),
+            key_fn=lambda c: ("constructor", c["class"], tuple(c["params"])),
+            label_fn=lambda c: f"constructor transform '{c['class']}({', '.join(c['params'])})'",
+            covered=covered,
+            report=report,
+        )
+        _compare_member_transforms(
+            old_cls.get("methods", []),
+            new_cls.get("methods", []),
+            key_fn=lambda m: ("method", m["class"], m["name"], tuple(m["params"]), m["is_static"]),
+            label_fn=lambda m: (
+                f"method transform '{'static ' if m['is_static'] else ''}"
+                f"{m['class']}.{m['name']}({', '.join(m['params'])})'"
+            ),
+            covered=covered,
+            report=report,
+        )
+        _compare_member_transforms(
+            old_cls.get("enums", []),
+            new_cls.get("enums", []),
+            key_fn=lambda e: ("enum", e["parent"], e["name"]),
+            label_fn=lambda e: f"enum transform '{e['parent']}.{e['name']}'",
+            covered=covered,
+            report=report,
+        )
+
+    for qualified_name in new_by_name:
+        if qualified_name not in old_by_name:
+            report.additive_changes.append(f"Binding class transform '{qualified_name}' was added")
+
+
 def _compare_transformations(
-    old_transformations: Dict[str, Any], new_transformations: Dict[str, Any], report: CompatibilityReport
+    old_transformations: Dict[str, Any],
+    new_transformations: Dict[str, Any],
+    report: CompatibilityReport,
+    covered: _Coverage,
 ) -> None:
     if old_transformations.get("code_injections") != new_transformations.get("code_injections"):
         report.breaking_changes.append("Module code injections changed")
@@ -902,18 +1118,18 @@ def _compare_transformations(
         label_fn=lambda er: f"exception registration '{er['cpp_exception_type']}'",
         report=report,
     )
-    _compare_transformation_list(
+    _compare_class_transforms(
         old_transformations.get("classes", []),
         new_transformations.get("classes", []),
-        key_fn=lambda c: c["qualified_name"],
-        label_fn=lambda c: f"class transform '{c['qualified_name']}'",
-        report=report,
+        covered,
+        report,
     )
-    _compare_transformation_list(
+    _compare_member_transforms(
         old_transformations.get("functions", []),
         new_transformations.get("functions", []),
-        key_fn=lambda f: (f["name"], tuple(f["params"])),
+        key_fn=lambda f: ("function", f["name"], tuple(f["params"])),
         label_fn=lambda f: f"function transform '{f['name']}'",
+        covered=covered,
         report=report,
     )
     _compare_transformation_list(

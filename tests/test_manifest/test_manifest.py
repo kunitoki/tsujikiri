@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Optional, TypeVar
 
 import pytest
 
@@ -1019,3 +1020,321 @@ class TestSuggestVersionBump:
         old = compute_manifest(old_mod)
         old["version"] = "1.2.3"
         assert suggest_version_bump(old, report) == "2.0.0"
+
+
+# ---------------------------------------------------------------------------
+# compare_manifests: transform metadata follows the signature serving a call
+# ---------------------------------------------------------------------------
+
+
+_Callable = TypeVar("_Callable", TIRMethod, TIRFunction, TIRConstructor)
+_Gateable = TypeVar("_Gateable", TIRMethod, TIRFunction)
+
+
+def _append_defaulted(node: _Callable, type_spelling: str = "bool", default: str = "false") -> _Callable:
+    """Append a trailing defaulted parameter, as a header gaining ``bool force = false`` would."""
+    node.parameters.append(
+        TIRParameter(name=f"p{len(node.parameters)}", type_spelling=type_spelling, default_value=default)
+    )
+    return node
+
+
+def _compare_modules(old_mod: TIRModule, new_mod: TIRModule) -> CompatibilityReport:
+    return compare_manifests(compute_manifest(old_mod), compute_manifest(new_mod))
+
+
+def _gated(node: _Gateable, since: str = "1.0") -> _Gateable:
+    node.api_since = since
+    return node
+
+
+class TestCompareTransformsFollowSignature:
+    def test_extended_method_with_same_transform_is_compatible(self) -> None:
+        old = _make_module(classes=[_cls("Widget", methods=[_gated(_method("refresh"))])])
+        new = _make_module(classes=[_cls("Widget", methods=[_gated(_append_defaulted(_method("refresh")))])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == []
+        assert r.additive_changes == [
+            "Method 'Widget.refresh() -> void' is still callable via 'Widget.refresh(bool) -> void' "
+            "(defaulted parameter(s) added)"
+        ]
+
+    def test_transform_on_appended_parameter_is_ignored(self) -> None:
+        """Parameter transforms at or past the old arity belong to the new parameters."""
+        old_method = _method("scale", ["float"])
+        old_method.parameters[0].rename = "amount"
+        new_method = _append_defaulted(_method("scale", ["float"]))
+        new_method.parameters[0].rename = "amount"
+        new_method.parameters[1].rename = "clamp"
+        old = _make_module(classes=[_cls("Widget", methods=[old_method])])
+        new = _make_module(classes=[_cls("Widget", methods=[new_method])])
+        r = _compare_modules(old, new)
+        assert r.is_compatible
+        assert not any("Binding" in c for c in r.additive_changes)
+
+    def test_extended_method_with_changed_transform_is_breaking(self) -> None:
+        old = _make_module(classes=[_cls("Widget", methods=[_gated(_method("refresh"), "1.0")])])
+        new = _make_module(classes=[_cls("Widget", methods=[_gated(_append_defaulted(_method("refresh")), "2.0")])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == ["Binding method transform 'Widget.refresh()' was changed"]
+
+    def test_extended_method_parameter_transform_changed_is_breaking(self) -> None:
+        old_method = _method("scale", ["float"])
+        old_method.parameters[0].rename = "amount"
+        new_method = _append_defaulted(_method("scale", ["float"]))
+        new_method.parameters[0].rename = "factor"
+        old = _make_module(classes=[_cls("Widget", methods=[old_method])])
+        new = _make_module(classes=[_cls("Widget", methods=[new_method])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == ["Binding method transform 'Widget.scale(float)' was changed"]
+
+    def test_extended_method_losing_its_transform_is_breaking(self) -> None:
+        old = _make_module(classes=[_cls("Widget", methods=[_gated(_method("refresh"))])])
+        new = _make_module(classes=[_cls("Widget", methods=[_append_defaulted(_method("refresh"))])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == ["Binding method transform 'Widget.refresh()' was removed"]
+
+    def test_extended_static_method_with_same_transform_is_compatible(self) -> None:
+        old = _make_module(classes=[_cls("Widget", methods=[_gated(_method("create", is_static=True))])])
+        new_method = _gated(_append_defaulted(_method("create", is_static=True)))
+        new = _make_module(classes=[_cls("Widget", methods=[new_method])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == []
+
+    def test_uncovered_method_transform_label_is_static(self) -> None:
+        old = _make_module(classes=[_cls("Widget", methods=[_gated(_method("create", is_static=True))])])
+        new = _make_module(classes=[_cls("Widget", methods=[_gated(_method("create", ["int"], is_static=True))])])
+        r = _compare_modules(old, new)
+        assert "Binding method transform 'static Widget.create()' was removed" in r.breaking_changes
+        assert "Binding method transform 'static Widget.create(int)' was added" in r.additive_changes
+
+    def test_merged_overloads_keep_their_transforms(self) -> None:
+        old_methods = [_gated(_method("resize")), _gated(_method("resize", ["int"]))]
+        new_method = _gated(_method("resize", ["int"]))
+        new_method.parameters[0].default_value = "0"
+        old = _make_module(classes=[_cls("Widget", methods=old_methods)])
+        new = _make_module(classes=[_cls("Widget", methods=[new_method])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == []
+
+    def test_extended_constructor_with_same_transform_is_compatible(self) -> None:
+        old_ctor = _ctor(["int"])
+        old_ctor.parameters[0].rename = "size"
+        new_ctor = _append_defaulted(_ctor(["int"]))
+        new_ctor.parameters[0].rename = "size"
+        old = _make_module(classes=[_cls("Widget", constructors=[old_ctor])])
+        new = _make_module(classes=[_cls("Widget", constructors=[new_ctor])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == []
+        assert r.additive_changes == [
+            "Constructor 'Widget(int)' is still callable via 'Widget(int, bool)' (defaulted parameter(s) added)"
+        ]
+
+    def test_constructor_inserted_before_transformed_one_is_additive(self) -> None:
+        """A constructor transform's index is only its position, not its identity."""
+        transformed = _ctor(["int"])
+        transformed.parameters[0].rename = "size"
+        moved = _ctor(["int"])
+        moved.parameters[0].rename = "size"
+        old = _make_module(classes=[_cls("Widget", constructors=[transformed])])
+        new = _make_module(classes=[_cls("Widget", constructors=[_ctor(), moved])])
+        r = _compare_modules(old, new)
+        assert r.is_compatible
+        assert r.additive_changes == ["Constructor 'Widget()' was added"]
+
+    def test_constructor_transform_changed_is_breaking(self) -> None:
+        old_ctor = _ctor(["int"])
+        old_ctor.parameters[0].rename = "size"
+        new_ctor = _ctor(["int"])
+        new_ctor.parameters[0].rename = "count"
+        old = _make_module(classes=[_cls("Widget", constructors=[old_ctor])])
+        new = _make_module(classes=[_cls("Widget", constructors=[new_ctor])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == ["Binding constructor transform 'Widget(int)' was changed"]
+
+    def test_new_transformed_constructor_on_transformed_class_is_additive(self) -> None:
+        added = _ctor(["int"])
+        added.parameters[0].rename = "size"
+        old = _make_module(classes=[_cls("Widget", methods=[_gated(_method("refresh"))])])
+        new = _make_module(classes=[_cls("Widget", methods=[_gated(_method("refresh"))], constructors=[added])])
+        r = _compare_modules(old, new)
+        assert r.is_compatible
+        assert sorted(r.additive_changes) == [
+            "Binding constructor transform 'Widget(int)' was added",
+            "Constructor 'Widget(int)' was added",
+        ]
+
+    def test_extended_inner_class_method_with_same_transform_is_compatible(self) -> None:
+        """Transform entries name the inner class by binding name, not by its dotted label."""
+
+        def module(method: TIRMethod) -> TIRModule:
+            inner = TIRClass(
+                name="Panel", qualified_name="testmod::Widget::Panel", namespace="testmod", methods=[method]
+            )
+            outer = _cls("Widget")
+            outer.inner_classes.append(inner)
+            return _make_module(classes=[outer])
+
+        r = _compare_modules(module(_gated(_method("refresh"))), module(_gated(_append_defaulted(_method("refresh")))))
+        assert r.breaking_changes == []
+        assert r.additive_changes == [
+            "Method 'Widget.Panel.refresh() -> void' is still callable via 'Widget.Panel.refresh(bool) -> void' "
+            "(defaulted parameter(s) added)"
+        ]
+
+    def test_new_transformed_method_on_transformed_class_is_additive(self) -> None:
+        old_cls = _cls("Widget", methods=[_gated(_method("refresh"))])
+        old_cls.holder_type = "std::shared_ptr"
+        new_cls = _cls("Widget", methods=[_gated(_method("refresh")), _gated(_method("reset"))])
+        new_cls.holder_type = "std::shared_ptr"
+        r = _compare_modules(_make_module(classes=[old_cls]), _make_module(classes=[new_cls]))
+        assert r.is_compatible
+        assert sorted(r.additive_changes) == [
+            "Binding method transform 'Widget.reset()' was added",
+            "Method 'Widget.reset' was added",
+        ]
+
+    def test_new_field_and_enum_on_transformed_class_are_additive(self) -> None:
+        old_cls = _cls("Widget", methods=[_gated(_method("refresh"))])
+        mode = TIREnum(
+            name="Mode",
+            qualified_name="testmod::Widget::Mode",
+            is_arithmetic=True,
+            values=[TIREnumValue(name="Fast", value=0)],
+        )
+        new_cls = _cls(
+            "Widget",
+            methods=[_gated(_method("refresh"))],
+            fields=[TIRField(name="state_", type_spelling="int", read_only=True)],
+            enums=[mode],
+        )
+        r = _compare_modules(_make_module(classes=[old_cls]), _make_module(classes=[new_cls]))
+        assert r.is_compatible
+        assert "Binding enum transform 'Widget.Mode' was added" in r.additive_changes
+        assert "Field 'Widget.state_' was added" in r.additive_changes
+
+    def test_changed_member_transform_is_breaking(self) -> None:
+        old = _make_module(classes=[_cls("Widget", methods=[_gated(_method("refresh"), "1.0")])])
+        new = _make_module(classes=[_cls("Widget", methods=[_gated(_method("refresh"), "2.0")])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == ["Binding method transform 'Widget.refresh()' was changed"]
+
+    def test_removed_member_transform_is_breaking(self) -> None:
+        old = _make_module(classes=[_cls("Widget", methods=[_gated(_method("refresh")), _gated(_method("reset"))])])
+        new = _make_module(classes=[_cls("Widget", methods=[_gated(_method("refresh")), _method("reset")])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == ["Binding method transform 'Widget.reset()' was removed"]
+
+    def test_last_member_transform_removed_is_reported_once(self) -> None:
+        """The class entry vanishes with it, but carries no class-level metadata of its own."""
+        old = _make_module(classes=[_cls("Widget", methods=[_gated(_method("refresh"))])])
+        new = _make_module(classes=[_cls("Widget", methods=[_method("refresh")])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == ["Binding method transform 'Widget.refresh()' was removed"]
+
+    def test_class_metadata_change_is_breaking_alongside_members(self) -> None:
+        old_cls = _cls("Widget", methods=[_gated(_method("refresh"))])
+        old_cls.holder_type = "std::shared_ptr"
+        new_cls = _cls("Widget", methods=[_gated(_method("refresh"))])
+        new_cls.holder_type = "std::unique_ptr"
+        r = _compare_modules(_make_module(classes=[old_cls]), _make_module(classes=[new_cls]))
+        assert r.breaking_changes == ["Binding class transform 'testmod::Widget' was changed"]
+
+    def test_changed_nested_enum_transform_is_breaking(self) -> None:
+        def module(is_arithmetic: bool) -> TIRModule:
+            mode = TIREnum(
+                name="Mode",
+                qualified_name="testmod::Widget::Mode",
+                is_arithmetic=is_arithmetic,
+                api_since="1.0",
+                values=[TIREnumValue(name="Fast", value=0)],
+            )
+            return _make_module(classes=[_cls("Widget", enums=[mode])])
+
+        r = _compare_modules(module(True), module(False))
+        assert r.breaking_changes == ["Binding enum transform 'Widget.Mode' was changed"]
+
+    def test_read_only_transform_removed_is_additive(self) -> None:
+        old = _make_module(classes=[_cls("Widget", fields=[TIRField(name="x", type_spelling="int", read_only=True)])])
+        new = _make_module(classes=[_cls("Widget", fields=[TIRField(name="x", type_spelling="int")])])
+        r = _compare_modules(old, new)
+        assert r.is_compatible
+        assert r.additive_changes == ["Field 'Widget.x' read-only changed: True -> False"]
+
+    def test_extended_function_with_same_transform_is_compatible(self) -> None:
+        old = _make_module(functions=[_gated(_fn("render"))])
+        new = _make_module(functions=[_gated(_append_defaulted(_fn("render")))])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == []
+        assert r.additive_changes == [
+            "Function 'render() -> void' is still callable via 'render(bool) -> void' (defaulted parameter(s) added)"
+        ]
+
+    def test_extended_function_with_changed_transform_is_breaking(self) -> None:
+        old = _make_module(functions=[_gated(_fn("render"), "1.0")])
+        new = _make_module(functions=[_gated(_append_defaulted(_fn("render")), "2.0")])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == ["Binding function transform 'render' was changed"]
+
+    def test_removed_function_transform_is_breaking(self) -> None:
+        old = _make_module(functions=[_gated(_fn("render"))])
+        new = _make_module(functions=[_fn("render")])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == ["Binding function transform 'render' was removed"]
+
+
+class TestCompareReadOnlyRelaxed:
+    def _property_module(self, setter: Optional[str]) -> TIRModule:
+        cls = _cls("Widget")
+        cls.properties.append(IRProperty(name="value", getter="getValue", setter=setter, type_spelling="int"))
+        return _make_module(classes=[cls])
+
+    def test_setter_added_is_additive(self) -> None:
+        r = _compare_modules(self._property_module(None), self._property_module("setValue"))
+        assert r.is_compatible
+        assert r.additive_changes == ["Property 'Widget.value' read-only changed: True -> False"]
+
+    def test_setter_removed_is_breaking(self) -> None:
+        r = _compare_modules(self._property_module("setValue"), self._property_module(None))
+        assert r.breaking_changes == [
+            "Property 'Widget.value' setter changed: setValue -> None",
+            "Property 'Widget.value' read-only changed: False -> True",
+        ]
+
+    def test_setter_replaced_is_breaking(self) -> None:
+        r = _compare_modules(self._property_module("setValue"), self._property_module("assignValue"))
+        assert r.breaking_changes == ["Property 'Widget.value' setter changed: setValue -> assignValue"]
+        assert r.additive_changes == []
+
+    def test_field_made_read_only_is_breaking(self) -> None:
+        old = _make_module(classes=[_cls("Widget", fields=[TIRField(name="x", type_spelling="int")])])
+        new = _make_module(classes=[_cls("Widget", fields=[TIRField(name="x", type_spelling="int", read_only=True)])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == ["Field 'Widget.x' read-only changed: False -> True"]
+
+    def test_const_dropped_with_type_change_stays_breaking(self) -> None:
+        old = _make_module(classes=[_cls("Widget", fields=[_field("x", "const int", is_const=True)])])
+        new = _make_module(classes=[_cls("Widget", fields=[_field("x", "int")])])
+        r = _compare_modules(old, new)
+        assert r.breaking_changes == [
+            "Field 'Widget.x' type changed: const int -> int",
+            "Field 'Widget.x' const qualifier changed: True -> False",
+            "Field 'Widget.x' read-only changed: True -> False",
+        ]
+        assert r.additive_changes == []
+
+
+class TestCompareModuleEnumTransforms:
+    def _module(self, is_arithmetic: bool) -> TIRModule:
+        flags = _enum("Flags", ["Enabled"])
+        flags.is_arithmetic = is_arithmetic
+        flags.api_since = "1.0"
+        return _make_module(enums=[flags])
+
+    def test_unchanged_enum_transform_reports_nothing(self) -> None:
+        r = _compare_modules(self._module(True), self._module(True))
+        assert not r.has_changes
+
+    def test_changed_enum_transform_is_breaking(self) -> None:
+        r = _compare_modules(self._module(True), self._module(False))
+        assert r.breaking_changes == ["Binding enum transform 'Flags' was changed"]

@@ -47,13 +47,61 @@ and is reported as no change: the callable surface is identical and only runtime
 behaviour differs. There is no "changed" classification, and recording a value
 that is never compared would put churn in the file that drives no version bump.
 
-Manifests written before `min_arity` existed simply omit it. The comparison then
-**skips the arity check** for that entry rather than assuming a value, so
-upgrading tsujikiri never reports a spurious change on the first run. Constructors
+Manifests written before `min_arity` existed simply omit it. For a signature
+that is still present, the comparison then **skips the arity check** rather than
+assuming a value, so upgrading tsujikiri never reports a spurious change on the
+first run. A signature from such a manifest that is no longer present is assumed
+to accept only its full parameter list (see the next section). Constructors
 in those older manifests are stored as bare lists of parameter types instead of
 objects; both shapes are accepted.
 
-Any difference in transform metadata is classified as breaking, so changes to injected code or transform-controlled binding behavior suggest a major version bump.
+### Overloads and defaulted parameters
+
+Signatures are compared by **the calls they accept**, not by exact parameter
+list. An old signature accepts every argument count from its `min_arity` up to
+its parameter count. A given count `k` is still served when some new overload
+with the same name, the same `is_static`, and the same return type (constructors
+have no return type):
+
+- has the same first `k` parameter types,
+- has at least `k` parameters, and
+- has a `min_arity` of at most `k`.
+
+The old signature only breaks callers if some count it accepted is served by no
+new overload. So these changes are **additive**, because every existing call
+still resolves:
+
+| Change | Example |
+|--------|---------|
+| Defaulted parameter(s) appended | `refresh()` → `refresh(bool force = false)` |
+| Overloads merged into one defaulted signature | `resize()` + `resize(int)` → `resize(int n = 0)` |
+| A default split into explicit overloads | `scale(float, bool = false)` → `scale(float)` + `scale(float, bool)` |
+
+A new overload whose `min_arity` is unknown (the entry has no `min_arity`) is
+assumed to need every parameter. Parameters that are prepended, retyped, or
+appended without a default still break callers, and so does a changed return
+type.
+
+### Transform metadata
+
+Transform metadata is compared per entry:
+
+- **Class-level metadata** (holder type, copyability, API gates, class code
+  injections, …): any difference is breaking.
+- **Member transforms** (constructors, methods, nested enums):
+  - a transform on a new member is additive;
+  - a changed or removed transform is breaking.
+- **Signatures kept callable by another overload** (see above): the transform
+  follows the signature. It is compared with the transform of the overload that
+  now serves its full argument list. Parameter transforms on the appended
+  parameters are ignored.
+- **Field transforms** only carry `read_only`, which the field diff already
+  classifies.
+- **Module code injections and exception registrations** are compared as
+  before.
+
+So changes to injected code or other transform-controlled binding behaviour
+still suggest a major version bump.
 
 ---
 
@@ -154,15 +202,18 @@ When the manifest changes, tsujikiri classifies each difference:
 |-------------|---------|
 | Class removed | `Vec3` was removed |
 | Constructor removed | `Vec3()` was removed |
-| Method signature removed or changed | `Vec3.length() → float` was removed or changed |
+| Method removed | `Vec3.length` was removed |
+| Method signature changed so an existing call no longer resolves | `Vec3.dot(const Vec3 &) → float` signature was removed or changed (a parameter retyped or prepended, a parameter appended without a default, or the return type changed) |
 | Parameter default removed | `Vec3.scale(float, float)` no longer accepts 1 argument(s) |
 | Field removed | `Vec3.x_` was removed |
 | Field type changed | `Vec3.x_`: `float` → `double` |
 | Field const qualifier changed | `Vec3.x_` const: `false` → `true` |
+| Field or property made read-only | `Vec3.x_` read-only: `False` → `True` |
+| Property setter removed or replaced | `Vec3.length` setter: `setLength` → `None` |
 | Enum removed | `Color` was removed |
 | Enum value removed | `Color.Red` was removed |
 | Enum value integer changed | `Color.Red`: 0 → 1 |
-| Transform metadata changed | injected code, wrapper code, or type hints changed |
+| Transform metadata changed or removed | injected code, wrapper code, or type hints changed |
 
 ### Additive Changes (existing scripts continue to work)
 
@@ -173,9 +224,13 @@ When the manifest changes, tsujikiri classifies each difference:
 | Method added | `Vec3.normalize() → Vec3` was added |
 | Method overload added | `add(double, double) → double` overload was added |
 | Parameter default added | `Vec3.scale(float, float)` now accepts 1 argument(s) |
+| Defaulted parameter(s) appended | `Vec3.length() → float` is still callable via `Vec3.length(bool) → float` |
+| Overloads merged into a defaulted signature | `Vec3.scale() → void` is still callable via `Vec3.scale(float) → void` |
 | Field added | `Vec3.w_` was added |
+| Setter added / read-only relaxed | `Vec3.x_` read-only: `True` → `False` |
 | Enum added | `BlendMode` was added |
 | Enum value added | `Color.Alpha` was added |
+| Transform on a new member added | `Vec3.normalize()` method transform was added |
 
 ### Stderr Output
 
@@ -183,6 +238,7 @@ When the manifest changes, tsujikiri classifies each difference:
 WARNING: Additive API changes:
   + Class 'Matrix4' was added
   + Method 'Vec3.normalize() -> Vec3' was added
+  + Method 'Vec3.length() -> float' is still callable via 'Vec3.length(bool) -> float' (defaulted parameter(s) added)
 
 ERROR: Breaking API changes detected:
   ! Method 'Vec3.dot(const Vec3 &) -> float' signature was removed or changed
