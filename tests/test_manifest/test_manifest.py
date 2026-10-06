@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Optional, TypeVar
+from unittest.mock import patch
 
 import pytest
 
@@ -360,6 +362,21 @@ class TestSaveLoad:
         with open(path) as f:
             parsed = json.load(f)
         assert "version" in parsed
+
+    def test_saved_file_uses_lf_newlines(self, tmp_path: Path) -> None:
+        mod = _make_module(classes=[_cls(methods=[_method("add", ["int", "int"], "int")])])
+        path = tmp_path / "api.json"
+        save_manifest(compute_manifest(mod), path)
+        data = path.read_bytes()
+        assert b"\r" not in data
+        assert b"\n" in data
+        assert data.endswith(b"}\n")
+
+    def test_save_opens_file_with_lf_newline(self, tmp_path: Path) -> None:
+        path = tmp_path / "api.json"
+        with patch("builtins.open", side_effect=open) as mock_open:
+            save_manifest(compute_manifest(_make_module()), path)
+        mock_open.assert_called_once_with(path, "w", encoding="utf-8", newline="\n")
 
 
 # ---------------------------------------------------------------------------

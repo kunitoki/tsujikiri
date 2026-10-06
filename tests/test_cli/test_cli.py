@@ -7,6 +7,7 @@ import subprocess
 import sys
 from io import StringIO
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1970,3 +1971,85 @@ class TestEffectiveCustomData:
             self._fmt_yaml("{{ custom_data.key }}"),
         )
         assert "global" in out
+
+
+# ---------------------------------------------------------------------------
+# Newline preservation in written files
+# ---------------------------------------------------------------------------
+
+
+_ORIGINAL_WRITE_TEXT = Path.write_text
+
+
+class TestOutputNewlines:
+    """Written files must never get platform newline translation (CRLF on Windows)."""
+
+    def _custom_format(self, tmp_path: Path, template_bytes: bytes) -> Path:
+        tpl = tmp_path / "nl.tpl"
+        tpl.write_bytes(template_bytes)
+        fmt = tmp_path / "nl.output.yml"
+        fmt.write_text(
+            "format_name: nl\nformat_version: '1.0'\nextension: .txt\ntemplate_file: nl.tpl\n", encoding="utf-8"
+        )
+        return fmt
+
+    def _record_write_text(self) -> Any:
+        return patch.object(Path, "write_text", autospec=True, side_effect=_ORIGINAL_WRITE_TEXT)
+
+    def test_single_output_lf_template_writes_lf_bytes(self, simple_input_yml: Path, tmp_path: Path) -> None:
+        fmt = self._custom_format(tmp_path, b"line1\nline2\n")
+        out = tmp_path / "out.txt"
+        _run("-i", str(simple_input_yml), "--target", str(fmt), str(out))
+        assert out.read_bytes() == b"line1\nline2\n"
+
+    def test_single_output_write_disables_newline_translation(self, simple_input_yml: Path, tmp_path: Path) -> None:
+        fmt = self._custom_format(tmp_path, b"line1\nline2\n")
+        out = tmp_path / "out.txt"
+        with self._record_write_text() as mock_write:
+            _run("-i", str(simple_input_yml), "--target", str(fmt), str(out))
+        calls = [c for c in mock_write.call_args_list if c.args[0] == out]
+        assert len(calls) == 1
+        assert calls[0].kwargs["newline"] == ""
+
+    def test_single_output_lone_cr_in_content_kept(self, simple_input_yml: Path, tmp_path: Path) -> None:
+        # A literal "\r" produced by the template must be written untouched.
+        fmt = self._custom_format(tmp_path, b"a{{ '\\r' }}b\n")
+        out = tmp_path / "out.txt"
+        _run("-i", str(simple_input_yml), "--target", str(fmt), str(out))
+        assert out.read_bytes() == b"a\rb\n"
+
+    def test_multi_output_lf_template_writes_lf_bytes(self, multi_output_input_yml: Path, tmp_path: Path) -> None:
+        fmt = self._custom_format(tmp_path, b"line1\nline2\n")
+        outdir = tmp_path / "out"
+        _run("-i", str(multi_output_input_yml), "--target", str(fmt), str(outdir) + "/")
+        assert (outdir / "foo_bindings.txt").read_bytes() == b"line1\nline2\n"
+        assert (outdir / "bar_bindings.txt").read_bytes() == b"line1\nline2\n"
+
+    def test_multi_output_write_disables_newline_translation(
+        self, multi_output_input_yml: Path, tmp_path: Path
+    ) -> None:
+        fmt = self._custom_format(tmp_path, b"line1\nline2\n")
+        outdir = tmp_path / "out"
+        with self._record_write_text() as mock_write:
+            _run("-i", str(multi_output_input_yml), "--target", str(fmt), str(outdir) + "/")
+        calls = [c for c in mock_write.call_args_list if c.args[0].parent == outdir]
+        assert len(calls) == 2
+        assert all(c.kwargs["newline"] == "" for c in calls)
+
+    def test_dump_ir_file_written_with_lf(self, simple_input_yml: Path, tmp_path: Path) -> None:
+        ir_file = tmp_path / "ir.json"
+        with self._record_write_text() as mock_write:
+            _run("-i", str(simple_input_yml), "--target", "luabridge3", "-", "--dump-ir", str(ir_file))
+        calls = [c for c in mock_write.call_args_list if c.args[0] == Path(str(ir_file))]
+        assert len(calls) == 1
+        assert calls[0].kwargs["newline"] == "\n"
+        data = ir_file.read_bytes()
+        assert b"\r" not in data
+        assert data.endswith(b"}\n")
+
+    def test_manifest_file_written_with_lf(self, simple_input_yml: Path, tmp_path: Path) -> None:
+        manifest_path = tmp_path / "api.manifest.json"
+        _run("-i", str(simple_input_yml), "--target", "luabridge3", "-", "--manifest-file", str(manifest_path))
+        data = manifest_path.read_bytes()
+        assert b"\r" not in data
+        assert data.endswith(b"}\n")

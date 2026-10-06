@@ -578,7 +578,7 @@ def main() -> None:
         if args.dump_ir == "-":
             sys.stdout.write(ir_json + "\n")
         else:
-            Path(args.dump_ir).write_text(ir_json + "\n", encoding="utf-8")
+            Path(args.dump_ir).write_text(ir_json + "\n", encoding="utf-8", newline="\n")
             print(f"IR written to {args.dump_ir}", file=sys.stderr)
 
     # --- dry-run ---
@@ -687,7 +687,7 @@ def main() -> None:
                     content = pretty(content, output_config.language, pretty_opts)
 
                 out_path = outdir / f"{group.name}{ext}"
-                out_path.write_text(content, encoding="utf-8")
+                out_path.write_text(content, encoding="utf-8", newline="")
                 print(f"Written to {out_path}", file=sys.stderr)
 
         else:
@@ -761,7 +761,7 @@ def main() -> None:
                 sys.stdout.write(content)
             else:
                 out_path = Path(outfile)
-                out_path.write_text(content, encoding="utf-8")
+                out_path.write_text(content, encoding="utf-8", newline="")
                 print(f"Written to {out_path}", file=sys.stderr)
 
     if args.manifest_file:

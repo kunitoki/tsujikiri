@@ -39,6 +39,8 @@ template: |
 template_file: "myformat.output.tpl"
 ```
 
+Generated files written to an output path or directory are saved exactly as rendered, with no platform newline translation. A template with `\n` line endings produces `\n` output on Windows too. Note that Jinja2 normalizes template line endings to `\n` while rendering.
+
 ### `extension`
 
 The file extension (including the leading `.`) that tsujikiri appends to group names when running in **multi-output mode** (`outputs:` key in the input YAML). For example, a format with `extension: .cpp` and a group named `math_bindings` produces `math_bindings.cpp`.

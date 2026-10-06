@@ -483,7 +483,7 @@ def compute_manifest(module: TIRModule) -> Dict[str, Any]:
 
 
 def save_manifest(manifest: Dict[str, Any], path: Path) -> None:
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(manifest, f, indent=2)
         f.write("\n")
 

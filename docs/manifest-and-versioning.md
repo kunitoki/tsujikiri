@@ -170,7 +170,7 @@ still suggest a major version bump.
 }
 ```
 
-> **Tip:** Commit the manifest JSON file to version control alongside the generated bindings. This gives you a complete history of API changes.
+> **Tip:** Commit the manifest JSON file to version control alongside the generated bindings. This gives you a complete history of API changes. The manifest is always saved with `\n` line endings, so it is byte-identical across platforms.
 
 ---
 

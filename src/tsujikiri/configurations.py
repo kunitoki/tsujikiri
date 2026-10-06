@@ -474,7 +474,7 @@ def _parse_format_override_config(override_raw: Dict[str, Any], config_dir: Path
         tef_path = Path(tef_path_str)
         if not tef_path.is_absolute():
             tef_path = config_dir / tef_path
-        with open(tef_path, "r", encoding="utf-8") as _tf:
+        with open(tef_path, "r", encoding="utf-8", newline="") as _tf:
             ov_template_extends = _tf.read()
     # Parse format-specific typesystem (inline or from file).
     ov_ts_file_str = override_raw.get("typesystem_file", "") or ""
@@ -745,7 +745,7 @@ def load_output_config(config_file: Path) -> OutputConfig:
         template_path = Path(template_file)
         if not template_path.is_absolute():
             template_path = config_file.parent / template_path
-        with open(template_path, "r", encoding="utf-8") as tf:
+        with open(template_path, "r", encoding="utf-8", newline="") as tf:
             template = tf.read()
 
     return OutputConfig(
