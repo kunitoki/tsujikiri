@@ -146,7 +146,7 @@ class TestOutputConfigLoading:
 
     def test_template_file_relative_path(self, tmp_path):
         tpl = tmp_path / "my.tpl"
-        tpl.write_text("TEMPLATE_CONTENT\n", encoding="utf-8")
+        tpl.write_text("TEMPLATE_CONTENT\n", encoding="utf-8", newline="")
         yml = tmp_path / "test.output.yml"
         yml.write_text("format_name: test\ntemplate_file: my.tpl\n", encoding="utf-8")
         cfg = load_output_config(yml)
@@ -154,7 +154,7 @@ class TestOutputConfigLoading:
 
     def test_template_file_absolute_path(self, tmp_path):
         tpl = tmp_path / "abs.tpl"
-        tpl.write_text("ABS_CONTENT\n", encoding="utf-8")
+        tpl.write_text("ABS_CONTENT\n", encoding="utf-8", newline="")
         yml = tmp_path / "test.output.yml"
         yml.write_text(f"format_name: test\ntemplate_file: {tpl}\n", encoding="utf-8")
         cfg = load_output_config(yml)
@@ -162,7 +162,7 @@ class TestOutputConfigLoading:
 
     def test_template_file_overrides_inline_template(self, tmp_path):
         tpl = tmp_path / "override.tpl"
-        tpl.write_text("FROM_FILE\n", encoding="utf-8")
+        tpl.write_text("FROM_FILE\n", encoding="utf-8", newline="")
         yml = tmp_path / "test.output.yml"
         yml.write_text("format_name: test\ntemplate: |\n  INLINE\ntemplate_file: override.tpl\n", encoding="utf-8")
         cfg = load_output_config(yml)
