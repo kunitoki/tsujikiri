@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import jinja2
+from jinja2.bccache import Bucket
 
 from tsujikiri.configurations import GenerationConfig, OutputConfig, load_output_config
 from tsujikiri.typesystem import TypesystemConfig
@@ -58,6 +59,102 @@ class ItemFirstEnvironment(jinja2.Environment):
             return getattr(obj, attribute)
         except AttributeError:
             return self.undefined(obj=obj, name=attribute)
+
+
+def _load_format_templates(extra_dirs: List[Path]) -> Dict[str, str]:
+    """Return the ``<format>.tpl`` -> template source table for a DictLoader.
+
+    Built-in formats come first so that {% extends "luabridge3.tpl" %} (etc.)
+    resolves correctly.  Templates from *extra_dirs* only fill names not already
+    present, so custom formats can extend each other via {% extends "customfmt.tpl" %}.
+    If a format has no template but declares ``extends``, an implicit
+    pass-through is synthesised so it still participates in the loader chain.
+    """
+    dict_templates: Dict[str, str] = {}
+    for fmt_file in _FORMATS_DIR.glob("*.output.yml"):
+        try:
+            cfg = load_output_config(fmt_file)
+            if cfg.template:
+                dict_templates[f"{cfg.format_name}.tpl"] = cfg.template
+        except Exception:
+            pass
+
+    for d in extra_dirs:
+        for fmt_file in d.glob("*.output.yml"):
+            try:
+                cfg = load_output_config(fmt_file)
+                tpl_key = f"{cfg.format_name}.tpl"
+                tpl_body = cfg.template
+                if not tpl_body and cfg.extends:
+                    tpl_body = f'{{% extends "{cfg.extends}.tpl" %}}'
+                if tpl_body and tpl_key not in dict_templates:
+                    dict_templates[tpl_key] = tpl_body
+            except Exception:
+                pass
+
+    return dict_templates
+
+
+class _SourceKeyedBytecodeCache(jinja2.BytecodeCache):
+    """In-memory bytecode cache keyed by template name *and* source checksum.
+
+    Jinja's stock key is the template name only, but ``main.tpl`` and
+    ``__override__.tpl`` carry a different source per format and per output
+    group; keying on the name alone would make every render a miss.  The name
+    stays in the key because the compiled module embeds it.
+
+    Sharing compiled code between environments is only sound because every
+    Generator builds an identically configured ItemFirstEnvironment
+    (StrictUndefined, keep_trailing_newline, same filter names).  Filters are
+    looked up on the environment at render time, except that Jinja folds a
+    filter applied to a constant by calling it at compile time.  Filters bound
+    per Generator, such as ``map_type``, must therefore be registered with
+    ``jinja2.pass_context``, which Jinja never folds.
+    """
+
+    def __init__(self) -> None:
+        self._code: Dict[str, Any] = {}
+
+    def get_bucket(
+        self,
+        environment: jinja2.Environment,
+        name: str,
+        filename: Optional[str],
+        source: str,
+    ) -> Bucket:
+        checksum = self.get_source_checksum(source)
+        bucket = Bucket(environment, f"{self.get_cache_key(name, filename)}:{checksum}", checksum)
+        self.load_bytecode(bucket)
+        return bucket
+
+    def load_bytecode(self, bucket: Bucket) -> None:
+        bucket.code = self._code.get(bucket.key)
+
+    def dump_bytecode(self, bucket: Bucket) -> None:
+        self._code[bucket.key] = bucket.code
+
+
+class TemplateCache:
+    """Per-run cache of format template sources and compiled template code.
+
+    One instance is shared by every Generator in a CLI run so that the format
+    files are read and each distinct template is compiled once, rather than
+    once per output group and target.
+    """
+
+    def __init__(self) -> None:
+        self._format_templates: Dict[tuple, Dict[str, str]] = {}
+        self.bytecode_cache: jinja2.BytecodeCache = _SourceKeyedBytecodeCache()
+
+    def format_templates(self, extra_dirs: List[Path]) -> Dict[str, str]:
+        """Return a fresh copy of the format template table for *extra_dirs*.
+
+        A copy, because callers add their own ``main.tpl`` / ``__override__.tpl``.
+        """
+        key = tuple(extra_dirs)
+        if key not in self._format_templates:
+            self._format_templates[key] = _load_format_templates(extra_dirs)
+        return dict(self._format_templates[key])
 
 
 def _type_lookup_candidates(type_spelling: str) -> List[str]:
@@ -115,6 +212,7 @@ class Generator:
         typesystem: Optional[TypesystemConfig] = None,
         extra_dirs: Optional[List[Path]] = None,
         custom_data: Optional[Dict[str, Any]] = None,
+        template_cache: Optional[TemplateCache] = None,
     ) -> None:
         self.cfg = output_config
         self.generation = generation
@@ -123,6 +221,7 @@ class Generator:
         self._typesystem: Optional[TypesystemConfig] = typesystem
         self.extra_dirs: List[Path] = extra_dirs or []
         self.custom_data: Dict[str, Any] = custom_data or {}
+        self.template_cache: TemplateCache = template_cache or TemplateCache()
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -141,31 +240,7 @@ class Generator:
 
         # Build a DictLoader with all available format templates so that
         # {% extends "luabridge3.tpl" %} (etc.) resolves correctly.
-        dict_templates: Dict[str, str] = {}
-        for fmt_file in _FORMATS_DIR.glob("*.output.yml"):
-            try:
-                cfg = load_output_config(fmt_file)
-                if cfg.template:
-                    dict_templates[f"{cfg.format_name}.tpl"] = cfg.template
-            except Exception:
-                pass
-
-        # Also load templates from extra_dirs so that custom formats can extend
-        # each other via {% extends "customfmt.tpl" %}.
-        # If a format has no template but declares ``extends``, synthesise an
-        # implicit pass-through so it still participates in the DictLoader chain.
-        for d in self.extra_dirs:
-            for fmt_file in d.glob("*.output.yml"):
-                try:
-                    cfg = load_output_config(fmt_file)
-                    tpl_key = f"{cfg.format_name}.tpl"
-                    tpl_body = cfg.template
-                    if not tpl_body and cfg.extends:
-                        tpl_body = f'{{% extends "{cfg.extends}.tpl" %}}'
-                    if tpl_body and tpl_key not in dict_templates:
-                        dict_templates[tpl_key] = tpl_body
-                except Exception:
-                    pass
+        dict_templates = self.template_cache.format_templates(self.extra_dirs)
 
         # Register current format as "main.tpl" alias.
         if self.cfg.template:
@@ -180,11 +255,18 @@ class Generator:
             loader=jinja2.DictLoader(dict_templates),
             undefined=jinja2.StrictUndefined,
             keep_trailing_newline=True,
+            bytecode_cache=self.template_cache.bytecode_cache,
         )
+
+        # pass_context keeps Jinja from folding ``{{ "T" | map_type }}`` into the
+        # shared compiled code with this Generator's mappings.
+        @jinja2.pass_context
+        def map_type(_context: Any, type_spelling: str) -> str:
+            return self._map_type(type_spelling)
 
         env.filters.update(
             {
-                "map_type": self._map_type,
+                "map_type": map_type,
                 "param_name": param_name,
                 "param_pairs": param_pairs,
                 "camel_to_snake": camel_to_snake,

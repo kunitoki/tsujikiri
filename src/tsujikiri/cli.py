@@ -10,13 +10,15 @@ import re
 import sys
 from io import StringIO
 from pathlib import Path
-from typing import IO, Any, List, Optional
+from typing import IO, Any, List, Optional, Tuple
 
 from tsujikiri.attribute_processor import AttributeProcessor
 from tsujikiri.configurations import (
     FormatOverrideConfig,
     GenerationConfig,
     InputConfig,
+    OutputGroupEntry,
+    SourceEntry,
     merge_yaml_dicts,
     load_input_config,
     load_output_config,
@@ -25,7 +27,7 @@ from tsujikiri.typesystem import merge_typesystems
 from tsujikiri.filters import FilterEngine
 from tsujikiri.pretty_printers import pretty
 from tsujikiri.formats import apply_format_inheritance, resolve_format_path, list_builtin_formats
-from tsujikiri.generator import Generator
+from tsujikiri.generator import Generator, TemplateCache
 from tsujikiri.tir import TIRFunction, TIRModule, TIRParameter, merge_tir_modules, upgrade_module
 from tsujikiri.manifest import compare_manifests, compute_manifest, load_manifest, save_manifest, suggest_version_bump
 from tsujikiri.parse_cache import ParseCache, ParseKey
@@ -169,11 +171,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--jobs",
         "-j",
         type=_parse_jobs,
-        default=1,
+        default=0,
         metavar="N",
         help=(
             "Parse sources using N worker processes, or 'auto' for one per CPU. "
-            "Default: 1 (serial). Output is identical for any N."
+            "Default: auto. Output is identical for any N."
         ),
     )
     return p
@@ -484,17 +486,21 @@ def main() -> None:
 
     clang_errors: List[str] = []
     cache = ParseCache(verbose=args.verbose, jobs=_resolve_jobs(args.jobs))
+    template_cache = TemplateCache()
+    # Each group's sources, resolved once and reused by every pass and target.
+    group_sources: List[Tuple[OutputGroupEntry, List[SourceEntry]]] = []
 
     try:
         if has_output_groups:
+            group_sources = [(g, input_config.resolve_group_sources(g)) for g in input_config.output_groups]
             # Prefetch the union of every group's keys in one batch so parallelism
             # spans groups instead of being capped at the width of the widest group.
             prefetch_keys: List[ParseKey] = []
-            for group in input_config.output_groups:
+            for group, sources in group_sources:
                 prefetch_keys.extend(
                     _source_parse_keys(
                         input_config,
-                        input_config.resolve_group_sources(group),
+                        sources,
                         first_output_config,
                         module_name,
                         output_name=group.name,
@@ -504,10 +510,10 @@ def main() -> None:
 
             manifest_modules: List[TIRModule] = []
             all_includes: list[str] = []
-            for group in input_config.output_groups:
+            for group, sources in group_sources:
                 group_merged, _ = _process_sources(
                     input_config,
-                    input_config.resolve_group_sources(group),
+                    sources,
                     first_output_config,
                     module_name,
                     trace_stream,
@@ -618,7 +624,7 @@ def main() -> None:
                 sys.exit(1)
             ext = output_config.extension
 
-            for group in input_config.output_groups:
+            for group, sources in group_sources:
                 fmt_override = input_config.format_override_for(output_config.format_name, group.name)
                 template_extends = fmt_override.template_extends if fmt_override else ""
                 extra_unsupported = fmt_override.unsupported_types if fmt_override else []
@@ -637,7 +643,7 @@ def main() -> None:
 
                 group_merged, group_includes = _process_sources(
                     input_config,
-                    input_config.resolve_group_sources(group),
+                    sources,
                     output_config,
                     module_name,
                     trace_stream,
@@ -677,6 +683,7 @@ def main() -> None:
                     typesystem=effective_typesystem,
                     extra_dirs=extra_dirs,
                     custom_data=effective_custom_data,
+                    template_cache=template_cache,
                 )
 
                 buf = StringIO()
@@ -747,6 +754,7 @@ def main() -> None:
                 typesystem=effective_typesystem,
                 extra_dirs=extra_dirs,
                 custom_data=effective_custom_data,
+                template_cache=template_cache,
             )
 
             buf = StringIO()

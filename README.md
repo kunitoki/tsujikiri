@@ -1,12 +1,12 @@
-![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=30)
+![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=31)
 
-[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=30)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
-[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=30)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
-[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=30)](https://codecov.io/gh/kunitoki/tsujikiri)
-[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=30)](https://tsujikiri.readthedocs.io/en/latest/)
-[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=30)](https://pypi.org/project/tsujikiri/)
-[![Downloads](https://img.shields.io/pypi/dw/tsujikiri?x=30)](https://pypistats.org/packages/tsujikiri)
-[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=30)](https://pypi.org/project/tsujikiri/)
+[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=31)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
+[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=31)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
+[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=31)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=31)](https://tsujikiri.readthedocs.io/en/latest/)
+[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=31)](https://pypi.org/project/tsujikiri/)
+[![Downloads](https://img.shields.io/pypi/dw/tsujikiri?x=31)](https://pypistats.org/packages/tsujikiri)
+[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=31)](https://pypi.org/project/tsujikiri/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 # tsujikiri — 辻斬り
@@ -258,8 +258,7 @@ options:
                         Enable pretty printing. With no FORMAT args, enable for all targets. With FORMAT names (e.g. --pretty luabridge3
                         pybind11), enable only for those targets. Overrides the input.yml `pretty` setting.
   --strict              Exit 1 if clang reports any errors during parsing; no output is written
-  --jobs N, -j N        Parse sources using N worker processes, or 'auto' for one per CPU. Default: 1 (serial). Output is identical for
-                        any N.
+  --jobs N, -j N        Parse sources using N worker processes, or 'auto' for one per CPU. Default: auto. Output is identical for any N.
 ```
 
 ---
@@ -287,7 +286,7 @@ The test suite covers parsing, filtering, transforms, generation, CLI integratio
 
 ## Coverage
 
-[![Coverage tree](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?x=30&token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Coverage tree](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?x=31&token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
 
 ---
 

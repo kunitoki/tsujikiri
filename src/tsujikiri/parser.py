@@ -14,7 +14,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import clang
 from clang import cindex
@@ -60,8 +60,9 @@ def _to_camel_case(string: str) -> str:
 
 
 def _source_file(cursor) -> Optional[str]:
-    if cursor.location and cursor.location.file:
-        return cursor.location.file.name
+    location = cursor.location
+    if location and location.file:
+        return location.file.name
     return None
 
 
@@ -204,11 +205,31 @@ def _param_types_from_fn_tokens(cursor) -> List[str]:
     return params
 
 
-def _parse_parameters(cursor) -> List[IRParameter]:
+def _split_children(cursor) -> Tuple[List, List]:
+    """Return the (PARM_DECL, ANNOTATE_ATTR) children of a function-like cursor.
+
+    Walks the children once and reads each kind once: every cursor property
+    access pays a null-cursor guard FFI call in libclang's bindings.
+    """
+    params: List = []
+    annotate_attrs: List = []
+    for child in cursor.get_children():
+        kind = child.kind
+        if kind == CursorKind.PARM_DECL:
+            params.append(child)
+        elif kind == CursorKind.ANNOTATE_ATTR:
+            annotate_attrs.append(child)
+    return params, annotate_attrs
+
+
+def _parse_parameters(cursor, params: Optional[List] = None) -> List[IRParameter]:
     # Use PARM_DECL children and token-based type extraction to avoid a
     # libclang bug where constructors with initializer lists using std::move
     # cause parameter types to be reported incorrectly via cursor.type.spelling.
-    args = [arg for arg in cursor.get_children() if arg.kind == CursorKind.PARM_DECL]
+    # *params* may carry the cursor's already-collected PARM_DECL children.
+    if params is None:
+        params = [arg for arg in cursor.get_children() if arg.kind == CursorKind.PARM_DECL]
+    args = params
     # Tokenise each parameter exactly once and thread the list through to
     # _type_from_tokens and _get_default_value below.
     arg_tokens = [list(arg.get_tokens()) for arg in args]
@@ -304,7 +325,7 @@ def _collect_attr_blocks(text: str) -> List[str]:
     return result
 
 
-def _get_attributes(cursor) -> List[str]:
+def _get_attributes(cursor, annotate_attrs: Optional[List] = None) -> List[str]:
     """Extract C++ ``[[...]]`` attribute contents by scanning source text.
 
     Covers the three practical placements:
@@ -319,12 +340,14 @@ def _get_attributes(cursor) -> List[str]:
     libclang does not expose custom namespace attributes as child cursors, so we parse the source text directly.
     ``[[clang::annotate("<spec>")]]`` is the exception: libclang exposes it as an
     ANNOTATE_ATTR child cursor, so its (unescaped) payload is collected here and
-    treated as the attribute spec itself.
+    treated as the attribute spec itself.  *annotate_attrs* may carry the
+    cursor's already-collected ANNOTATE_ATTR children to avoid walking them again.
     """
-    if cursor.location.file is None:
+    source_file = cursor.location.file
+    if source_file is None:
         return []
 
-    lines = _read_source_lines(cursor.location.file.name)
+    lines = _read_source_lines(source_file.name)
     if not lines:
         return []
 
@@ -374,16 +397,22 @@ def _get_attributes(cursor) -> List[str]:
     # alias for ``[[...]]``.  Reading it from the cursor (rather than the source
     # text) also covers placements the scanner cannot see, such as
     # ``class [[clang::annotate("skip")]] Name`` and enum/enumerator attributes.
-    for child in cursor.get_children():
-        if child.kind == CursorKind.ANNOTATE_ATTR and child.spelling:
+    if annotate_attrs is None:
+        annotate_attrs = [child for child in cursor.get_children() if child.kind == CursorKind.ANNOTATE_ATTR]
+    for child in annotate_attrs:
+        if child.spelling:
             attrs.append(child.spelling)
 
     return attrs
 
 
-def _is_deleted(cursor) -> bool:
-    """Return True if the cursor's declaration has '= delete'."""
-    tokens = list(cursor.get_tokens())
+def _is_deleted(cursor, tokens: Optional[List] = None) -> bool:
+    """Return True if the cursor's declaration has '= delete'.
+
+    *tokens* may carry an already-materialised token list.
+    """
+    if tokens is None:
+        tokens = list(cursor.get_tokens())
     for i, tok in enumerate(tokens):
         if tok.spelling == "=" and i + 1 < len(tokens) and tokens[i + 1].spelling == "delete":
             return True
@@ -401,9 +430,10 @@ def _get_deprecation_message(cursor) -> Optional[str]:
     Scans source text for [[deprecated("msg")]] or __attribute__((deprecated("msg"))) patterns.
     """
     # Scan source text for deprecated("msg") pattern
-    if cursor.location.file is None:
+    source_file = cursor.location.file
+    if source_file is None:
         return None
-    lines = _read_source_lines(cursor.location.file.name)
+    lines = _read_source_lines(source_file.name)
     if not lines:
         return None
     start_line = cursor.extent.start.line
@@ -425,9 +455,14 @@ def _is_noexcept(cursor) -> bool:
     )
 
 
-def _is_explicit(cursor) -> bool:
-    """Return True if the cursor has the explicit specifier (checked via tokens)."""
-    return any(tok.spelling == "explicit" for tok in cursor.get_tokens())
+def _is_explicit(cursor, tokens: Optional[List] = None) -> bool:
+    """Return True if the cursor has the explicit specifier (checked via tokens).
+
+    *tokens* may carry an already-materialised token list.
+    """
+    if tokens is None:
+        tokens = list(cursor.get_tokens())
+    return any(tok.spelling == "explicit" for tok in tokens)
 
 
 _RECORD_KINDS = (CursorKind.UNION_DECL, CursorKind.STRUCT_DECL, CursorKind.CLASS_DECL)
@@ -534,8 +569,12 @@ def _parse_enum(cursor, namespace: str) -> IREnum:
     name = cursor.spelling if not is_anonymous else f"__anon_enum_{cursor.location.line}"
     qualified = f"{namespace}::{name}" if namespace else name
     values = []
+    annotate_attrs = []
     for child in cursor.get_children():
-        if child.kind == CursorKind.ENUM_CONSTANT_DECL:
+        kind = child.kind
+        if kind == CursorKind.ANNOTATE_ATTR:
+            annotate_attrs.append(child)
+        elif kind == CursorKind.ENUM_CONSTANT_DECL:
             values.append(
                 IREnumValue(
                     name=child.spelling,
@@ -543,15 +582,16 @@ def _parse_enum(cursor, namespace: str) -> IREnum:
                     attributes=_get_attributes(child),
                 )
             )
+    deprecated = _is_deprecated(cursor)
     return IREnum(
         name=name,
         qualified_name=qualified,
         values=values,
         is_scoped=_is_scoped_enum(cursor),
         is_anonymous=is_anonymous,
-        is_deprecated=_is_deprecated(cursor),
-        deprecation_message=_get_deprecation_message(cursor) if _is_deprecated(cursor) else None,
-        attributes=_get_attributes(cursor),
+        is_deprecated=deprecated,
+        deprecation_message=_get_deprecation_message(cursor) if deprecated else None,
+        attributes=_get_attributes(cursor, annotate_attrs=annotate_attrs),
     )
 
 
@@ -564,6 +604,13 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         qualified = f"{namespace}::{class_name}" if namespace else class_name
         var_name = _to_camel_case(f"class_{class_name}")
 
+    # Walk the cursor's children once; every section below reuses this list, so
+    # iteration order — and therefore IR ordering — is exactly as before.  Each
+    # cursor property access pays a null-cursor guard FFI call in libclang's
+    # bindings, so the kinds are read once as well.
+    children = list(cursor.get_children())
+    kinds = [child.kind for child in children]
+
     ir_class = IRClass(
         name=class_name,
         qualified_name=qualified,
@@ -571,16 +618,14 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         variable_name=var_name,
         parent_class=parent_name,
         source_file=_source_file(cursor),
-        attributes=_get_attributes(cursor),
+        attributes=_get_attributes(
+            cursor, annotate_attrs=[c for c, kind in zip(children, kinds) if kind == CursorKind.ANNOTATE_ATTR]
+        ),
     )
 
-    # Walk the cursor's children once; every section below reuses this list, so
-    # iteration order — and therefore IR ordering — is exactly as before.
-    children = list(cursor.get_children())
-
     # --- Bases ---
-    for child in children:
-        if child.kind == CursorKind.CXX_BASE_SPECIFIER:
+    for child, kind in zip(children, kinds):
+        if kind == CursorKind.CXX_BASE_SPECIFIER:
             ir_class.bases.append(
                 IRBase(
                     qualified_name=child.type.get_canonical().spelling,
@@ -590,22 +635,25 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
 
     # --- Methods ---
     methods_by_name: Dict[str, list] = defaultdict(list)
-    for child in children:
-        if child.kind == CursorKind.CXX_METHOD:
+    for child, kind in zip(children, kinds):
+        if kind == CursorKind.CXX_METHOD:
             methods_by_name[child.spelling].append(child)
 
     for cursors in methods_by_name.values():
         is_overload = len(cursors) > 1
         for m in cursors:
-            params = _parse_parameters(m)
-            is_op = m.spelling.startswith("operator") and not m.spelling[len("operator") :].isalpha()
-            op_type = _canonicalize_operator(m.spelling, len(params)) if is_op else None
+            m_params, m_annotate_attrs = _split_children(m)
+            params = _parse_parameters(m, params=m_params)
+            m_spelling = m.spelling
+            m_access = m.access_specifier
+            is_op = m_spelling.startswith("operator") and not m_spelling[len("operator") :].isalpha()
+            op_type = _canonicalize_operator(m_spelling, len(params)) if is_op else None
             deprecated = _is_deprecated(m)
             is_varargs = m.type.is_function_variadic()
             method = IRMethod(
-                name=m.spelling,
-                spelling=m.spelling,
-                qualified_name=f"{qualified}::{m.spelling}",
+                name=m_spelling,
+                spelling=m_spelling,
+                qualified_name=f"{qualified}::{m_spelling}",
                 return_type=m.result_type.spelling,
                 parameters=params,
                 is_static=m.is_static_method(),
@@ -620,24 +668,26 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 source_file=_source_file(m),
                 is_deprecated=deprecated,
                 deprecation_message=_get_deprecation_message(m) if deprecated else None,
-                attributes=_get_attributes(m),
+                attributes=_get_attributes(m, annotate_attrs=m_annotate_attrs),
             )
             # Collect public and protected methods; protected methods are suppressed by default
-            if m.access_specifier == AccessSpecifier.PUBLIC:
+            if m_access == AccessSpecifier.PUBLIC:
                 ir_class.methods.append(method)
-            elif m.access_specifier == AccessSpecifier.PROTECTED:
+            elif m_access == AccessSpecifier.PROTECTED:
                 method.access = "protected"
                 ir_class.methods.append(method)
 
     # --- Conversion operators ---
-    for child in children:
-        if child.kind == CursorKind.CONVERSION_FUNCTION and child.access_specifier == AccessSpecifier.PUBLIC:
+    for child, kind in zip(children, kinds):
+        if kind == CursorKind.CONVERSION_FUNCTION and child.access_specifier == AccessSpecifier.PUBLIC:
             deprecated = _is_deprecated(child)
+            conv_spelling = child.spelling
+            conv_target = child.result_type.spelling
             method = IRMethod(
-                name=child.spelling,
-                spelling=child.spelling,
-                qualified_name=f"{qualified}::{child.spelling}",
-                return_type=child.result_type.spelling,
+                name=conv_spelling,
+                spelling=conv_spelling,
+                qualified_name=f"{qualified}::{conv_spelling}",
+                return_type=conv_target,
                 parameters=[],
                 is_static=False,
                 is_const=child.is_const_method(),
@@ -646,9 +696,9 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 is_noexcept=_is_noexcept(child),
                 is_overload=False,
                 is_operator=True,
-                operator_type=child.spelling,  # e.g. "operator bool"
+                operator_type=conv_spelling,  # e.g. "operator bool"
                 is_conversion_operator=True,
-                conversion_target_type=child.result_type.spelling,
+                conversion_target_type=conv_target,
                 source_file=_source_file(child),
                 is_deprecated=deprecated,
                 deprecation_message=_get_deprecation_message(child) if deprecated else None,
@@ -657,11 +707,13 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
             ir_class.methods.append(method)
 
     # --- Constructors ---
-    all_ctors = [c for c in children if c.kind == CursorKind.CONSTRUCTOR]
-    # Parse parameters and the deleted flag once per constructor: both the
-    # copy/move detection below and the public-constructor list need them.
-    ctor_params = [_parse_parameters(c) for c in all_ctors]
-    ctor_deleted = [_is_deleted(c) for c in all_ctors]
+    all_ctors = [c for c, kind in zip(children, kinds) if kind == CursorKind.CONSTRUCTOR]
+    # Walk, tokenise, parse parameters and the deleted flag once per constructor:
+    # the copy/move detection below and the public-constructor list both need them.
+    ctor_children = [_split_children(c) for c in all_ctors]
+    ctor_tokens = [list(c.get_tokens()) for c in all_ctors]
+    ctor_params = [_parse_parameters(c, params=ch[0]) for c, ch in zip(all_ctors, ctor_children)]
+    ctor_deleted = [_is_deleted(c, tokens=toks) for c, toks in zip(all_ctors, ctor_tokens)]
 
     # Detect deleted copy/move constructors for move-only type inference
     class_name_for_ctor = class_name
@@ -682,23 +734,23 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                     ir_class.has_deleted_move_constructor = True
 
     public_ctors = [
-        (c, params)
-        for c, params, deleted in zip(all_ctors, ctor_params, ctor_deleted)
+        (c, params, ch, toks)
+        for c, params, ch, toks, deleted in zip(all_ctors, ctor_params, ctor_children, ctor_tokens, ctor_deleted)
         if c.access_specifier == AccessSpecifier.PUBLIC and not deleted
     ]
     is_ctor_overload = len(public_ctors) > 1
-    for ctor, ctor_parameters in public_ctors:
+    for ctor, ctor_parameters, ctor_ch, ctor_toks in public_ctors:
         deprecated = _is_deprecated(ctor)
         ir_class.constructors.append(
             IRConstructor(
                 parameters=ctor_parameters,
                 is_overload=is_ctor_overload,
                 is_noexcept=_is_noexcept(ctor),
-                is_explicit=_is_explicit(ctor),
+                is_explicit=_is_explicit(ctor, tokens=ctor_toks),
                 is_varargs=ctor.type.is_function_variadic(),
                 is_deprecated=deprecated,
                 deprecation_message=_get_deprecation_message(ctor) if deprecated else None,
-                attributes=_get_attributes(ctor),
+                attributes=_get_attributes(ctor, annotate_attrs=ctor_ch[1]),
             )
         )
 
@@ -723,23 +775,29 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         AccessSpecifier.PRIVATE if cursor.kind == CursorKind.CLASS_DECL else AccessSpecifier.PUBLIC
     )
     _tracked_access: object = _default_access
-    _field_type_hashes = _field_decl_type_hashes(children)
-    for child in children:
-        if child.kind == CursorKind.CXX_ACCESS_SPEC_DECL:
+    _field_type_hashes = _field_decl_type_hashes(
+        [c for c, kind in zip(children, kinds) if kind == CursorKind.FIELD_DECL]
+    )
+    for child, kind in zip(children, kinds):
+        if kind == CursorKind.CXX_ACCESS_SPEC_DECL:
             _tracked_access = child.access_specifier
-        elif child.kind == CursorKind.FIELD_DECL and _tracked_access == AccessSpecifier.PUBLIC:
+        elif kind == CursorKind.FIELD_DECL and _tracked_access == AccessSpecifier.PUBLIC:
             ir_class.fields.append(_field_from_cursor(child))
-        elif child.kind == CursorKind.VAR_DECL and _tracked_access == AccessSpecifier.PUBLIC:
+        elif kind == CursorKind.VAR_DECL and _tracked_access == AccessSpecifier.PUBLIC:
             # Static member variables (class-level, not instance fields)
             ir_class.fields.append(_field_from_cursor(child, is_static=True))
-        elif _tracked_access == AccessSpecifier.PUBLIC and _is_anonymous_member_record(child, _field_type_hashes):
+        elif (
+            kind in _RECORD_KINDS
+            and _tracked_access == AccessSpecifier.PUBLIC
+            and _is_anonymous_member_record(child, _field_type_hashes)
+        ):
             # An anonymous union/struct member has no FIELD_DECL of its own; its
             # members are injected into this class' scope and bind as our fields.
             ir_class.fields.extend(_anonymous_member_fields(child))
 
     # --- Using declarations ---
-    for child in children:
-        if child.kind == CursorKind.USING_DECLARATION:
+    for child, kind in zip(children, kinds):
+        if kind == CursorKind.USING_DECLARATION:
             access = _access_str(child.access_specifier)
             member_name = child.spelling
             # Extract base class qualified name from child TYPE_REF cursor
@@ -757,8 +815,8 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
             )
 
     # --- Nested enums ---
-    for child in children:
-        if child.kind == CursorKind.ENUM_DECL and child.access_specifier == AccessSpecifier.PUBLIC:
+    for child, kind in zip(children, kinds):
+        if kind == CursorKind.ENUM_DECL and child.access_specifier == AccessSpecifier.PUBLIC:
             ir_class.enums.append(_parse_enum(child, qualified))
 
     # --- Inner classes ---
@@ -766,9 +824,9 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     # fields above, and a named field of an unnamed struct type (``struct {...} s;``)
     # cannot be referred to by name at all, so it would only yield a bogus inner
     # class called "(unnamed struct at ...)".
-    for child in children:
+    for child, kind in zip(children, kinds):
         if (
-            child.kind in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL)
+            kind in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL)
             and child.access_specifier == AccessSpecifier.PUBLIC
             and not child.is_anonymous()
         ):
@@ -824,16 +882,26 @@ def _namespace_should_recurse(path: str, filters: List[str]) -> bool:
     return False
 
 
+_SCOPE_DECL_KINDS = (
+    CursorKind.CLASS_DECL,
+    CursorKind.STRUCT_DECL,
+    CursorKind.FUNCTION_DECL,
+    CursorKind.ENUM_DECL,
+)
+
+
 def _iter_scope_decls(cursors, filter_prefixes: List[str], current_path: str = ""):
-    """Recursively yield (decl_cursor, scope_path) for CLASS_DECL, STRUCT_DECL,
+    """Recursively yield (decl_cursor, kind, scope_path) for CLASS_DECL, STRUCT_DECL,
     FUNCTION_DECL, and ENUM_DECL reachable under namespaces matching filter_prefixes,
     or at global scope when filter_prefixes is empty.
 
     Inline namespaces are transparent: a declaration inside 'inline namespace v2'
-    nested under 'outer' is treated as being in 'outer'.
+    nested under 'outer' is treated as being in 'outer'.  The cursor kind is
+    yielded so callers do not pay for reading it again.
     """
     for cursor in cursors:
-        if cursor.kind == CursorKind.NAMESPACE:
+        kind = cursor.kind
+        if kind == CursorKind.NAMESPACE:
             if _is_inline_namespace(cursor):
                 # Transparent: keep parent path for both matching and storage
                 child_path = current_path
@@ -843,14 +911,9 @@ def _iter_scope_decls(cursors, filter_prefixes: List[str], current_path: str = "
             if _namespace_should_recurse(child_path, filter_prefixes):
                 yield from _iter_scope_decls(cursor.get_children(), filter_prefixes, child_path)
 
-        elif cursor.kind in (
-            CursorKind.CLASS_DECL,
-            CursorKind.STRUCT_DECL,
-            CursorKind.FUNCTION_DECL,
-            CursorKind.ENUM_DECL,
-        ):
+        elif kind in _SCOPE_DECL_KINDS:
             if not filter_prefixes or _namespace_in_filter(current_path, filter_prefixes):
-                yield (cursor, current_path)
+                yield (cursor, kind, current_path)
 
 
 def parse_translation_unit_ir(
@@ -934,15 +997,16 @@ def parse_translation_unit_ir(
 
     # --- Free functions ---
     fn_groups: Dict[str, list] = defaultdict(list)
-    for cursor, scope_path in all_decls:
-        if cursor.kind == CursorKind.FUNCTION_DECL:
+    for cursor, kind, scope_path in all_decls:
+        if kind == CursorKind.FUNCTION_DECL:
             fn_groups[cursor.spelling].append((cursor, scope_path))
 
     for entries in fn_groups.values():
         is_overload = len(entries) > 1
         for fn_cursor, scope_path in entries:
             qualified = f"{scope_path}::{fn_cursor.spelling}" if scope_path else fn_cursor.spelling
-            fn_params = _parse_parameters(fn_cursor)
+            fn_param_cursors, fn_annotate_attrs = _split_children(fn_cursor)
+            fn_params = _parse_parameters(fn_cursor, params=fn_param_cursors)
             fn_is_op = fn_cursor.spelling.startswith("operator") and not fn_cursor.spelling[len("operator") :].isalpha()
             fn_op_type = (
                 _canonicalize_operator(fn_cursor.spelling, len(fn_params), is_member=False) if fn_is_op else None
@@ -962,22 +1026,22 @@ def parse_translation_unit_ir(
                     operator_type=fn_op_type,
                     is_deprecated=fn_deprecated,
                     deprecation_message=_get_deprecation_message(fn_cursor) if fn_deprecated else None,
-                    attributes=_get_attributes(fn_cursor),
+                    attributes=_get_attributes(fn_cursor, annotate_attrs=fn_annotate_attrs),
                 )
             )
             if scope_path and scope_path not in module.namespaces:
                 module.namespaces.append(scope_path)
 
     # --- Top-level enums ---
-    for cursor, scope_path in all_decls:
-        if cursor.kind == CursorKind.ENUM_DECL:
+    for cursor, kind, scope_path in all_decls:
+        if kind == CursorKind.ENUM_DECL:
             module.enums.append(_parse_enum(cursor, scope_path))
             if scope_path and scope_path not in module.namespaces:
                 module.namespaces.append(scope_path)
 
     # --- Classes ---
-    for cursor, scope_path in all_decls:
-        if cursor.kind not in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL):
+    for cursor, kind, scope_path in all_decls:
+        if kind not in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL):
             continue
         if not cursor.is_definition():
             continue

@@ -241,7 +241,7 @@ tsujikiri [OPTIONS]
 | `--verbose` | `-v` | | Enable verbose Clang diagnostic output during parsing |
 | `--api-version` | | `VERSION` | Override the API version string used for `--embed-version` and `api_since`/`api_until` semver filtering |
 | `--pretty` | | `[FORMAT...]` | Enable pretty printing. No FORMAT args = all targets; with FORMAT names = only those targets. Overrides `pretty` in input YAML. |
-| `--jobs` | `-j` | `N` | Parse sources using `N` worker processes, or `auto` for one per CPU. Default `1` (serial). Output is byte-identical for any `N`. |
+| `--jobs` | `-j` | `N` | Parse sources using `N` worker processes, or `auto` for one per CPU. Default `auto`. Output is byte-identical for any `N`. |
 | `--help` | `-h` | | Show help and exit |
 
 ### Common Patterns
@@ -263,23 +263,26 @@ tsujikiri -i project.input.yml \
   --target luals      types/myproject.lua
 ```
 
-**Speed up large multi-header projects:**
+**Parallel parsing and limiting memory:**
 ```bash
-tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp -j auto
+tsujikiri -i project.input.yml --target luabridge3 src/bindings.cpp -j 8
 ```
 
 Each source header is parsed at most once per run and the results are shared
 across every target and output group, so adding targets no longer multiplies
-parsing cost. `-j auto` spreads those parses over one worker process per CPU.
-Output does not depend on `-j`: results are always consumed in source order, so
-generated files, `--verbose` output and `--strict` error order are identical
-whether you run serially or in parallel.
+parsing cost. Likewise each output template is compiled once per run, however
+many targets and output groups render it. By default (`-j auto`) those parses
+are spread over one worker process per CPU; a run with a single source parses
+in-process and starts no workers. Output does not depend on `-j`: results are
+always consumed in source order, so generated files, `--verbose` output and
+`--strict` error order are identical whether you run serially or in parallel.
 
 Each worker holds one libclang translation unit, so peak memory grows with the
 worker count — roughly `min(jobs, number_of_sources)` translation units live at
-once. On a machine with many cores and large headers, prefer an explicit
-`-j 8` over `-j auto`. Note also that with `-j` set, `--verbose` output is no
-longer streamed live: it is buffered per source and replayed in source order.
+once. On a machine with many cores and large headers, pass an explicit `-j 8`
+to cap it, or `-j 1` to parse serially in-process. Note also that when workers
+are used, `--verbose` output is no longer streamed live: it is buffered per
+source and replayed in source order.
 
 **Custom format from a local directory:**
 ```bash

@@ -64,8 +64,11 @@ def two_source_yml(tmp_path: Path) -> Path:
 
 
 class TestParseJobsFlag:
-    def test_default_is_serial(self) -> None:
-        assert build_parser().parse_args(["-i", "x", "-t", "f", "-"]).jobs == 1
+    def test_default_is_auto(self) -> None:
+        assert build_parser().parse_args(["-i", "x", "-t", "f", "-"]).jobs == 0
+
+    def test_help_documents_auto_default(self) -> None:
+        assert "Default: auto" in " ".join(build_parser().format_help().split())
 
     @pytest.mark.parametrize("text,expected", [("auto", 0), ("0", 0), ("1", 1), ("4", 4), ("12", 12)])
     def test_accepted_values(self, text: str, expected: int) -> None:
@@ -194,6 +197,18 @@ class TestParseCacheParallelPrefetch:
 
 
 class TestJobsEndToEnd:
+    def test_default_single_source_spawns_no_pool(self, simple_input_yml: Path) -> None:
+        """Default is auto, but one missing parse key never pays for a pool."""
+        with patch("tsujikiri.parse_cache.ProcessPoolExecutor") as pool:
+            out, _ = _run("-i", str(simple_input_yml), "-t", "luabridge3", "-")
+        pool.assert_not_called()
+        assert out == _run("-i", str(simple_input_yml), "-t", "luabridge3", "-", "-j", "1")[0]
+
+    def test_default_sizes_the_cache_to_the_cpu_count(self, simple_input_yml: Path) -> None:
+        with patch("os.cpu_count", return_value=3), patch("tsujikiri.cli.ParseCache", wraps=ParseCache) as cache:
+            _run("-i", str(simple_input_yml), "-t", "luabridge3", "-")
+        assert cache.call_args.kwargs["jobs"] == 3
+
     def test_two_sources_parallel_matches_serial(self, two_source_yml: Path) -> None:
         serial, _ = _run("-i", str(two_source_yml), "-t", "luabridge3", "-", "-j", "1")
         parallel, _ = _run("-i", str(two_source_yml), "-t", "luabridge3", "-", "-j", "2")
