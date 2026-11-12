@@ -161,9 +161,16 @@ public:
 
 ### `[[tsujikiri::doc("text")]]`
 
-Attaches a documentation string to a node. The text is available as `node.doc` in Jinja2 templates. Both `pybind11` and `pyi` built-in formats use this to emit Python docstrings.
+Attaches a documentation string to a node. The text is available as `node.doc` in Jinja2 templates. All four built-in formats consume it (`pybind11`/`pyi` as docstrings, `luals` as `---` annotations, `luabridge3` as `//` comments).
 
 Applies to: **Classes**, **Methods**, **Constructors**, **Fields**, **Enums**, **Enum values**, **Free functions**.
+
+> **Tip:** You usually don't need this attribute. tsujikiri automatically extracts
+> Doxygen/Javadoc doc comments (`///`, `//!`, `/** … */`) from your headers into
+> `doc`, `return_doc` and per-parameter `doc`. See
+> [Documentation extraction](#documentation-extraction) below. Use the attributes
+> only to override or supply documentation that isn't in a comment. Precedence is
+> **transform › attribute › extracted comment**.
 
 ```cpp
 /// [[tsujikiri::doc("A 2D geometric shape.")]]
@@ -184,6 +191,71 @@ py::class_<mylib::Shape>(m, "Shape", "A 2D geometric shape.")
     .def("area", &mylib::Shape::area, "Compute the area of the shape.")
     .def_readonly("scale_", &mylib::Shape::scale_, "The shape's scale factor.");
 ```
+
+### `[[tsujikiri::returns("text")]]`
+
+Documents the return value of a method or free function. The text is available as
+`node.return_doc` in templates and rendered into `luals` `---@return` comments and
+the `Args:`/`Returns:` section of `pyi`/`pybind11` docstrings.
+
+Applies to: **Methods**, **Free functions**.
+
+```cpp
+class Container {
+public:
+    [[tsujikiri::returns("The volume in decibels.")]]
+    float getVolume() const;
+};
+```
+
+### `[[tsujikiri::param("name", "text")]]`
+
+Documents a single parameter (matched by name) of a method or free function. The
+text is available as `parameter.doc` in templates.
+
+Applies to: **Methods**, **Free functions**.
+
+```cpp
+class Container {
+public:
+    [[tsujikiri::param("volume", "Volume in decibel space, -100..20.")]]
+    [[tsujikiri::param("fadeTime", "Fade time in seconds.")]]
+    void setVolume(float volume, float fadeTime);
+};
+```
+
+## Documentation extraction
+
+By default tsujikiri reads the Doxygen/Javadoc doc comment attached to every
+declaration and populates:
+
+- `node.doc` — the leading description (or the `@brief` body);
+- `node.return_doc` — the `@return` / `@returns` / `@result` text (methods and functions);
+- `parameter.doc` — the `@param <name>` text, matched to parameters by name.
+
+Both `@command` and `\command` prefixes are recognised, along with `///`, `//!`,
+`/** … */` and `/*! … */` comment styles and a leading `[in]`/`[out]` direction
+specifier on `@param`.
+
+```cpp
+/// Sets the volume.
+///
+/// @param volume Volume in decibel space, -100..20.
+/// @param fadeTime Fade time in seconds.
+void setVolume(float volume, float fadeTime);
+```
+
+Extraction is controlled by the `generation.extract_comments` flag in the input
+file (default `true`):
+
+```yaml
+generation:
+  extract_comments: false   # ignore C++ comments; only attributes/transforms document
+```
+
+Explicit `[[tsujikiri::doc]]` / `[[tsujikiri::returns]]` / `[[tsujikiri::param]]`
+attributes and transform `doc` / `return_doc` options always override extracted
+comments, so disabling extraction is only needed to suppress comments entirely.
 
 ### `[[tsujikiri::rename_argument("old", "new")]]`
 

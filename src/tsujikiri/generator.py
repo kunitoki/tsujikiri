@@ -29,7 +29,17 @@ from jinja2.bccache import Bucket
 from tsujikiri.configurations import GenerationConfig, OutputConfig, load_output_config
 from tsujikiri.typesystem import TypesystemConfig
 from tsujikiri.formats import _FORMATS_DIR
-from tsujikiri.generator_filters import camel_to_snake, snake_to_camel, code_at, param_name, param_pairs
+from tsujikiri.generator_filters import (
+    camel_to_snake,
+    snake_to_camel,
+    code_at,
+    cpp_docstring,
+    docstring_body,
+    entity_has_doc,
+    lua_doc_comment,
+    param_name,
+    param_pairs,
+)
 from tsujikiri.tir import (
     trailing_defaulted_count,
     TIRClass,
@@ -272,6 +282,10 @@ class Generator:
                 "camel_to_snake": camel_to_snake,
                 "snake_to_camel": snake_to_camel,
                 "code_at": code_at,
+                "cpp_docstring": cpp_docstring,
+                "docstring_body": docstring_body,
+                "entity_has_doc": entity_has_doc,
+                "lua_doc_comment": lua_doc_comment,
             }
         )
 
@@ -503,6 +517,7 @@ class Generator:
                                 "ownership": p.ownership,
                                 "index": p.index,
                                 "default": p.default_override or p.default_value,
+                                "doc": p.doc,
                             }
                             for p in fn.parameters
                             if p.emit
@@ -524,6 +539,7 @@ class Generator:
                         "is_deprecated": fn.is_deprecated,
                         "deprecation_message": fn.deprecation_message or "",
                         "doc": fn.doc,
+                        "return_doc": fn.return_doc,
                         "attributes": list(fn.attributes),
                         "is_default_expansion": False,
                         "omitted_params": [],
@@ -651,6 +667,7 @@ class Generator:
                             "ownership": p.ownership,
                             "index": p.index,
                             "default": p.default_override or p.default_value,
+                            "doc": p.doc,
                         }
                         for p in ctor.parameters
                         if p.emit
@@ -719,6 +736,7 @@ class Generator:
                                 "ownership": p.ownership,
                                 "index": p.index,
                                 "default": p.default_override or p.default_value,
+                                "doc": p.doc,
                             }
                             for p in m.parameters
                             if p.emit
@@ -751,6 +769,7 @@ class Generator:
                         "is_deprecated": m.is_deprecated,
                         "deprecation_message": m.deprecation_message or "",
                         "doc": m.doc,
+                        "return_doc": m.return_doc,
                         "attributes": list(m.attributes),
                         "code_injections": [{"position": c.position, "code": c.code} for c in m.code_injections],
                         "is_default_expansion": False,
@@ -797,6 +816,7 @@ class Generator:
                                 "raw_type": p.type_override or p.type_spelling,
                                 "index": p.index,
                                 "default": p.default_override or p.default_value,
+                                "doc": p.doc,
                             }
                             for p in fn.parameters
                             if p.emit
@@ -807,6 +827,7 @@ class Generator:
                         "overload_index": i,
                         "is_noexcept": fn.is_noexcept,
                         "doc": fn.doc,
+                        "return_doc": fn.return_doc,
                     }
                 )
             free_operator_groups.append(

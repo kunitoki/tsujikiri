@@ -17,6 +17,8 @@ from tsujikiri.cli import _is_directory_target, build_parser, main
 from tsujikiri.parser import parse_translation_unit
 from tsujikiri.configurations import SourceConfig
 
+HERE = Path(__file__).parent
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -232,6 +234,29 @@ class TestGeneration:
         stdout, _ = _run("--input", str(simple_input_yml), "--target", "luabridge3", "-")
         assert "getGlobalNamespace" in stdout
         assert "Widget" in stdout
+
+    def test_comments_extracted_by_default(self, tmp_path):
+        data = {
+            "source": {"path": str(HERE / "documented.hpp"), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["documented"], "constructors": {"include": True}},
+        }
+        cfg = tmp_path / "documented.input.yml"
+        cfg.write_text(yaml.dump(data), encoding="utf-8")
+        stdout, _ = _run("--input", str(cfg), "--target", "luals", "-")
+        assert "A documented widget class." in stdout
+        assert "The widget id." in stdout
+
+    def test_comments_disabled(self, tmp_path):
+        data = {
+            "source": {"path": str(HERE / "documented.hpp"), "parse_args": ["-std=c++17"]},
+            "filters": {"namespaces": ["documented"], "constructors": {"include": True}},
+            "generation": {"extract_comments": False},
+        }
+        cfg = tmp_path / "documented_off.input.yml"
+        cfg.write_text(yaml.dump(data), encoding="utf-8")
+        stdout, _ = _run("--input", str(cfg), "--target", "luals", "-")
+        assert "A documented widget class." not in stdout
+        assert "The widget id." not in stdout
 
     def test_output_to_file(self, simple_input_yml, tmp_path):
         out_file = tmp_path / "bindings.cpp"

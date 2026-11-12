@@ -413,6 +413,66 @@ class TestBuiltinDoc:
 
 
 # ---------------------------------------------------------------------------
+# Built-in: tsujikiri::returns / tsujikiri::param
+# ---------------------------------------------------------------------------
+
+
+class TestBuiltinReturnsAndParam:
+    def test_sets_return_doc_on_method(self):
+        method = _make_method(attrs=['tsujikiri::returns("the result")'])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.return_doc == "the result"
+
+    def test_returns_no_args_is_noop(self):
+        method = _make_method(attrs=["tsujikiri::returns"])
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert method.return_doc is None
+
+    def test_returns_on_node_without_return_doc_is_noop(self):
+        class _NoReturnNode:
+            pass
+
+        node = _NoReturnNode()
+        _apply_complex_builtin("tsujikiri::returns", ["x"], node)
+        assert not hasattr(node, "return_doc")
+
+    def test_sets_param_doc_by_name(self):
+        param = TIRParameter(name="volume", type_spelling="float")
+        method = TIRMethod(
+            name="setVolume",
+            spelling="setVolume",
+            qualified_name="ns::MyClass::setVolume",
+            return_type="void",
+            parameters=[param],
+            attributes=['tsujikiri::param("volume", "in decibels")'],
+        )
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert param.doc == "in decibels"
+
+    def test_param_unmatched_name_is_noop(self):
+        param = TIRParameter(name="volume", type_spelling="float")
+        method = TIRMethod(
+            name="setVolume",
+            spelling="setVolume",
+            qualified_name="ns::MyClass::setVolume",
+            return_type="void",
+            parameters=[param],
+            attributes=['tsujikiri::param("gain", "unused")'],
+        )
+        cls = _make_class(methods=[method])
+        _processor().apply(_make_module(cls))
+        assert param.doc is None
+
+    def test_param_wrong_arity_is_noop(self):
+        param = TIRParameter(name="volume", type_spelling="float")
+        _apply_complex_builtin("tsujikiri::param", ["volume"], param)
+        assert param.doc is None
+
+
+# ---------------------------------------------------------------------------
 # Built-in: tsujikiri::rename_argument
 # ---------------------------------------------------------------------------
 

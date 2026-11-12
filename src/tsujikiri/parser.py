@@ -447,6 +447,144 @@ def _get_deprecation_message(cursor) -> Optional[str]:
     return None
 
 
+_DOC_COMMAND_RE = re.compile(r"^[@\\](\w+)\b[ \t]*(.*)$")
+
+
+def _strip_comment_markers(raw: str) -> List[str]:
+    """Strip C/C++ comment delimiters from a raw comment, returning content lines.
+
+    Handles ``///``, ``//!``, ``//``, ``/** ... */``, ``/*! ... */`` and the
+    per-line leading ``*`` convention. Returned lines keep their interior text
+    but have surrounding markers and a single leading space removed.
+    """
+    text = raw.strip()
+    if text.startswith("/*"):
+        # Block comment: drop the opening /** or /*! or /* and trailing */.
+        text = text[2:]
+        if text.startswith(("*", "!")):
+            text = text[1:]
+        if text.endswith("*/"):
+            text = text[:-2]
+        lines = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("*"):
+                stripped = stripped[1:]
+                if stripped.startswith(" "):
+                    stripped = stripped[1:]
+            lines.append(stripped.rstrip())
+        return lines
+    # Line comments: strip leading // / //! / /// markers per line.
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            stripped = stripped[2:]
+            if stripped.startswith(("/", "!")):
+                stripped = stripped[1:]
+            if stripped.startswith(" "):
+                stripped = stripped[1:]
+        lines.append(stripped.rstrip())
+    return lines
+
+
+def _parse_doc_comment(raw: Optional[str]) -> Tuple[Optional[str], Dict[str, str], Optional[str]]:
+    """Parse a raw C++ doc comment into ``(description, {param: desc}, return_desc)``.
+
+    Recognises Doxygen/Javadoc ``@brief``/``@param``/``@return`` style commands
+    (both ``@`` and ``\\`` prefixes). The description is the leading free text
+    (or the ``@brief`` body when no leading text precedes any command).
+    Continuation lines are appended to the command currently being read.
+    """
+    if not raw:
+        return None, {}, None
+    lines = _strip_comment_markers(raw)
+
+    description_parts: List[str] = []
+    brief_parts: List[str] = []
+    params: Dict[str, List[str]] = {}
+    return_parts: List[str] = []
+    # current target: ("desc"|"brief"|"return"|"param"<name>|None)
+    current: Optional[Tuple[str, Optional[str]]] = ("desc", None)
+
+    def _append(fragment: str) -> None:
+        if current is None:
+            return
+        kind, key = current
+        if kind == "desc":
+            description_parts.append(fragment)
+        elif kind == "brief":
+            brief_parts.append(fragment)
+        elif kind == "return":
+            return_parts.append(fragment)
+        else:  # kind == "param"
+            params.setdefault(key or "", []).append(fragment)
+
+    for line in lines:
+        command = _DOC_COMMAND_RE.match(line.strip())
+        if command:
+            name = command.group(1).lower()
+            rest = command.group(2).strip()
+            if name == "brief":
+                current = ("brief", None)
+                if rest:
+                    brief_parts.append(rest)
+            elif name in ("return", "returns", "result"):
+                current = ("return", None)
+                if rest:
+                    return_parts.append(rest)
+            elif name in ("param", "parameter"):
+                # Drop an optional Doxygen direction specifier (``[in]``,
+                # ``[out]``, ``[in,out]``) that may precede the parameter name.
+                rest = re.sub(r"^\[[^\]]*\]\s*", "", rest)
+                parts = rest.split(None, 1)
+                if parts:
+                    pname = parts[0]
+                    pdesc = parts[1].strip() if len(parts) > 1 else ""
+                    current = ("param", pname)
+                    if pdesc:
+                        params.setdefault(pname, []).append(pdesc)
+                else:
+                    current = None
+            else:
+                # Unknown command (e.g. @note, @see): stop accumulating text.
+                current = None
+            continue
+        if not line.strip():
+            # Blank line ends the current block but preserves gathered text.
+            if current and current[0] == "desc":
+                continue
+            current = current if current and current[0] == "desc" else None
+            continue
+        _append(line.strip())
+
+    description = " ".join(p for p in description_parts if p).strip()
+    if not description:
+        description = " ".join(p for p in brief_parts if p).strip()
+    param_docs = {name: " ".join(parts).strip() for name, parts in params.items() if " ".join(parts).strip()}
+    return_desc = " ".join(return_parts).strip() or None
+    return (description or None), param_docs, return_desc
+
+
+def _extract_docs(cursor) -> Tuple[Optional[str], Dict[str, str], Optional[str]]:
+    """Return ``(doc, {param: desc}, return_doc)`` extracted from *cursor*'s comment."""
+    raw = cursor.raw_comment
+    if raw:
+        return _parse_doc_comment(raw)
+    brief = cursor.brief_comment
+    return (brief or None), {}, None
+
+
+def _apply_param_docs(params: List[IRParameter], param_docs: Dict[str, str]) -> None:
+    """Attach parsed ``@param`` descriptions to matching parameters by name."""
+    if not param_docs:
+        return
+    for param in params:
+        desc = param_docs.get(param.name)
+        if desc:
+            param.doc = desc
+
+
 def _is_noexcept(cursor) -> bool:
     kind = cursor.exception_specification_kind
     return kind in (
@@ -487,12 +625,14 @@ def _is_anonymous_member_record(child, field_decl_type_hashes: set) -> bool:
 
 
 def _field_from_cursor(cursor, is_static: bool = False) -> IRField:
+    field_doc, _fp, _fr = _extract_docs(cursor)
     return IRField(
         name=cursor.spelling,
         type_spelling=cursor.type.spelling,
         is_const="const" in cursor.type.spelling,
         is_static=is_static,
         attributes=_get_attributes(cursor),
+        doc=field_doc,
     )
 
 
@@ -575,14 +715,17 @@ def _parse_enum(cursor, namespace: str) -> IREnum:
         if kind == CursorKind.ANNOTATE_ATTR:
             annotate_attrs.append(child)
         elif kind == CursorKind.ENUM_CONSTANT_DECL:
+            value_doc, _vp, _vr = _extract_docs(child)
             values.append(
                 IREnumValue(
                     name=child.spelling,
                     value=child.enum_value,
                     attributes=_get_attributes(child),
+                    doc=value_doc,
                 )
             )
     deprecated = _is_deprecated(cursor)
+    enum_doc, _ep, _er = _extract_docs(cursor)
     return IREnum(
         name=name,
         qualified_name=qualified,
@@ -592,6 +735,7 @@ def _parse_enum(cursor, namespace: str) -> IREnum:
         is_deprecated=deprecated,
         deprecation_message=_get_deprecation_message(cursor) if deprecated else None,
         attributes=_get_attributes(cursor, annotate_attrs=annotate_attrs),
+        doc=enum_doc,
     )
 
 
@@ -621,6 +765,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
         attributes=_get_attributes(
             cursor, annotate_attrs=[c for c, kind in zip(children, kinds) if kind == CursorKind.ANNOTATE_ATTR]
         ),
+        doc=_extract_docs(cursor)[0],
     )
 
     # --- Bases ---
@@ -650,6 +795,8 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
             op_type = _canonicalize_operator(m_spelling, len(params)) if is_op else None
             deprecated = _is_deprecated(m)
             is_varargs = m.type.is_function_variadic()
+            m_doc, m_param_docs, m_return_doc = _extract_docs(m)
+            _apply_param_docs(params, m_param_docs)
             method = IRMethod(
                 name=m_spelling,
                 spelling=m_spelling,
@@ -669,6 +816,8 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 is_deprecated=deprecated,
                 deprecation_message=_get_deprecation_message(m) if deprecated else None,
                 attributes=_get_attributes(m, annotate_attrs=m_annotate_attrs),
+                doc=m_doc,
+                return_doc=m_return_doc,
             )
             # Collect public and protected methods; protected methods are suppressed by default
             if m_access == AccessSpecifier.PUBLIC:
@@ -683,6 +832,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
             deprecated = _is_deprecated(child)
             conv_spelling = child.spelling
             conv_target = child.result_type.spelling
+            conv_doc, _conv_param_docs, conv_return_doc = _extract_docs(child)
             method = IRMethod(
                 name=conv_spelling,
                 spelling=conv_spelling,
@@ -703,6 +853,8 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 is_deprecated=deprecated,
                 deprecation_message=_get_deprecation_message(child) if deprecated else None,
                 attributes=_get_attributes(child),
+                doc=conv_doc,
+                return_doc=conv_return_doc,
             )
             ir_class.methods.append(method)
 
@@ -741,6 +893,8 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     is_ctor_overload = len(public_ctors) > 1
     for ctor, ctor_parameters, ctor_ch, ctor_toks in public_ctors:
         deprecated = _is_deprecated(ctor)
+        ctor_doc, ctor_param_docs, _ctor_return_doc = _extract_docs(ctor)
+        _apply_param_docs(ctor_parameters, ctor_param_docs)
         ir_class.constructors.append(
             IRConstructor(
                 parameters=ctor_parameters,
@@ -751,6 +905,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 is_deprecated=deprecated,
                 deprecation_message=_get_deprecation_message(ctor) if deprecated else None,
                 attributes=_get_attributes(ctor, annotate_attrs=ctor_ch[1]),
+                doc=ctor_doc,
             )
         )
 
@@ -1012,6 +1167,8 @@ def parse_translation_unit_ir(
                 _canonicalize_operator(fn_cursor.spelling, len(fn_params), is_member=False) if fn_is_op else None
             )
             fn_deprecated = _is_deprecated(fn_cursor)
+            fn_doc, fn_param_docs, fn_return_doc = _extract_docs(fn_cursor)
+            _apply_param_docs(fn_params, fn_param_docs)
             module.functions.append(
                 IRFunction(
                     name=fn_cursor.spelling,
@@ -1027,6 +1184,8 @@ def parse_translation_unit_ir(
                     is_deprecated=fn_deprecated,
                     deprecation_message=_get_deprecation_message(fn_cursor) if fn_deprecated else None,
                     attributes=_get_attributes(fn_cursor, annotate_attrs=fn_annotate_attrs),
+                    doc=fn_doc,
+                    return_doc=fn_return_doc,
                 )
             )
             if scope_path and scope_path not in module.namespaces:

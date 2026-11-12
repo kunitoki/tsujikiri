@@ -358,6 +358,7 @@ generation:
   postfix: |
     // End of generated bindings
   embed_version: false
+  extract_comments: true
 ```
 
 | Field | Type | Default | Notes |
@@ -366,6 +367,7 @@ generation:
 | `prefix` | string | `""` | Written verbatim before the template output |
 | `postfix` | string | `""` | Written verbatim after the template output |
 | `embed_version` | bool | `false` | When `true`, embeds the SHA-256 API version hash; requires template support (built-in formats support this) |
+| `extract_comments` | bool | `true` | When `true`, Doxygen/Javadoc doc comments are extracted from the source into `doc` / `return_doc` / per-parameter `doc`. Set `false` to ignore C++ comments. See [Documentation extraction](attributes.md#documentation-extraction) |
 
 > **Note on includes format:** Write the string exactly as it should appear inside `#include`. Use `"<vector>"` for system headers and `'"myfile.hpp"'` (YAML string containing C++ quotes) for local headers.
 

@@ -138,6 +138,7 @@ class GenerationConfig:
     postfix: str = ""
     embed_version: bool = False
     trampoline_prefix: str = "Py"  # prefix for generated trampoline class names
+    extract_comments: bool = True  # auto-extract C++ doc comments into node ``doc`` fields
 
 
 @dataclass
@@ -449,6 +450,7 @@ def _parse_generation_config(gen_raw: Dict[str, Any]) -> GenerationConfig:
         postfix=gen_raw.get("postfix", "") or "",
         embed_version=gen_raw.get("embed_version", False),
         trampoline_prefix=gen_raw.get("trampoline_prefix", "Py"),
+        extract_comments=gen_raw.get("extract_comments", True),
     )
 
 
