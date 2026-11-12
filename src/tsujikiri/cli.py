@@ -28,7 +28,7 @@ from tsujikiri.filters import FilterEngine
 from tsujikiri.pretty_printers import pretty
 from tsujikiri.formats import apply_format_inheritance, resolve_format_path, list_builtin_formats
 from tsujikiri.generator import Generator, TemplateCache
-from tsujikiri.tir import TIRFunction, TIRModule, TIRParameter, merge_tir_modules, upgrade_module
+from tsujikiri.tir import TIRFunction, TIRModule, TIRParameter, clear_extracted_docs, merge_tir_modules, upgrade_module
 from tsujikiri.manifest import compare_manifests, compute_manifest, load_manifest, save_manifest, suggest_version_bump
 from tsujikiri.parse_cache import ParseCache, ParseKey
 from tsujikiri.transforms import _REGISTRY, build_pipeline_from_config
@@ -384,6 +384,9 @@ def _process_sources(
         # Upgrade per consumer: the cache holds the shared pre-upgrade IR, and
         # each target needs its own mutable TIR tree to filter and transform.
         module = upgrade_module(cache.get(key, clang_errors))
+
+        if not input_config.generation.extract_comments:
+            clear_extracted_docs(module)
 
         FilterEngine(effective_filters).apply(module)
 

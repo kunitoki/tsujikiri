@@ -200,6 +200,37 @@ class RenameClassStage(TransformStage):
             cls.rename = self.to_name
 
 
+class ModifyClassStage(TransformStage):
+    """Comprehensively modify a class.
+
+    YAML::
+      stage: modify_class
+      class: MyClass          # plain name, '*', or regex
+      class_is_regex: false   # optional, default false
+      rename: Helper          # optional: new binding name
+      remove: false           # optional: set emit=False
+      doc: "A helper class."  # optional: documentation string
+    """
+
+    name = "modify_class"
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.class_pattern: str = kwargs.get("class", "*")
+        self.class_is_regex: bool = kwargs.get("class_is_regex", False)
+        self.rename: Optional[str] = kwargs.get("rename")
+        self.remove: bool = kwargs.get("remove", False)
+        self.doc: Optional[str] = kwargs.get("doc")
+
+    def apply(self, module: TIRModule) -> None:
+        for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
+            if self.rename is not None:
+                cls.rename = self.rename
+            if self.remove:
+                cls.emit = False
+            if self.doc is not None:
+                cls.doc = self.doc
+
+
 class SuppressMethodStage(TransformStage):
     """Set emit=False on matching methods.
 
@@ -271,10 +302,15 @@ class InjectMethodStage(TransformStage):
         self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
         self.is_static: bool = kwargs.get("is_static", False)
         self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
+        self.doc: Optional[str] = kwargs.get("doc")
+        self.return_doc: Optional[str] = kwargs.get("return_doc")
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern):
-            params = [TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", "")) for p in self.parameters]
+            params = [
+                TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""), doc=p.get("doc"))
+                for p in self.parameters
+            ]
             method = TIRMethod(
                 name=self.method_name,
                 spelling=self.method_name,
@@ -283,6 +319,8 @@ class InjectMethodStage(TransformStage):
                 parameters=params,  # type: ignore[arg-type]
                 is_static=self.is_static,
                 wrapper_code=self.wrapper_code,
+                doc=self.doc,
+                return_doc=self.return_doc,
             )
             cls.methods.append(method)  # type: ignore[arg-type]
 
@@ -355,6 +393,8 @@ class ModifyMethodStage(TransformStage):
         self.return_keep_alive: Optional[bool] = kwargs.get("return_keep_alive")
         self.allow_thread: Optional[bool] = kwargs.get("allow_thread")
         self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
+        self.doc: Optional[str] = kwargs.get("doc")
+        self.return_doc: Optional[str] = kwargs.get("return_doc")
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
@@ -374,6 +414,10 @@ class ModifyMethodStage(TransformStage):
                         method.allow_thread = self.allow_thread
                     if self.wrapper_code is not None:
                         method.wrapper_code = self.wrapper_code
+                    if self.doc is not None:
+                        method.doc = self.doc
+                    if self.return_doc is not None:
+                        method.return_doc = self.return_doc
 
 
 class ModifyArgumentStage(TransformStage):
@@ -406,6 +450,7 @@ class ModifyArgumentStage(TransformStage):
         self.type_override: Optional[str] = kwargs.get("type")
         self.default_override: Optional[str] = kwargs.get("default")
         self.ownership: Optional[str] = kwargs.get("ownership")
+        self.doc: Optional[str] = kwargs.get("doc")
 
     def _find_param(self, method: TIRMethod) -> Optional[TIRParameter]:
         if self.arg_index is not None:
@@ -435,6 +480,8 @@ class ModifyArgumentStage(TransformStage):
                         param.default_override = self.default_override
                     if self.ownership is not None:
                         param.ownership = self.ownership
+                    if self.doc is not None:
+                        param.doc = self.doc
 
 
 class ModifyFieldStage(TransformStage):
@@ -459,6 +506,7 @@ class ModifyFieldStage(TransformStage):
         self.rename: Optional[str] = kwargs.get("rename")
         self.remove: bool = kwargs.get("remove", False)
         self.read_only: Optional[bool] = kwargs.get("read_only")
+        self.doc: Optional[str] = kwargs.get("doc")
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
@@ -470,6 +518,8 @@ class ModifyFieldStage(TransformStage):
                         f.emit = False
                     if self.read_only is not None:
                         f.read_only = self.read_only
+                    if self.doc is not None:
+                        f.doc = self.doc
 
 
 def _ctor_signature(ctor: TIRConstructor) -> str:
@@ -494,6 +544,7 @@ class ModifyConstructorStage(TransformStage):
         self.class_is_regex: bool = kwargs.get("class_is_regex", False)
         self.signature: str = kwargs.get("signature", "")
         self.remove: bool = kwargs.get("remove", False)
+        self.doc: Optional[str] = kwargs.get("doc")
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
@@ -501,6 +552,8 @@ class ModifyConstructorStage(TransformStage):
                 if _ctor_signature(ctor) == self.signature:
                     if self.remove:
                         ctor.emit = False
+                    if self.doc is not None:
+                        ctor.doc = self.doc
 
 
 class RemoveOverloadStage(TransformStage):
@@ -833,6 +886,7 @@ class ModifyEnumStage(TransformStage):
         self.rename: Optional[str] = kwargs.get("rename")
         self.remove: bool = kwargs.get("remove", False)
         self.arithmetic: Optional[bool] = kwargs.get("arithmetic")
+        self.doc: Optional[str] = kwargs.get("doc")
 
     def apply(self, module: TIRModule) -> None:
         for enum in _find_enums(module, self.enum_pattern, self.enum_is_regex):
@@ -842,6 +896,8 @@ class ModifyEnumStage(TransformStage):
                 enum.emit = False
             if self.arithmetic is not None:
                 enum.is_arithmetic = self.arithmetic
+            if self.doc is not None:
+                enum.doc = self.doc
 
 
 # ---------------------------------------------------------------------------
@@ -920,6 +976,8 @@ class ModifyFunctionStage(TransformStage):
         self.return_keep_alive: Optional[bool] = kwargs.get("return_keep_alive")
         self.allow_thread: Optional[bool] = kwargs.get("allow_thread")
         self.wrapper_code: Optional[str] = kwargs.get("wrapper_code")
+        self.doc: Optional[str] = kwargs.get("doc")
+        self.return_doc: Optional[str] = kwargs.get("return_doc")
 
     def apply(self, module: TIRModule) -> None:
         for fn in module.functions:
@@ -938,6 +996,10 @@ class ModifyFunctionStage(TransformStage):
                     fn.allow_thread = self.allow_thread
                 if self.wrapper_code is not None:
                     fn.wrapper_code = self.wrapper_code
+                if self.doc is not None:
+                    fn.doc = self.doc
+                if self.return_doc is not None:
+                    fn.return_doc = self.return_doc
 
 
 # ---------------------------------------------------------------------------
@@ -962,15 +1024,19 @@ class InjectConstructorStage(TransformStage):
         self.class_pattern: str = kwargs["class"]
         self.class_is_regex: bool = kwargs.get("class_is_regex", False)
         self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
+        self.doc: Optional[str] = kwargs.get("doc")
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
-            params = [TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", "")) for p in self.parameters]
+            params = [
+                TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""), doc=p.get("doc"))
+                for p in self.parameters
+            ]
             is_overload = len(cls.constructors) > 0
             if is_overload:
                 for existing in cls.constructors:
                     existing.is_overload = True
-            ctor = TIRConstructor(parameters=params, is_overload=is_overload)  # type: ignore[arg-type]
+            ctor = TIRConstructor(parameters=params, is_overload=is_overload, doc=self.doc)  # type: ignore[arg-type]
             cls.constructors.append(ctor)  # type: ignore[arg-type]
 
 
@@ -994,9 +1060,14 @@ class InjectFunctionStage(TransformStage):
         self.namespace: str = kwargs.get("namespace", "")
         self.return_type: str = kwargs.get("return_type", "void")
         self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
+        self.doc: Optional[str] = kwargs.get("doc")
+        self.return_doc: Optional[str] = kwargs.get("return_doc")
 
     def apply(self, module: TIRModule) -> None:
-        params = [TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", "")) for p in self.parameters]
+        params = [
+            TIRParameter(name=p.get("name", ""), type_spelling=p.get("type", ""), doc=p.get("doc"))
+            for p in self.parameters
+        ]
         qualified = f"{self.namespace}::{self.fn_name}" if self.namespace else self.fn_name
         fn = TIRFunction(
             name=self.fn_name,
@@ -1004,6 +1075,8 @@ class InjectFunctionStage(TransformStage):
             namespace=self.namespace,
             return_type=self.return_type,
             parameters=params,  # type: ignore[arg-type]
+            doc=self.doc,
+            return_doc=self.return_doc,
         )
         module.functions.append(fn)  # type: ignore[arg-type]
 
@@ -1320,6 +1393,7 @@ class RegisterExceptionStage(TransformStage):
 for _stage_cls in [
     RenameMethodStage,
     RenameClassStage,
+    ModifyClassStage,
     SuppressMethodStage,
     SuppressClassStage,
     InjectMethodStage,

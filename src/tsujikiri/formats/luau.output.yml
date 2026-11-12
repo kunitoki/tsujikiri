@@ -1,0 +1,53 @@
+format_name: luau
+format_version: "1.0"
+description: "Luau language server type definitions (.d.luau) — use alongside Luau/LuaBridge3 bindings"
+language: luau
+extension: .d.luau
+
+unsupported_types:
+  - CFStringRef
+  - OSType
+
+type_mappings:
+  "int": "number"
+  "unsigned int": "number"
+  "long": "number"
+  "unsigned long": "number"
+  "short": "number"
+  "unsigned short": "number"
+  "int8_t": "number"
+  "int16_t": "number"
+  "int32_t": "number"
+  "int64_t": "number"
+  "uint8_t": "number"
+  "uint16_t": "number"
+  "uint32_t": "number"
+  "uint64_t": "number"
+  "size_t": "number"
+  "float": "number"
+  "double": "number"
+  "bool": "boolean"
+  "std::string": "string"
+  "char *": "string"
+  "std::string_view": "string"
+  "void": "nil"
+
+operator_mappings:
+  "operator+": "__add"
+  "operator-": "__sub"
+  "operator-unary": "__unm"
+  "operator*": "__mul"
+  "operator/": "__div"
+  "operator%": "__mod"
+  "operator==": "__eq"
+  "operator<": "__lt"
+  "operator<=": "__le"
+  "operator<<": "__tostring"
+  "operator()": "__call"
+  "operator[]": "__index"
+  "operator^": "__pow"
+
+# Luau has no defaulted arguments: emit one callable per reachable arity.
+expand_default_arguments: true
+
+template_file: "luau.output.tpl"

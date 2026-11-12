@@ -1,12 +1,12 @@
-![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=31)
+![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=32)
 
-[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=31)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
-[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=31)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
-[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=31)](https://codecov.io/gh/kunitoki/tsujikiri)
-[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=31)](https://tsujikiri.readthedocs.io/en/latest/)
-[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=31)](https://pypi.org/project/tsujikiri/)
-[![Downloads](https://img.shields.io/pypi/dw/tsujikiri?x=31)](https://pypistats.org/packages/tsujikiri)
-[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=31)](https://pypi.org/project/tsujikiri/)
+[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=32)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
+[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=32)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
+[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=32)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=32)](https://tsujikiri.readthedocs.io/en/latest/)
+[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=32)](https://pypi.org/project/tsujikiri/)
+[![Downloads](https://img.shields.io/pypi/dw/tsujikiri?x=32)](https://pypistats.org/packages/tsujikiri)
+[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=32)](https://pypi.org/project/tsujikiri/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 # tsujikiri — 辻斬り
@@ -15,7 +15,7 @@
 
 tsujikiri parses C++ headers via **libclang**, **filters** by namespace and pattern, **transforms** symbols — rename, remap types, inject code — then **renders** ready-to-compile bindings through a Jinja2 template. Precise control, zero boilerplate.
 
-Built-in support for [LuaBridge3](https://github.com/kunitoki/LuaBridge3) (Lua bindings), [LuaLS](https://luals.github.io/) (Lua Language Server annotations), [pybind11](https://pybind11.readthedocs.io/) (Python bindings), and Python type stubs (`.pyi`). Custom formats are first-class.
+Built-in support for [LuaBridge3](https://github.com/kunitoki/LuaBridge3) (Lua bindings), [LuaLS](https://luals.github.io/) (Lua Language Server annotations), [Luau](https://luau.org/) (`.d.luau` type definitions), [pybind11](https://pybind11.readthedocs.io/) (Python bindings), and Python type stubs (`.pyi`). Custom formats are first-class.
 
 ---
 
@@ -168,6 +168,16 @@ tsujikiri -i project.input.yml --target luals types/myproject.lua
 
 Emits `---@class`, `---@field`, `---@param`, `---@return` annotations with C++→Lua type mappings.
 
+### `luau`
+
+Generates [Luau](https://luau.org/) type definition files (`.d.luau`) in the [luau-lsp](https://github.com/JohnnyMorganz/luau-lsp) definition format.
+
+```bash
+tsujikiri -i project.input.yml --target luau types/myproject.d.luau
+```
+
+Emits `declare extern type ... with ... end` classes, `declare` constructor/static tables, metamethod operators, enums, and free functions with C++→Luau type mappings.
+
 ### `pybind11`
 
 Generates C++ registration code for [pybind11](https://pybind11.readthedocs.io/).
@@ -286,7 +296,7 @@ The test suite covers parsing, filtering, transforms, generation, CLI integratio
 
 ## Coverage
 
-[![Coverage tree](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?x=31&token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Coverage tree](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?x=32&token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
 
 ---
 

@@ -56,6 +56,9 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
       )
 {%- else %}
 {%- set fn = group.functions[0] %}
+{%- if fn | entity_has_doc %}
+{{ fn | lua_doc_comment("      ") }}
+{%- endif %}
 {%- if fn.wrapper_code %}
       .addFunction("{{ group.name | camel_to_snake }}", {{ fn.wrapper_code }})
 {%- else %}
@@ -146,6 +149,9 @@ void {% block prologue_name %}register_{% endblock %}{{ module_name }}(lua_State
 {%- elif method.wrapper_code %}
         .addFunction("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }})
 {%- else %}
+{%- if method | entity_has_doc %}
+{{ method | lua_doc_comment("        ") }}
+{%- endif %}
         .addFunction("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }})
 {%- endif %}
 {%- endif %}

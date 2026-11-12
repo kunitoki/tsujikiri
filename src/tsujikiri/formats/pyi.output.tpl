@@ -37,8 +37,8 @@ class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribut
 {%- for ctor in cls.constructor_group.constructors %}
 {%- block class_constructor scoped %}
     def __init__(self{% for p in ctor.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> None: ...
-{%- if ctor.doc %}
-        """{{ ctor.doc }}"""
+{%- if ctor | entity_has_doc %}
+        """{{ ctor | docstring_body("        ") }}"""
 {%- endif %}
 {%- endblock %}
 {%- endfor %}
@@ -73,8 +73,8 @@ class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribut
 {%- else %}
     def {{ group.name | camel_to_snake }}(self{% for p in method.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
 {%- endif %}
-{%- if method.doc %}
-        """{{ method.doc }}"""
+{%- if method | entity_has_doc %}
+        """{{ method | docstring_body("        ") }}"""
 {%- endif %}
 {%- endblock %}
 {%- endif %}
@@ -152,8 +152,8 @@ def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.fir
 {%- endif %}
 
 def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}: ...
-{%- if fn.doc %}
-    """{{ fn.doc }}"""
+{%- if fn | entity_has_doc %}
+    """{{ fn | docstring_body("    ") }}"""
 {%- endif %}
 {%- endblock %}
 {%- endif %}

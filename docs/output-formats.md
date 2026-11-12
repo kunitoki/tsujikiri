@@ -53,6 +53,7 @@ All four built-in formats declare their extension:
 |--------|------------|
 | `luabridge3` | `.cpp` |
 | `luals` | `.lua` |
+| `luau` | `.d.luau` |
 | `pybind11` | `.cpp` |
 | `pyi` | `.pyi` |
 
@@ -87,6 +88,7 @@ Leaving the key unset (`None`) inherits the value from the format named by
 |--------|---------------------------|-----------------------|
 | `luabridge3` | `true` | one `addFunction` entry per arity |
 | `luals` | `true` | `---@overload fun(...)` per arity |
+| `luau` | `true` | one `function` line / intersection member per arity |
 | `pybind11` | unset | `py::arg("x") = 1.0` |
 | `pyi` | unset | `x: float = 1.0` |
 
@@ -98,6 +100,61 @@ Leaving the key unset (`None`) inherits the value from the format named by
 | Affects manifest | No | Yes |
 | Affects overload kind detection | No | Yes |
 | Use for | Cosmetic renaming in output (C++ `int` → Lua `integer`) | Structural type remapping (library type → standard type) |
+
+---
+
+## Documentation rendering
+
+Every entity carries first-class documentation fields that templates render
+directly, so you don't need `custom_data` lookups to document your API:
+
+- `node.doc` — description of a class, method, function, field, enum, enum value or constructor;
+- `node.return_doc` — description of a method/function return value;
+- `parameter.doc` — description of a single parameter.
+
+These are populated (in precedence order) from transform `doc`/`return_doc`
+options, the `[[tsujikiri::doc]]` / `[[tsujikiri::returns]]` / `[[tsujikiri::param]]`
+attributes, and auto-extracted C++ doc comments. See
+[Documentation extraction](attributes.md#documentation-extraction).
+
+Each built-in format renders them as follows:
+
+| Format | Description (`doc`) | Parameters (`parameter.doc`) | Return (`return_doc`) |
+|--------|---------------------|------------------------------|-----------------------|
+| `luals` | `---` comment line | appended to `---@param name type <doc>` | `---@return type # <doc>` |
+| `pyi` | docstring summary | `Args:` section in the docstring | `Returns:` section in the docstring |
+| `pybind11` | docstring string literal | `Args:` section appended to the docstring | `Returns:` section appended to the docstring |
+| `luabridge3` | `//` comment above `.addFunction` | `// @param name <doc>` comment | `// @return <doc>` comment |
+
+Example — given:
+
+```cpp
+/// Sets the volume of the container.
+/// @param volume Volume in decibel space, -100..20.
+/// @param fadeTime Fade time to reach the desired volume.
+void setVolume(float volume, float fadeTime);
+```
+
+`luals` emits:
+
+```lua
+---@param volume number Volume in decibel space, -100..20.
+---@param fadeTime number Fade time to reach the desired volume.
+---@return nil
+function Container:setVolume(volume, fadeTime) end
+```
+
+and `pyi` emits:
+
+```python
+def set_volume(self, volume: float, fadeTime: float) -> None: ...
+    """Sets the volume of the container.
+
+    Args:
+        volume: Volume in decibel space, -100..20.
+        fadeTime: Fade time to reach the desired volume.
+    """
+```
 
 ---
 
@@ -527,6 +584,88 @@ local Color = {
   Green = 1,
   Blue = 2,
 }
+```
+
+---
+
+## Built-in: `luau`
+
+Generates [Luau](https://luau.org/) type definition files (`.d.luau`) in the
+[luau-lsp](https://github.com/JohnnyMorganz/luau-lsp) definition format. Use
+these to give Luau IDE tooling accurate autocompletion and type checking for
+classes exposed to Luau scripts.
+
+```bash
+tsujikiri -i project.input.yml --target luau types/myproject.d.luau
+```
+
+### Type Mappings
+
+C++ numeric types collapse to Luau `number`; `bool` → `boolean`; string types →
+`string`; `void` → `nil`. Add `type_mappings` entries (or a `remap_type`
+transform) to map exposed C++ class types to their Luau type name.
+
+### Class Declarations
+
+Classes are emitted as `declare extern type … with … end`. Instance fields and
+instance methods (with an explicit leading `self`) live in the type body; a base
+class is referenced with `extends`:
+
+```lua
+declare extern type Vec3 with
+    x: number
+    function length(self): number
+    function dot(self, o: Vec3): number
+end
+```
+
+### Constructors and Statics
+
+Constructors and static members are declared on a companion global table.
+Constructors are exposed as `new`; overloads become an intersection of function
+types:
+
+```lua
+declare Vec3: {
+    new: ((x: number, y: number) -> Vec3) & (() -> Vec3),
+    fromArray: ((values: { number }) -> Vec3),
+}
+```
+
+### Overloads
+
+Overloaded instance methods are emitted as repeated `function` lines (the Luau
+definition convention). Overloaded static methods, constructors, and free
+functions use intersection types.
+
+### Operator Metamethods
+
+Operators map to Luau metamethods (`__add`, `__sub`, `__mul`, …), using the same
+`operator_mappings` table style as `luabridge3`/`luals`. Both member operators
+and free-function operators attach as metamethods on the owning type.
+
+### Enums
+
+A named enum becomes an exported numeric type alias plus a value table; an
+anonymous enum emits each value as a global:
+
+```lua
+export type Color = number
+declare Color: {
+    Red: number,
+    Green: number,
+    Blue: number,
+}
+```
+
+### Free Functions
+
+Single free functions use `declare function`; overloaded ones use a `declare`
+global with an intersection type:
+
+```lua
+declare function normalize(v: Vec3): Vec3
+declare mix: ((a: number) -> number) & ((a: number, b: number) -> number)
 ```
 
 ---

@@ -80,6 +80,7 @@ class TIRMethod(IRMethod):
     allow_thread: bool = False
     wrapper_code: Optional[str] = None
     doc: Optional[str] = None
+    return_doc: Optional[str] = None
     code_injections: List[IRCodeInjection] = field(default_factory=list)
     overload_priority: Optional[int] = None
     exception_policy: Optional[str] = None
@@ -194,6 +195,7 @@ class TIRFunction(IRFunction):
     allow_thread: bool = False
     wrapper_code: Optional[str] = None
     doc: Optional[str] = None
+    return_doc: Optional[str] = None
     overload_priority: Optional[int] = None
     exception_policy: Optional[str] = None
     api_since: Optional[str] = None
@@ -359,6 +361,49 @@ def upgrade_module(ir: IRModule) -> TIRModule:
     tir.enums = [upgrade_enum(e) for e in ir.enums]  # type: ignore[assignment]
     tir.class_by_name = {c.name: c for c in tir.classes}  # type: ignore[assignment]
     return tir
+
+
+def clear_extracted_docs(module: TIRModule) -> None:
+    """Drop all parser-extracted documentation from *module* in place.
+
+    Used when ``generation.extract_comments`` is disabled: it runs right after
+    :func:`upgrade_module`, before the attribute and transform passes, so docs
+    set explicitly via ``[[tsujikiri::doc]]`` attributes or transform stages are
+    still applied afterwards.
+    """
+
+    def _clear_params(params: List[TIRParameter]) -> None:
+        for param in params:
+            param.doc = None
+
+    def _clear_class(cls: TIRClass) -> None:
+        cls.doc = None
+        for method in cls.methods:
+            method.doc = None
+            method.return_doc = None
+            _clear_params(method.parameters)  # type: ignore[arg-type]
+        for ctor in cls.constructors:
+            ctor.doc = None
+            _clear_params(ctor.parameters)  # type: ignore[arg-type]
+        for fld in cls.fields:
+            fld.doc = None
+        for enum in cls.enums:
+            enum.doc = None
+            for value in enum.values:
+                value.doc = None
+        for inner in cls.inner_classes:
+            _clear_class(inner)  # type: ignore[arg-type]
+
+    for cls in module.classes:
+        _clear_class(cls)  # type: ignore[arg-type]
+    for fn in module.functions:
+        fn.doc = None
+        fn.return_doc = None
+        _clear_params(fn.parameters)  # type: ignore[arg-type]
+    for enum in module.enums:
+        enum.doc = None
+        for value in enum.values:
+            value.doc = None
 
 
 def merge_tir_modules(modules: List[TIRModule]) -> TIRModule:

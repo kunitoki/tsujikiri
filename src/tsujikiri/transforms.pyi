@@ -36,6 +36,16 @@ class RenameClassStage(TransformStage):
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 
+class ModifyClassStage(TransformStage):
+    name: str
+    class_pattern: str
+    class_is_regex: bool
+    rename: str | None
+    remove: bool
+    doc: str | None
+    def __init__(self, **kwargs: Any) -> None: ...
+    def apply(self, module: TIRModule) -> None: ...
+
 class SuppressMethodStage(TransformStage):
     name: str
     class_pattern: str
@@ -60,6 +70,8 @@ class InjectMethodStage(TransformStage):
     parameters: list[dict[str, str]]
     is_static: bool
     wrapper_code: str | None
+    doc: str | None
+    return_doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 
@@ -83,6 +95,8 @@ class ModifyMethodStage(TransformStage):
     return_keep_alive: bool | None
     allow_thread: bool | None
     wrapper_code: str | None
+    doc: str | None
+    return_doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 
@@ -99,6 +113,7 @@ class ModifyArgumentStage(TransformStage):
     type_override: str | None
     default_override: str | None
     ownership: str | None
+    doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 
@@ -111,6 +126,7 @@ class ModifyFieldStage(TransformStage):
     rename: str | None
     remove: bool
     read_only: bool | None
+    doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 
@@ -120,6 +136,7 @@ class ModifyConstructorStage(TransformStage):
     class_is_regex: bool
     signature: str
     remove: bool
+    doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 
@@ -214,6 +231,7 @@ class ModifyEnumStage(TransformStage):
     rename: str | None
     remove: bool
     arithmetic: bool | None
+    doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 
@@ -243,6 +261,8 @@ class ModifyFunctionStage(TransformStage):
     return_keep_alive: bool | None
     allow_thread: bool | None
     wrapper_code: str | None
+    doc: str | None
+    return_doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 
@@ -251,6 +271,7 @@ class InjectConstructorStage(TransformStage):
     class_pattern: str
     class_is_regex: bool
     parameters: list[dict[str, str]]
+    doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 
@@ -260,6 +281,8 @@ class InjectFunctionStage(TransformStage):
     namespace: str
     return_type: str
     parameters: list[dict[str, str]]
+    doc: str | None
+    return_doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 

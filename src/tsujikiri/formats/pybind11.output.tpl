@@ -59,18 +59,18 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- for fn in group.functions %}
 {%- block function_overloaded scoped %}
 {%- if fn.wrapper_code %}
-  m.def("{{ group.name | camel_to_snake }}", {{ fn.wrapper_code }}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
+  m.def("{{ group.name | camel_to_snake }}", {{ fn.wrapper_code }}{% if fn | entity_has_doc %}, "{{ fn | cpp_docstring }}"{% endif %});
 {%- else %}
-  m.def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ fn.params | map(attribute='raw_type') | join(', ') }}>(&{{ fn.spelling }}){% for p in fn.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if fn.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif fn.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in fn.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if fn.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if fn.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if fn.is_deprecated %}, py::deprecated("{{ fn.deprecation_message }}"){% endif %}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
+  m.def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ fn.params | map(attribute='raw_type') | join(', ') }}>(&{{ fn.spelling }}){% for p in fn.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if fn.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif fn.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in fn.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if fn.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if fn.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if fn.is_deprecated %}, py::deprecated("{{ fn.deprecation_message }}"){% endif %}{% if fn | entity_has_doc %}, "{{ fn | cpp_docstring }}"{% endif %});
 {%- endif %}
 {%- endblock %}
 {%- endfor %}
 {%- else %}
 {%- set fn = group.functions[0] %}
 {%- if fn.wrapper_code %}
-  m.def("{{ group.name | camel_to_snake }}", {{ fn.wrapper_code }}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
+  m.def("{{ group.name | camel_to_snake }}", {{ fn.wrapper_code }}{% if fn | entity_has_doc %}, "{{ fn | cpp_docstring }}"{% endif %});
 {%- else %}
-  m.def("{{ group.name | camel_to_snake }}", {% if fn.is_operator and fn.is_cpp_overloaded %}py::overload_cast<{{ fn.params | map(attribute='raw_type') | join(', ') }}>(&{{ fn.spelling }}){% else %}&{{ fn.spelling }}{% endif %}{% for p in fn.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if fn.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif fn.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in fn.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if fn.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if fn.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if fn.is_deprecated %}, py::deprecated("{{ fn.deprecation_message }}"){% endif %}{% if fn.doc %}, "{{ fn.doc }}"{% endif %});
+  m.def("{{ group.name | camel_to_snake }}", {% if fn.is_operator and fn.is_cpp_overloaded %}py::overload_cast<{{ fn.params | map(attribute='raw_type') | join(', ') }}>(&{{ fn.spelling }}){% else %}&{{ fn.spelling }}{% endif %}{% for p in fn.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if fn.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif fn.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in fn.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if fn.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if fn.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if fn.is_deprecated %}, py::deprecated("{{ fn.deprecation_message }}"){% endif %}{% if fn | entity_has_doc %}, "{{ fn | cpp_docstring }}"{% endif %});
 {%- endif %}
 {%- endif %}
 {%- endblock %}
@@ -106,7 +106,7 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- if not cls.force_abstract %}
 {%- for ctor in cls.constructor_group.constructors %}
 {%- block class_constructor_group scoped %}
-    .def(py::init<{{ ctor.params | map(attribute='raw_type') | join(', ') }}>(){% for p in ctor.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if ctor.doc %}, "{{ ctor.doc }}"{% endif %})
+    .def(py::init<{{ ctor.params | map(attribute='raw_type') | join(', ') }}>(){% for p in ctor.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if ctor | entity_has_doc %}, "{{ ctor | cpp_docstring }}"{% endif %})
 {%- endblock %}
 {%- endfor %}
 {%- endif %}
@@ -118,15 +118,15 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- if group.is_overloaded %}
 {%- for method in group.methods %}
 {%- block class_overloaded_static_method scoped %}
-    .def_static("{{ group.name | camel_to_snake }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+    .def_static("{{ group.name | camel_to_snake }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}){% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method | entity_has_doc %}, "{{ method | cpp_docstring }}"{% endif %})
 {%- endblock %}
 {%- endfor %}
 {%- else %}
 {%- set method = group.methods[0] %}
 {%- if method.wrapper_code %}
-    .def_static("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+    .def_static("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }}{% if method | entity_has_doc %}, "{{ method | cpp_docstring }}"{% endif %})
 {%- else %}
-    .def_static("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+    .def_static("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method | entity_has_doc %}, "{{ method | cpp_docstring }}"{% endif %})
 {%- endif %}
 {%- endif %}
 {%- endblock %}
@@ -138,9 +138,9 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- if method.is_operator and method.operator_name == "__repr__" %}
     .def("__repr__", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
 {%- elif method.is_operator and method.operator_name %}
-    .def("{{ method.operator_name }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+    .def("{{ method.operator_name }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% if method | entity_has_doc %}, "{{ method | cpp_docstring }}"{% endif %})
 {%- else %}
-    .def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if method.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+    .def("{{ group.name | camel_to_snake }}", py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if method.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if method | entity_has_doc %}, "{{ method | cpp_docstring }}"{% endif %})
 {%- endif %}
 {%- endblock %}
 {%- endfor %}
@@ -149,11 +149,11 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- if method.is_operator and method.operator_name == "__repr__" %}
     .def("__repr__", [](const {{ cls.qualified_name }}& self) -> std::string { std::ostringstream _ss; _ss << self; return _ss.str(); })
 {%- elif method.is_operator and method.operator_name %}
-    .def("{{ method.operator_name }}", {% if method.wrapper_code %}{{ method.wrapper_code }}{% else %}{% if method.is_cpp_overloaded %}py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% else %}&{{ cls.qualified_name }}::{{ method.spelling }}{% endif %}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% endif %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+    .def("{{ method.operator_name }}", {% if method.wrapper_code %}{{ method.wrapper_code }}{% else %}{% if method.is_cpp_overloaded %}py::overload_cast<{{ method.params | map(attribute='raw_type') | join(', ') }}>(&{{ cls.qualified_name }}::{{ method.spelling }}{% if method.is_const %}, py::const_{% endif %}){% else %}&{{ cls.qualified_name }}::{{ method.spelling }}{% endif %}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% endif %}{% if method | entity_has_doc %}, "{{ method | cpp_docstring }}"{% endif %})
 {%- elif method.wrapper_code %}
-    .def("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+    .def("{{ group.name | camel_to_snake }}", {{ method.wrapper_code }}{% if method | entity_has_doc %}, "{{ method | cpp_docstring }}"{% endif %})
 {%- else %}
-    .def("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if method.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if method.doc %}, "{{ method.doc }}"{% endif %})
+    .def("{{ group.name | camel_to_snake }}", &{{ cls.qualified_name }}::{{ method.spelling }}{% if method.return_ownership == "cpp" %}, py::return_value_policy::reference_internal{% elif method.return_ownership == "script" %}, py::return_value_policy::take_ownership{% endif %}{% for p in method.params %}, py::arg("{{ p.name }}"){% if p.default %} = {{ p.default }}{% endif %}{% endfor %}{% for p in method.params %}{% if p.ownership == "cpp" %}, py::keep_alive<1, {{ loop.index + 1 }}>(){% endif %}{% endfor %}{% if method.return_keep_alive %}, py::keep_alive<0, 1>(){% endif %}{% if method.allow_thread %}, py::call_guard<py::gil_scoped_release>(){% endif %}{% if method | entity_has_doc %}, "{{ method | cpp_docstring }}"{% endif %})
 {%- endif %}
 {%- endif %}
 {%- endblock %}
@@ -166,7 +166,7 @@ PYBIND11_MODULE({{ module_name }}, m)
 {%- if group.operator_name %}
 {%- for fn in group.functions %}
 {%- block class_free_operator scoped %}
-    .def("{{ group.operator_name }}", {% if group.is_overloaded %}py::overload_cast<{{ fn.params | map(attribute='raw_type') | join(', ') }}>(&{{ fn.spelling }}){% else %}&{{ fn.spelling }}{% endif %}{% if fn.doc %}, "{{ fn.doc }}"{% endif %})
+    .def("{{ group.operator_name }}", {% if group.is_overloaded %}py::overload_cast<{{ fn.params | map(attribute='raw_type') | join(', ') }}>(&{{ fn.spelling }}){% else %}&{{ fn.spelling }}{% endif %}{% if fn | entity_has_doc %}, "{{ fn | cpp_docstring }}"{% endif %})
 {%- endblock %}
 {%- endfor %}
 {%- endif %}

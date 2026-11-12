@@ -25,6 +25,7 @@ class IRParameter:
     type_spelling: str
     default_value: Optional[str] = None  # raw C++ default extracted by parser
     attributes: List[str] = field(default_factory=list)  # raw [[...]] attribute contents
+    doc: Optional[str] = None  # documentation extracted from a C++ @param comment
 
 
 @dataclass
@@ -56,6 +57,8 @@ class IRMethod:
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
+    doc: Optional[str] = None  # documentation extracted from a C++ comment
+    return_doc: Optional[str] = None  # documentation extracted from a C++ @return comment
 
 
 @dataclass
@@ -69,6 +72,7 @@ class IRConstructor:
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
+    doc: Optional[str] = None  # documentation extracted from a C++ comment
 
 
 @dataclass
@@ -78,6 +82,7 @@ class IRField:
     is_const: bool = False
     is_static: bool = False
     attributes: List[str] = field(default_factory=list)
+    doc: Optional[str] = None  # documentation extracted from a C++ comment
 
 
 @dataclass
@@ -85,6 +90,7 @@ class IREnumValue:
     name: str
     value: int
     attributes: List[str] = field(default_factory=list)
+    doc: Optional[str] = None  # documentation extracted from a C++ comment
 
 
 @dataclass
@@ -97,6 +103,7 @@ class IREnum:
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
+    doc: Optional[str] = None  # documentation extracted from a C++ comment
 
 
 @dataclass
@@ -142,6 +149,7 @@ class IRClass:
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
+    doc: Optional[str] = None  # documentation extracted from a C++ comment
 
 
 @dataclass
@@ -168,6 +176,8 @@ class IRFunction:
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
+    doc: Optional[str] = None  # documentation extracted from a C++ comment
+    return_doc: Optional[str] = None  # documentation extracted from a C++ @return comment
 
 
 @dataclass

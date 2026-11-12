@@ -12,6 +12,8 @@ Built-in attribute handlers (always active):
   ``[[tsujikiri::readonly]]``                      — set read_only=True on IRField
   ``[[tsujikiri::thread_safe]]``                   — set allow_thread=True on IRMethod/IRFunction
   ``[[tsujikiri::doc("text")]]``                   — set doc field on any node
+  ``[[tsujikiri::returns("text")]]``               — set return_doc on a method/function
+  ``[[tsujikiri::param("name", "text")]]``         — document a parameter by name
   ``[[tsujikiri::rename_argument("old", "new")]]`` — rename a parameter by name
   ``[[tsujikiri::type_map("CppType", "Target")]]`` — override type of matching params/return/field
 
@@ -54,6 +56,8 @@ _COMPLEX_BUILTINS = frozenset(
         "tsujikiri::readonly",
         "tsujikiri::thread_safe",
         "tsujikiri::doc",
+        "tsujikiri::returns",
+        "tsujikiri::param",
         "tsujikiri::rename_argument",
         "tsujikiri::type_map",
         "tsujikiri::arithmetic",
@@ -104,6 +108,14 @@ def _apply_complex_builtin(attr_name: str, args: List[str], node: Any) -> None:
     elif attr_name == "tsujikiri::doc" and args:
         if hasattr(node, "doc"):
             node.doc = args[0]
+    elif attr_name == "tsujikiri::returns" and args:
+        if hasattr(node, "return_doc"):
+            node.return_doc = args[0]
+    elif attr_name == "tsujikiri::param" and len(args) == 2:
+        param_name, param_doc = args
+        for p in getattr(node, "parameters", []):
+            if p.name == param_name:
+                p.doc = param_doc
     elif attr_name == "tsujikiri::rename_argument" and len(args) == 2:
         old_name, new_name = args
         for p in getattr(node, "parameters", []):

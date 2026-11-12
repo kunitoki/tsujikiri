@@ -66,6 +66,25 @@ Class-level stages use `class_is_regex: true` for the class pattern and `is_rege
 
 ## Stage Reference
 
+### Documenting entities from transforms
+
+Most editing and injection stages accept documentation options so you can attach
+docs declaratively instead of relying on template-side `custom_data` lookups:
+
+- `doc` — documentation string for the entity (available as `node.doc`). Accepted
+  by `modify_class`, `modify_method`, `modify_argument`, `modify_field`,
+  `modify_constructor`, `modify_enum`, `modify_function`, `inject_method`,
+  `inject_constructor`, `inject_function`.
+- `return_doc` — documentation for the return value (`node.return_doc`). Accepted
+  by `modify_method`, `modify_function`, `inject_method`, `inject_function`.
+- per-parameter `doc` — each entry in a `parameters:` list (on `inject_method`,
+  `inject_constructor`, `inject_function`) may carry a `doc:` key, and
+  `modify_argument`'s `doc` documents a single existing parameter.
+
+These override any documentation auto-extracted from C++ comments
+(see [Documentation extraction](attributes.md#documentation-extraction)).
+Precedence is **transform › attribute › extracted comment**.
+
 ### Class and Method Stages
 
 | Stage | Purpose | Required Keys |
@@ -80,6 +99,7 @@ Class-level stages use `class_is_regex: true` for the class pattern and `is_rege
 | `suppress_base` | Hide a base class from the binding output | `class`, `base` |
 | `add_type_mapping` | Rewrite a C++ type spelling globally | `from`, `to` |
 | `modify_method` | Multi-field edit on matching methods | `class`, `method` |
+| `modify_class` | Multi-field edit on matching classes (rename/remove/doc) | `class` |
 | `modify_argument` | Edit a single parameter of a method | `class`, `method`, `argument` |
 | `modify_field` | Edit a class field | `class`, `field` |
 | `modify_constructor` | Remove a constructor by signature | `class`, `signature` |
@@ -404,6 +424,8 @@ A comprehensive editor for one or more matching methods. Can rename, remove, ove
 | `return_ownership` | string | — | `"none"` \| `"cpp"` \| `"script"` — memory ownership hint |
 | `allow_thread` | bool | — | Template hint to release interpreter lock around call |
 | `wrapper_code` | string | — | Replace `&Class::method` with this lambda/callable in the output |
+| `doc` | string | — | Documentation for the method (`method.doc`) |
+| `return_doc` | string | — | Documentation for the return value (`method.return_doc`) |
 
 **`return_ownership` values:**
 - `"none"` — no ownership transfer (default; most C++ getters)
@@ -435,6 +457,33 @@ transforms:
     method: getValue
     return_type: "int"    # IR sees "InternalInt" but output shows "int"
 ```
+
+---
+
+## `modify_class`
+
+A comprehensive editor for one or more matching classes. Can rename, remove, and
+attach documentation. This is the declarative counterpart to `modify_method` at the
+class level.
+
+```yaml
+- stage: modify_class
+  class: ContainerHandle
+  class_is_regex: false      # optional
+  rename: Container          # optional: new binding name
+  remove: false              # optional: set emit=False
+  doc: "Handle to a playing audio container."  # optional: class documentation
+```
+
+**All keys:**
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `class` | string | `"*"` | Class name pattern |
+| `class_is_regex` | bool | `false` | Treat `class` as regex |
+| `rename` | string | — | New binding name (`cls.rename`) |
+| `remove` | bool | `false` | Set `emit=False` |
+| `doc` | string | — | Class documentation (`cls.doc`) |
 
 ---
 
