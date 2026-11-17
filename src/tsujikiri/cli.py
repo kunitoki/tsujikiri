@@ -17,6 +17,7 @@ from tsujikiri.configurations import (
     FormatOverrideConfig,
     GenerationConfig,
     InputConfig,
+    OutputConfig,
     OutputGroupEntry,
     SourceEntry,
     merge_yaml_dicts,
@@ -24,6 +25,7 @@ from tsujikiri.configurations import (
     load_output_config,
 )
 from tsujikiri.typesystem import merge_typesystems
+from tsujikiri.type_patterns import compile_type_patterns
 from tsujikiri.filters import FilterEngine
 from tsujikiri.pretty_printers import pretty
 from tsujikiri.formats import apply_format_inheritance, resolve_format_path, list_builtin_formats
@@ -231,6 +233,19 @@ def _resolve_pretty(
     return input_config.pretty, input_config.pretty_options
 
 
+def _load_format(fmt: str, extra_dirs: List[Path]) -> OutputConfig:
+    """Load a target format (with inheritance), exiting with an error if its type mappings are malformed."""
+    output_config = apply_format_inheritance(
+        load_output_config(resolve_format_path(fmt, extra_dirs=extra_dirs)), extra_dirs=extra_dirs
+    )
+    try:
+        compile_type_patterns(output_config.type_mappings)
+    except ValueError as exc:
+        print(f"tsujikiri: error: format '{fmt}': {exc}", file=sys.stderr)
+        sys.exit(1)
+    return output_config
+
+
 def _validate_config_action(args: argparse.Namespace, extra_dirs: List[Path]) -> None:
     """Validate input config and print any issues. Exit 1 if invalid."""
     if not args.input:
@@ -283,9 +298,15 @@ def _validate_config_action(args: argparse.Namespace, extra_dirs: List[Path]) ->
     # Validate target formats (if any specified)
     for fmt, _outfile in args.target or []:
         try:
-            resolve_format_path(fmt, extra_dirs=extra_dirs)
+            fmt_path = resolve_format_path(fmt, extra_dirs=extra_dirs)
         except FileNotFoundError as exc:
             errors.append(str(exc))
+            continue
+        try:
+            output_config = apply_format_inheritance(load_output_config(fmt_path), extra_dirs=extra_dirs)
+            compile_type_patterns(output_config.type_mappings)
+        except ValueError as exc:
+            errors.append(f"format '{fmt}': {exc}")
 
     if errors:
         for err in errors:
@@ -484,8 +505,7 @@ def main() -> None:
 
     # Load the first target's output config for manifest computation and dry-run.
     first_fmt, _ = args.target[0]
-    first_fmt_path = resolve_format_path(first_fmt, extra_dirs=extra_dirs)
-    first_output_config = apply_format_inheritance(load_output_config(first_fmt_path), extra_dirs=extra_dirs)
+    first_output_config = _load_format(first_fmt, extra_dirs)
 
     clang_errors: List[str] = []
     cache = ParseCache(verbose=args.verbose, jobs=_resolve_jobs(args.jobs))
@@ -613,8 +633,7 @@ def main() -> None:
         if target_idx == 0:
             output_config = first_output_config
         else:
-            fmt_path = resolve_format_path(fmt, extra_dirs=extra_dirs)
-            output_config = apply_format_inheritance(load_output_config(fmt_path), extra_dirs=extra_dirs)
+            output_config = _load_format(fmt, extra_dirs)
 
         if has_output_groups:
             outdir = Path(outfile)

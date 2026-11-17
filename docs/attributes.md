@@ -194,11 +194,12 @@ py::class_<mylib::Shape>(m, "Shape", "A 2D geometric shape.")
 
 ### `[[tsujikiri::returns("text")]]`
 
-Documents the return value of a method or free function. The text is available as
-`node.return_doc` in templates and rendered into `luals` `---@return` comments and
-the `Args:`/`Returns:` section of `pyi`/`pybind11` docstrings.
+Documents the return value of a method or free function, or the object built by a
+constructor. The text is available as `node.return_doc` in templates and rendered
+into `luals` `---@return` comments, `luau` constructor `--- @return` comments and
+the `Returns:` section of `pyi`/`pybind11` docstrings.
 
-Applies to: **Methods**, **Free functions**.
+Applies to: **Methods**, **Free functions**, **Constructors**.
 
 ```cpp
 class Container {
@@ -210,10 +211,10 @@ public:
 
 ### `[[tsujikiri::param("name", "text")]]`
 
-Documents a single parameter (matched by name) of a method or free function. The
-text is available as `parameter.doc` in templates.
+Documents a single parameter (matched by name) of a method, free function or
+constructor. The text is available as `parameter.doc` in templates.
 
-Applies to: **Methods**, **Free functions**.
+Applies to: **Methods**, **Free functions**, **Constructors**.
 
 ```cpp
 class Container {
@@ -230,12 +231,19 @@ By default tsujikiri reads the Doxygen/Javadoc doc comment attached to every
 declaration and populates:
 
 - `node.doc` — the leading description (or the `@brief` body);
-- `node.return_doc` — the `@return` / `@returns` / `@result` text (methods and functions);
+- `node.return_doc` — the `@return` / `@returns` / `@result` text (methods,
+  functions and constructors — on a constructor it describes the constructed object);
 - `parameter.doc` — the `@param <name>` text, matched to parameters by name.
 
 Both `@command` and `\command` prefixes are recognised, along with `///`, `//!`,
-`/** … */` and `/*! … */` comment styles and a leading `[in]`/`[out]` direction
-specifier on `@param`.
+`/** … */` and `/*! … */` comment styles (plus the trailing-member forms `///<`,
+`//!<`, `/**<` and `/*!<`, e.g. `Red, ///< The red channel.`) and a leading
+`[in]`/`[out]` direction specifier on `@param`.
+
+An enum value is documented only by a comment directly before it or trailing it.
+libclang would otherwise copy a leading comment onto every following
+undocumented value (`/// a` above `A, B` documents both), so tsujikiri ignores
+that copied comment.
 
 ```cpp
 /// Sets the volume.
@@ -259,9 +267,9 @@ comments, so disabling extraction is only needed to suppress comments entirely.
 
 ### `[[tsujikiri::rename_argument("old", "new")]]`
 
-Renames a parameter by name on the annotated method or function. Equivalent to a `modify_argument` transform but expressed in the C++ source.
+Renames a parameter by name on the annotated method, function or constructor. Equivalent to a `modify_argument` transform (with `constructor: true` for constructors) but expressed in the C++ source.
 
-Applies to: **Methods**, **Free functions**.
+Applies to: **Methods**, **Free functions**, **Constructors**.
 
 ```cpp
 class Circle {
@@ -269,6 +277,9 @@ public:
     // Expose the parameter as "radius" instead of the C++ name "r"
     [[tsujikiri::rename_argument("r", "radius")]]
     void setRadius(double r);
+
+    [[tsujikiri::rename_argument("r_", "radius")]]
+    Circle(double r_);
 };
 ```
 
@@ -448,13 +459,24 @@ The preceding-line scan skips lines that end with:
 
 This prevents accidentally picking up attributes from sibling declarations.
 
+### Multiple Attributes in One Block
+
+A single block may hold several comma-separated attributes. Commas inside an attribute's argument list or inside string literals do not split it, so this is three attributes:
+
+```cpp
+[[tsujikiri::rename_argument("r_", "radius"), tsujikiri::returns("A circle, centred."), tsujikiri::param("r_", "The radius.")]]
+Circle(double r_);
+```
+
+Only the line directly above the declaration is scanned, so put stacked attributes in one block (or on the declaration line) rather than on several preceding lines.
+
 ### Line Comments
 
 Content inside `//` line comments is not filtered out by the scanner (the raw line text is searched). Avoid placing `[[...]]` attribute-like strings inside line comments if you don't want them detected.
 
 ### Only Double-Bracket Style
 
-Only `[[namespace::name]]` and `[[namespace::name("arg")]]` syntax is detected, plus `[[clang::annotate("...")]]` (see [clang::annotate](#clang-annotate)). GNU `__attribute__((x))`, MSVC `__declspec(x)`, and pragma annotations are not supported.
+Only `[[namespace::name]]` and `[[namespace::name("arg", ...)]]` syntax is detected, plus `[[clang::annotate("...")]]` (see [clang::annotate](#clang-annotate)). GNU `__attribute__((x))`, MSVC `__declspec(x)`, and pragma annotations are not supported.
 
 ### clang::annotate Placement
 

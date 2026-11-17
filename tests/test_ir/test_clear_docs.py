@@ -41,7 +41,9 @@ def _module() -> TIRModule:
         doc="method doc",
         return_doc="ret doc",
     )
-    ctor = TIRConstructor(parameters=[TIRParameter("v", "int", doc="ctor param")], doc="ctor doc")
+    ctor = TIRConstructor(
+        parameters=[TIRParameter("v", "int", doc="ctor param")], doc="ctor doc", return_doc="ctor ret doc"
+    )
     field = TIRField(name="data_", type_spelling="int", doc="field doc")
     enum = TIREnum(
         name="Mode",
@@ -95,6 +97,7 @@ class TestClearExtractedDocs:
         assert method.return_doc is None
         assert method.parameters[0].doc is None
         assert cls.constructors[0].doc is None
+        assert cls.constructors[0].return_doc is None
         assert cls.constructors[0].parameters[0].doc is None
         assert cls.fields[0].doc is None
         assert cls.enums[0].doc is None

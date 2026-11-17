@@ -99,6 +99,7 @@ class TIRConstructor(IRConstructor):
     origin: Optional[IRConstructor] = field(default=None, init=False, repr=False, compare=False)
     emit: bool = True
     doc: Optional[str] = None
+    return_doc: Optional[str] = None
     code_injections: List[IRCodeInjection] = field(default_factory=list)
 
 
@@ -384,6 +385,7 @@ def clear_extracted_docs(module: TIRModule) -> None:
             _clear_params(method.parameters)  # type: ignore[arg-type]
         for ctor in cls.constructors:
             ctor.doc = None
+            ctor.return_doc = None
             _clear_params(ctor.parameters)  # type: ignore[arg-type]
         for fld in cls.fields:
             fld.doc = None

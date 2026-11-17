@@ -26,6 +26,7 @@ unsupported_types:
 type_mappings:
   "std::string": "String"
   "int32_t": "int"
+  "std::optional<{T}>": "{T}?"     # generic entry, see "Generic type mappings"
 
 # Emit one callable per arity for parameters that have C++ default values
 expand_default_arguments: true
@@ -92,6 +93,87 @@ Leaving the key unset (`None`) inherits the value from the format named by
 | `pybind11` | unset | `py::arg("x") = 1.0` |
 | `pyi` | unset | `x: float = 1.0` |
 
+### Generic type mappings
+
+A `type_mappings` key containing `{Name}` placeholders is a *generic* entry that
+matches any instantiation of a template. Captured arguments are mapped again
+(recursively), so generic and exact entries compose:
+
+```yaml
+type_mappings:
+  "int": "integer"
+  "std::string": "string"
+  "std::optional<{T}>": "{T}?"
+  "std::vector<{T}>": "{T}[]"
+  "std::map<{K}, {V}>": "table<{K}, {V}>"
+  "std::variant<{T...}>": "{T...|}"
+  "std::tuple<{T...}>": "[{T...}]"
+  "std::unique_ptr<{T}>": "{T}"
+```
+
+| C++ type | Result |
+|----------|--------|
+| `std::optional<int>` | `integer?` |
+| `const std::optional<std::string> &` | `string?` |
+| `std::optional<std::vector<std::string>>` | `string[]?` |
+| `std::map<std::string, std::optional<int>>` | `table<string, integer?>` |
+| `std::variant<int, std::string, double>` | `integer\|string\|double` |
+| `std::tuple<int, bool>` | `[integer, bool]` |
+
+**Placeholders in keys:**
+
+- `{T}` captures exactly one template argument. Captures are bracket-balanced, so
+  `std::optional<{T}>` captures `std::map<int, float>` whole, and
+  `std::map<{K}, {V}>` splits `std::map<std::pair<int, int>, float>` at the
+  top-level comma only.
+- `{T...}` captures one or more comma-separated arguments. Only one variadic
+  placeholder is allowed per key.
+- Whitespace around `<`, `>`, `,`, `(`, `)`, `[`, `]`, `&` and `*` is ignored, so
+  `std::map<{K}, {V}>` also matches `std::map<int,float>`.
+- A key must match the *whole* type spelling: `vector<{T}>` does not match
+  `std::vector<int>`.
+
+**Placeholders in values:**
+
+- `{T}` inserts the mapped capture. For a variadic capture it inserts all mapped
+  arguments joined with `, `.
+- `{T...SEP}` joins the mapped variadic arguments with `SEP`, e.g. `{T...|}`,
+  `{T... | }`. An empty separator (`{T...}`) means `, `.
+- Braces that are not immediately followed by a name are literal, so Luau-style
+  values like `"{ [{K}]: {V} }"` work as expected.
+
+**Resolution order** for each type spelling:
+
+1. exact `type_mappings` entries (also trying the spelling with `const`/`&`/`&&`
+   stripped, most specific first);
+2. exact typesystem primitive/typedef entries;
+3. generic entries, over the same candidate spellings — the entry with the most
+   literal (non-placeholder) text wins, ties go to the entry declared first;
+4. otherwise the spelling passes through unchanged.
+
+Pointer types are never stripped: `std::optional<int> *` only matches a key that
+includes the `*`, e.g. `"{T} *": "{T}?"`.
+
+**Validation:** malformed generic keys are reported when the format is loaded
+(and by `--validate-config`): adjacent placeholders with no literal text between
+them (`x<{A}{B}>`), a key consisting only of placeholders (`{T}`), a duplicate
+placeholder name, more than one variadic placeholder, a value placeholder that
+does not appear in the key, and `{T...}` in the value when `{T}` is not variadic.
+
+Generic entries are inherited through `extends` like any other `type_mappings`
+entry, so a custom format can extend `luals` and add just the generic mappings:
+
+```yaml
+# my_formats/myls.output.yml
+format_name: myls
+extends: luals
+type_mappings:
+  "std::optional<{T}>": "{T}?"
+  "std::vector<{T}>": "{T}[]"
+template: |
+  {% extends "luals.tpl" %}
+```
+
 ### `type_mappings` vs `add_type_mapping` transform
 
 | | `type_mappings` in `.output.yml` | `add_type_mapping` transform |
@@ -109,7 +191,8 @@ Every entity carries first-class documentation fields that templates render
 directly, so you don't need `custom_data` lookups to document your API:
 
 - `node.doc` — description of a class, method, function, field, enum, enum value or constructor;
-- `node.return_doc` — description of a method/function return value;
+- `node.return_doc` — description of a method/function return value, or of the
+  object built by a constructor;
 - `parameter.doc` — description of a single parameter.
 
 These are populated (in precedence order) from transform `doc`/`return_doc`
@@ -121,8 +204,9 @@ Each built-in format renders them as follows:
 
 | Format | Description (`doc`) | Parameters (`parameter.doc`) | Return (`return_doc`) |
 |--------|---------------------|------------------------------|-----------------------|
-| `luals` | `---` comment line | appended to `---@param name type <doc>` | `---@return type # <doc>` |
-| `pyi` | docstring summary | `Args:` section in the docstring | `Returns:` section in the docstring |
+| `luals` | `---<doc>` comment line (overloads: the first overload's doc) | appended to `---@param name type <doc>` | `---@return type # <doc>` |
+| `luau` | `--- <doc>` comment line | `--- @param name <doc>` (constructors) | `--- @return <doc>` (constructors) |
+| `pyi` | docstring summary, used as the stub body in place of `...` | `Args:` section in the docstring | `Returns:` section in the docstring |
 | `pybind11` | docstring string literal | `Args:` section appended to the docstring | `Returns:` section appended to the docstring |
 | `luabridge3` | `//` comment above `.addFunction` | `// @param name <doc>` comment | `// @return <doc>` comment |
 
@@ -138,6 +222,7 @@ void setVolume(float volume, float fadeTime);
 `luals` emits:
 
 ```lua
+---Sets the volume of the container.
 ---@param volume number Volume in decibel space, -100..20.
 ---@param fadeTime number Fade time to reach the desired volume.
 ---@return nil
@@ -147,13 +232,34 @@ function Container:setVolume(volume, fadeTime) end
 and `pyi` emits:
 
 ```python
-def set_volume(self, volume: float, fadeTime: float) -> None: ...
+def set_volume(self, volume: float, fadeTime: float) -> None:
     """Sets the volume of the container.
 
     Args:
         volume: Volume in decibel space, -100..20.
         fadeTime: Fade time to reach the desired volume.
     """
+```
+
+Undocumented stubs keep the `...` body (`def reset(self) -> None: ...`). Each
+`@overload` gets its own docstring, and enum value and field docstrings sit at
+the same indentation as the attribute they document.
+
+Constructors are documented the same way. In C++, a `@return` on a constructor
+comment becomes the constructor's `return_doc`:
+
+```cpp
+/// Builds a widget.
+/// @param size The initial size.
+/// @return A fresh widget.
+Widget(int size);
+```
+
+```lua
+---Builds a widget.
+---@param size integer The initial size.
+---@return Widget # A fresh widget.
+function Widget.new(size) end
 ```
 
 ---
@@ -522,6 +628,38 @@ function Shape:set_name(name) end
 function Calculator.max(a, b) end
 ```
 
+### Constructors
+
+A single constructor, or an overload set where only the first constructor is
+documented, is annotated as one `new` function with `---@overload` lines for the
+remaining overloads:
+
+```lua
+---Builds a widget.
+---@param size integer The initial size.
+---@return Widget # A fresh widget.
+---@overload fun(scale: number): Widget
+function Widget.new(size) end
+```
+
+`---@overload` lines cannot carry documentation, so when any later overload has
+a description, parameter docs or a return doc, every overload gets its own fully
+annotated definition instead. Repeated definitions are prefixed with
+`---@diagnostic disable-next-line: duplicate-set-field`:
+
+```lua
+---Builds a widget.
+---@param size integer The initial size.
+---@return Widget # A fresh widget.
+function Widget.new(size) end
+
+---Builds a scaled widget.
+---@param scale number Scale factor.
+---@return Widget
+---@diagnostic disable-next-line: duplicate-set-field
+function Widget.new(scale) end
+```
+
 ### Overloads
 
 ```lua
@@ -629,6 +767,22 @@ types:
 declare Vec3: {
     new: ((x: number, y: number) -> Vec3) & (() -> Vec3),
     fromArray: ((values: { number }) -> Vec3),
+}
+```
+
+Documented constructors get `---` comments above `new` (block
+`class_constructor_docs`). When `new` is overloaded, each documented overload is
+introduced by a `--- new(...)` signature line; undocumented overloads are
+skipped:
+
+```lua
+declare Vec3: {
+    --- new(x: number, y: number)
+    --- Builds a vector.
+    --- @param x Horizontal component.
+    --- @param y Vertical component.
+    --- @return A new vector.
+    new: ((x: number, y: number) -> Vec3) & (() -> Vec3),
 }
 ```
 
@@ -945,10 +1099,12 @@ constructor_group = {
     is_overloaded: bool,
     constructors: [
         {
-            params: [{ name, original_name, type, raw_type, ownership, default }],
+            params: [{ name, original_name, type, raw_type, ownership, index, default, doc }],
             overload_index: int,
             is_noexcept: bool,
             is_explicit: bool,
+            doc: string|null,         # constructor description
+            return_doc: string|null,  # description of the constructed object
             code_injections: [injection]
         }
     ]

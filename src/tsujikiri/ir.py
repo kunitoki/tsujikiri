@@ -73,6 +73,7 @@ class IRConstructor:
     deprecation_message: Optional[str] = None
     attributes: List[str] = field(default_factory=list)
     doc: Optional[str] = None  # documentation extracted from a C++ comment
+    return_doc: Optional[str] = None  # documentation extracted from a C++ @return comment
 
 
 @dataclass

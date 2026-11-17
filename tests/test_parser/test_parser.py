@@ -394,6 +394,22 @@ class TestCollectAttrBlocks:
         result = _collect_attr_blocks('[[tsujikiri::skip, clang::annotate("keep")]]')
         assert result == ["tsujikiri::skip"]
 
+    def test_commas_inside_arguments_do_not_split(self):
+        result = _collect_attr_blocks('[[tsujikiri::rename_argument("r", "radius"), tsujikiri::skip]]')
+        assert result == ['tsujikiri::rename_argument("r", "radius")', "tsujikiri::skip"]
+
+    def test_commas_inside_string_literals_do_not_split(self):
+        result = _collect_attr_blocks("""[[tsujikiri::param("x", "a, b (c"), ns::t('a,b')]]""")
+        assert result == ['tsujikiri::param("x", "a, b (c")', "ns::t('a,b')"]
+
+    def test_escaped_quote_inside_string(self):
+        result = _collect_attr_blocks(r'[[tsujikiri::doc("say \"hi, there\"")]]')
+        assert result == [r'tsujikiri::doc("say \"hi, there\"")']
+
+    def test_nested_parentheses(self):
+        result = _collect_attr_blocks("[[ns::f(g(a, b), c), ns::h]]")
+        assert result == ["ns::f(g(a, b), c)", "ns::h"]
+
     def test_similar_but_unrelated_name_is_kept(self):
         """Only the exact ``clang::annotate`` prefix is dropped, not lookalikes."""
         result = _collect_attr_blocks("[[clang::annotated]]")
@@ -435,6 +451,52 @@ class TestGetAttributesHelpers:
         cursor.extent.end.line = 1
         cursor.extent.end.column = 1
         assert _get_attributes(cursor) == []
+
+    @staticmethod
+    def _cursor_at(path: Path, line: int, column: int, end_column: int) -> MagicMock:
+        _SOURCE_CACHE.pop(str(path), None)
+        cursor = MagicMock()
+        cursor.location.file.name = str(path)
+        cursor.extent.start.line = line
+        cursor.extent.start.column = column
+        cursor.extent.end.line = line
+        cursor.extent.end.column = end_column
+        cursor.get_children.return_value = []
+        return cursor
+
+    def test_extent_including_same_line_leading_attribute(self, tmp_path: Path) -> None:
+        """clang 21+: the extent of ``[[a]] void f();`` starts at ``[[``; only leading blocks are taken."""
+        f = tmp_path / "same_line.hpp"
+        f.write_text('    [[tsujikiri::rename_argument("q", "quality")]] [[ns::b]] void f(int q);\n')
+        cursor = self._cursor_at(f, 1, 5, len(f.read_text()))
+        assert _get_attributes(cursor) == ['tsujikiri::rename_argument("q", "quality")', "ns::b"]
+
+    def test_terminated_line_without_leading_attribute(self, tmp_path: Path) -> None:
+        f = tmp_path / "not_leading.hpp"
+        f.write_text("int g(); [[ns::a]] void f();\n")
+        cursor = self._cursor_at(f, 1, 1, len(f.read_text()))
+        assert _get_attributes(cursor) == []
+
+    def test_constructor_attributes_from_source(self, tmp_path: Path) -> None:
+        f = tmp_path / "ctor_attrs.hpp"
+        f.write_text(
+            "namespace ar {\n"
+            "class Circle {\n"
+            "public:\n"
+            '    [[tsujikiri::rename_argument("r_", "radius"), tsujikiri::returns("A circle, centred.")]]\n'
+            "    Circle(double r_);\n"
+            '    [[tsujikiri::param("s", "Scale, in units.")]] Circle(float s);\n'
+            "};\n"
+            "}\n"
+        )
+        _SOURCE_CACHE.pop(str(f), None)
+        module = parse_translation_unit(SourceConfig(path=str(f), parse_args=["-std=c++17"]), ["ar"], "ar")
+        ctors = module.classes[0].constructors
+        assert ctors[0].attributes == [
+            'tsujikiri::rename_argument("r_", "radius")',
+            'tsujikiri::returns("A circle, centred.")',
+        ]
+        assert ctors[1].attributes == ['tsujikiri::param("s", "Scale, in units.")']
 
     def test_previous_line_attribute(self, parsed_module):
         # combined.hpp has [[mygame::no_export]] on its own line before setScale

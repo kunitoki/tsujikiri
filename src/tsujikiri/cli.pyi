@@ -1,6 +1,6 @@
 import argparse
 from tsujikiri.attribute_processor import AttributeProcessor as AttributeProcessor
-from tsujikiri.configurations import FormatOverrideConfig as FormatOverrideConfig, GenerationConfig as GenerationConfig, InputConfig as InputConfig, OutputGroupEntry as OutputGroupEntry, SourceEntry as SourceEntry, load_input_config as load_input_config, load_output_config as load_output_config, merge_yaml_dicts as merge_yaml_dicts
+from tsujikiri.configurations import FormatOverrideConfig as FormatOverrideConfig, GenerationConfig as GenerationConfig, InputConfig as InputConfig, OutputConfig as OutputConfig, OutputGroupEntry as OutputGroupEntry, SourceEntry as SourceEntry, load_input_config as load_input_config, load_output_config as load_output_config, merge_yaml_dicts as merge_yaml_dicts
 from tsujikiri.filters import FilterEngine as FilterEngine
 from tsujikiri.formats import apply_format_inheritance as apply_format_inheritance, list_builtin_formats as list_builtin_formats, resolve_format_path as resolve_format_path
 from tsujikiri.generator import Generator as Generator, TemplateCache as TemplateCache
@@ -9,6 +9,7 @@ from tsujikiri.parse_cache import ParseCache as ParseCache, ParseKey as ParseKey
 from tsujikiri.pretty_printers import pretty as pretty
 from tsujikiri.tir import TIRFunction as TIRFunction, TIRModule as TIRModule, TIRParameter as TIRParameter, clear_extracted_docs as clear_extracted_docs, merge_tir_modules as merge_tir_modules, upgrade_module as upgrade_module
 from tsujikiri.transforms import build_pipeline_from_config as build_pipeline_from_config
+from tsujikiri.type_patterns import compile_type_patterns as compile_type_patterns
 from tsujikiri.typesystem import merge_typesystems as merge_typesystems
 
 def build_parser() -> argparse.ArgumentParser: ...

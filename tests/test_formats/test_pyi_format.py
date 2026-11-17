@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import io
+from typing import Optional
 
 import pytest
 
@@ -536,3 +538,117 @@ class TestPyiFreeFunctionDeprecated:
         output = buf.getvalue()
         assert "# deprecated" in output
         assert "use newOp" in output
+
+
+# ---------------------------------------------------------------------------
+# Docstring placement — a documented stub uses the docstring as its body
+# ---------------------------------------------------------------------------
+
+
+def _method(
+    name: str,
+    doc: Optional[str] = None,
+    is_static: bool = False,
+    param_type: str = "int",
+    return_doc: Optional[str] = None,
+) -> TIRMethod:
+    return TIRMethod(
+        name=name,
+        spelling=name,
+        qualified_name=f"ns::Foo::{name}",
+        return_type="int",
+        parameters=[TIRParameter("x", param_type)],
+        is_static=is_static,
+        doc=doc,
+        return_doc=return_doc,
+    )
+
+
+def _function(name: str, doc: Optional[str] = None, param_type: str = "int") -> TIRFunction:
+    return TIRFunction(
+        name=name,
+        qualified_name=f"ns::{name}",
+        namespace="ns",
+        return_type="int",
+        parameters=[TIRParameter("x", param_type)],
+        doc=doc,
+    )
+
+
+class TestDocstringPlacement:
+    @pytest.fixture(scope="class")
+    def output(self, pyi_output_config) -> str:
+        cls = _simple_class(
+            ctors=[TIRConstructor(parameters=[TIRParameter("w", "int", doc="The width.")], doc="Builds it.")],
+            methods=[
+                _method("width", doc="Gets the width.", return_doc="The width."),
+                _method("plain"),
+                _method("make", doc="Makes one.", is_static=True),
+                _method("raw", is_static=True),
+                _method("set", doc="Sets an int."),
+                _method("set", param_type="float"),
+                _method("count", doc="Counts ints.", is_static=True),
+                _method("count", is_static=True, param_type="float"),
+            ],
+            fields=[TIRField(name="x_", type_spelling="int", doc="X coordinate")],
+        )
+        scoped = TIREnum(
+            name="Channel",
+            qualified_name="ns::Channel",
+            is_scoped=True,
+            values=[TIREnumValue("Red", 0, doc="Red one."), TIREnumValue("Green", 1)],
+        )
+        plain = TIREnum(name="Mode", qualified_name="ns::Mode", values=[TIREnumValue("Fast", 0, doc="Fast mode.")])
+        mod = TIRModule(
+            name="m",
+            classes=[cls],
+            class_by_name={"Foo": cls},
+            enums=[scoped, plain],
+            functions=[
+                _function("documented", doc="Free fn."),
+                _function("bare"),
+                _function("over", doc="Over int."),
+                _function("over", param_type="float"),
+            ],
+        )
+        return _gen(mod, pyi_output_config)
+
+    def test_output_is_valid_python(self, output: str) -> None:
+        ast.parse(output)
+
+    def test_constructor_docstring_is_body(self, output: str) -> None:
+        assert '    def __init__(self, w: int) -> None:\n        """Builds it.\n' in output
+        assert "-> None: ..." not in output
+
+    def test_method_docstring_is_body(self, output: str) -> None:
+        assert '    def width(self, x: int) -> int:\n        """Gets the width.\n' in output
+
+    def test_undocumented_method_keeps_ellipsis(self, output: str) -> None:
+        assert "    def plain(self, x: int) -> int: ...\n" in output
+        assert "    def raw(x: int) -> int: ...\n" in output
+
+    def test_static_method_docstring_is_body(self, output: str) -> None:
+        assert '    @staticmethod\n    def make(x: int) -> int:\n        """Makes one."""\n' in output
+
+    def test_overloaded_method_docstrings(self, output: str) -> None:
+        assert '    @overload\n    def set(self, x: int) -> int:\n        """Sets an int."""\n' in output
+        assert "    @overload\n    def set(self, x: float) -> int: ...\n" in output
+
+    def test_overloaded_static_method_docstrings(self, output: str) -> None:
+        assert '    @overload\n    @staticmethod\n    def count(x: int) -> int:\n        """Counts ints."""\n' in output
+        assert "    @overload\n    @staticmethod\n    def count(x: float) -> int: ...\n" in output
+
+    def test_function_docstring_is_body(self, output: str) -> None:
+        assert 'def documented(x: int) -> int:\n    """Free fn."""\n' in output
+        assert "def bare(x: int) -> int: ...\n" in output
+
+    def test_overloaded_function_docstrings(self, output: str) -> None:
+        assert '@overload\ndef over(x: int) -> int:\n    """Over int."""\n' in output
+        assert "@overload\ndef over(x: float) -> int: ...\n" in output
+
+    def test_enum_value_docstrings_align_with_value(self, output: str) -> None:
+        assert '    Red: int = 0\n    """Red one."""\n    Green: int = 1\n' in output
+        assert '    Fast: Mode\n    """Fast mode."""' in output
+
+    def test_field_docstring(self, output: str) -> None:
+        assert '    x_: int\n    """X coordinate"""' in output

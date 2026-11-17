@@ -36,7 +36,7 @@ class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribut
 {%- if not cls.force_abstract %}
 {%- for ctor in cls.constructor_group.constructors %}
 {%- block class_constructor scoped %}
-    def __init__(self{% for p in ctor.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> None: ...
+    def __init__(self{% for p in ctor.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> None:{% if not ctor | entity_has_doc %} ...{% endif %}
 {%- if ctor | entity_has_doc %}
         """{{ ctor | docstring_body("        ") }}"""
 {%- endif %}
@@ -53,10 +53,13 @@ class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribut
 {%- if group.is_static %}
     @overload
     @staticmethod
-    def {{ group.name | camel_to_snake }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
+    def {{ group.name | camel_to_snake }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}:{% if not method | entity_has_doc %} ...{% endif %}
 {%- else %}
     @overload
-    def {{ group.name | camel_to_snake }}(self{% for p in method.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
+    def {{ group.name | camel_to_snake }}(self{% for p in method.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}:{% if not method | entity_has_doc %} ...{% endif %}
+{%- endif %}
+{%- if method | entity_has_doc %}
+        """{{ method | docstring_body("        ") }}"""
 {%- endif %}
 {%- endblock %}
 {%- endfor %}
@@ -69,9 +72,9 @@ class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribut
 {%- endif %}
 {%- if group.is_static %}
     @staticmethod
-    def {{ group.name | camel_to_snake }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
+    def {{ group.name | camel_to_snake }}({% for p in method.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}:{% if not method | entity_has_doc %} ...{% endif %}
 {%- else %}
-    def {{ group.name | camel_to_snake }}(self{% for p in method.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}: ...
+    def {{ group.name | camel_to_snake }}(self{% for p in method.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}:{% if not method | entity_has_doc %} ...{% endif %}
 {%- endif %}
 {%- if method | entity_has_doc %}
         """{{ method | docstring_body("        ") }}"""
@@ -103,7 +106,7 @@ class {{ enum.name }}(enum.IntEnum):
 {%- block scoped_enum_value scoped %}
     {{ value.name }}: int = {{ value.number }}
 {%- if value.doc %}
-        """{{ value.doc }}"""
+    """{{ value.doc }}"""
 {%- endif %}
 {%- endblock %}
 {%- endfor %}
@@ -120,7 +123,7 @@ class {{ enum.name }}(int):
 {%- block enum_value scoped %}
     {{ value.name }}: {{ enum.name }}
 {%- if value.doc %}
-        """{{ value.doc }}"""
+    """{{ value.doc }}"""
 {%- endif %}
 {%- endblock %}
 {%- endfor %}
@@ -139,7 +142,10 @@ class {{ enum.name }}(int):
 {%- endif %}
 
 @overload
-def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}: ...
+def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}:{% if not fn | entity_has_doc %} ...{% endif %}
+{%- if fn | entity_has_doc %}
+    """{{ fn | docstring_body("    ") }}"""
+{%- endif %}
 {%- endblock %}
 {%- endfor %}
 {%- endblock %}
@@ -151,7 +157,7 @@ def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.fir
 # deprecated{% if fn.deprecation_message %}: {{ fn.deprecation_message }}{% endif %}
 {%- endif %}
 
-def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}: ...
+def {{ group.name | camel_to_snake }}({% for p in fn.params %}{% if not loop.first %}, {% endif %}{{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}:{% if not fn | entity_has_doc %} ...{% endif %}
 {%- if fn | entity_has_doc %}
     """{{ fn | docstring_body("    ") }}"""
 {%- endif %}
