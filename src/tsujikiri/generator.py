@@ -1006,8 +1006,11 @@ class Generator:
         ``char *`` and ``const char *`` remain distinct.
 
         Exact entries (format, then typesystem) win; generic placeholder
-        entries such as ``std::optional<{T}>`` are tried last, over the same
-        candidates, and map their captured arguments recursively.
+        entries such as ``std::optional<{T}>`` are tried last, most specific
+        entry first, each over the same candidates, and map their captured
+        arguments recursively.  Trying the entries in the outer loop keeps a
+        catch-all such as ``{NS}::{T}`` from shadowing ``std::vector<{T}>`` on
+        ``const std::vector<int> &``.
         """
         candidates = _type_lookup_candidates(type_spelling)
         for candidate in candidates:
@@ -1020,8 +1023,8 @@ class Generator:
             for tt in self._typesystem.typedef_types:
                 if tt.cpp_name == type_spelling:
                     return tt.target_name
-        for candidate in candidates:
-            for pattern in self._type_patterns:
+        for pattern in self._type_patterns:
+            for candidate in candidates:
                 captures = pattern.match(candidate)
                 if captures is not None:
                     return pattern.render(captures, self._map_type)

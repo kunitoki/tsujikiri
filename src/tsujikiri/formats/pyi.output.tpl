@@ -2,7 +2,7 @@
 # DO NOT EDIT - Auto-generated Python stubs for {{ module_name }} by tsujikiri
 from __future__ import annotations
 import enum
-from typing import overload
+from typing import Callable, overload
 {{ code_injections | code_at("beginning") }}
 {%- endblock %}
 {%- block api_version %}
@@ -15,6 +15,11 @@ __api_version__: str
 {%- block class scoped %}
 
 class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribute='short_name') | join(', ') }}){% endif %}:
+{%- set operators = namespace(names=[]) %}
+{%- for group in cls.method_groups %}{% for method in group.methods if method.is_operator and method.operator_name %}{% set operators.names = operators.names + [method.operator_name] %}{% endfor %}{% endfor %}
+{%- for group in cls.free_operator_groups if group.operator_name %}{% for fn in group.functions %}{% set operators.names = operators.names + [group.operator_name] %}{% endfor %}{% endfor %}
+{%- if cls.has_free_ostream_op %}{% set operators.names = operators.names + ["__repr__"] %}{% endif %}
+{%- set class_body %}
 {%- if cls.doc %}
     """{{ cls.doc }}"""
 {%- endif %}
@@ -46,7 +51,8 @@ class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribut
 {%- endblock %}
 {%- block class_methods scoped %}
 {%- for group in cls.method_groups %}
-{%- if group.is_overloaded %}
+{%- if group.methods[0].is_operator %}
+{%- elif group.is_overloaded %}
 {%- block class_overloaded_method_group scoped %}
 {%- for method in group.methods %}
 {%- block class_overloaded_method scoped %}
@@ -83,7 +89,45 @@ class {{ cls.name }}{% if cls.public_bases %}({{ cls.public_bases | map(attribut
 {%- endif %}
 {%- endfor %}
 {%- endblock %}
+{%- block class_operators scoped %}
+{%- for name in operators.names | unique %}
+{%- if name in ("__repr__", "__bool__") and operators.names.count(name) > 1 or name == "__repr__" %}
+    def {{ name }}(self) -> {{ "str" if name == "__repr__" else "bool" }}: ...
+{%- else %}
+{%- for group in cls.method_groups if group.methods[0].is_operator %}
+{%- for method in group.methods if method.operator_name == name %}
+{%- block class_operator scoped %}
+{%- if operators.names.count(name) > 1 %}
+    @overload
+{%- endif %}
+    def {{ name }}(self{% for p in method.params %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ method.return_type }}:{% if not method | entity_has_doc %} ...{% endif %}
+{%- if method | entity_has_doc %}
+        """{{ method | docstring_body("        ") }}"""
+{%- endif %}
+{%- endblock %}
+{%- endfor %}
+{%- endfor %}
+{%- for group in cls.free_operator_groups if group.operator_name == name %}
+{%- for fn in group.functions %}
+{%- block class_free_operator scoped %}
+{%- if operators.names.count(name) > 1 %}
+    @overload
+{%- endif %}
+    def {{ name }}(self{% for p in fn.params[1:] %}, {{ p.name }}: {{ p.type }}{% if p.default %} = {{ p.default }}{% endif %}{% endfor %}) -> {{ fn.return_type }}:{% if not fn | entity_has_doc %} ...{% endif %}
+{%- if fn | entity_has_doc %}
+        """{{ fn | docstring_body("        ") }}"""
+{%- endif %}
+{%- endblock %}
+{%- endfor %}
+{%- endfor %}
+{%- endif %}
+{%- endfor %}
+{%- endblock %}
 {{ cls.code_injections | code_at("end") }}
+{%- endset %}
+{%- if class_body.strip() %}{{ class_body }}{% else %}
+    ...
+{%- endif %}
 {%- endblock %}
 {%- endfor %}
 {%- for enum in enums %}
@@ -110,6 +154,9 @@ class {{ enum.name }}(enum.IntEnum):
 {%- endif %}
 {%- endblock %}
 {%- endfor %}
+{%- if not enum.values and not enum.doc %}
+    ...
+{%- endif %}
 {%- else %}
 
 class {{ enum.name }}(int):
@@ -127,10 +174,13 @@ class {{ enum.name }}(int):
 {%- endif %}
 {%- endblock %}
 {%- endfor %}
+{%- if not enum.values and not enum.doc %}
+    ...
+{%- endif %}
 {%- endif %}
 {%- endblock %}
 {%- endfor %}
-{%- for group in function_groups %}
+{%- for group in function_groups if not group.functions[0].is_operator %}
 {%- block function_group scoped %}
 {%- if group.is_overloaded %}
 {%- block function_group_overloaded scoped %}

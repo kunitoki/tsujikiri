@@ -246,6 +246,12 @@ class TestMapTypeGeneric:
         assert gen._map_type("std::vector<std::vector<int>>") == "matrix<int>"
         assert gen._map_type("std::vector<int>") == "int[]"
 
+    def test_specific_pattern_on_stripped_candidate_beats_catch_all_on_raw(self) -> None:
+        gen = _gen({"std::vector<{T}>": "list[{T}]", "{NS}::{T}": "{T}", "{T} &": "{T}"})
+        assert gen._map_type("const std::vector<ns::Foo> &") == "list[Foo]"
+        assert gen._map_type("std::vector<ns::Foo> &") == "list[Foo]"
+        assert gen._map_type("const ns::Foo &") == "Foo"
+
     def test_declaration_order_breaks_ties(self) -> None:
         gen = _gen({"a<{T}>": "first", "{T}<b>": "second"})
         assert gen._map_type("a<b>") == "first"

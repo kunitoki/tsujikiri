@@ -148,7 +148,10 @@ type_mappings:
    stripped, most specific first);
 2. exact typesystem primitive/typedef entries;
 3. generic entries, over the same candidate spellings — the entry with the most
-   literal (non-placeholder) text wins, ties go to the entry declared first;
+   literal (non-placeholder) text wins, ties go to the entry declared first.
+   Each entry is tried on every spelling before the next entry, so a catch-all
+   such as `"{NS}::{T}"` cannot shadow `"std::vector<{T}>"` on
+   `const std::vector<int> &`;
 4. otherwise the spelling passes through unchanged.
 
 Pointer types are never stripped: `std::optional<int> *` only matches a key that
@@ -837,6 +840,7 @@ tsujikiri -i project.input.yml --target pybind11 src/py_bindings.cpp
 ```cpp
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/functional.h>
 #include "myproject.hpp"
 
 namespace py = pybind11;
@@ -977,13 +981,37 @@ The pyi format ships with a comprehensive C++ → Python type mapping table:
 
 | C++ type | Python type |
 |----------|-------------|
-| `int`, `unsigned int`, `long`, `short`, `int8_t`, … `uint64_t`, `size_t` | `int` |
+| `int`, `unsigned int`, `long`, `long long`, `short`, `signed char`, `unsigned char`, `int8_t`, … `uint64_t`, `size_t`, `std::size_t` | `int` |
 | `float`, `double` | `float` |
 | `bool` | `bool` |
-| `std::string`, `const char *`, `char *`, `std::string_view` | `str` |
+| `std::string`, `const char *`, `char *`, `char`, `std::string_view` | `str` |
 | `void` | `None` |
+| `void *` | `object` |
 
-Types not in this table pass through unchanged (e.g. `Vec3` stays `Vec3`).
+Standard containers use the conversions of `pybind11/stl.h` and
+`pybind11/functional.h` (both included by the `pybind11` format), through
+[generic type mappings](#generic-type-mappings), so arguments map recursively:
+
+| C++ type | Python type |
+|----------|-------------|
+| `std::vector<T>`, `std::array<T, N>`, `std::list<T>`, `std::deque<T>` | `list[T]` |
+| `std::set<T>`, `std::unordered_set<T>` | `set[T]` |
+| `std::map<K, V>`, `std::unordered_map<K, V>` | `dict[K, V]` |
+| `std::pair<A, B>`, `std::tuple<Ts...>` | `tuple[A, B]`, `tuple[Ts...]` (`std::tuple<>` → `tuple[()]`) |
+| `std::optional<T>` | `T \| None` |
+| `std::variant<Ts...>` | `T1 \| T2 \| ...` |
+| `std::function<R(Args...)>` | `Callable[[Args...], R]` |
+| `std::shared_ptr<T>`, `std::unique_ptr<T>` | `T` |
+
+Fallback entries then drop C++ spelling that has no meaning in a stub:
+`const`, `&` and `&&` are removed, a pointer `T *` becomes `T | None`, and a
+namespace prefix is dropped so class types use their stub name
+(`const std::vector<ns::Foo> &` → `list[Foo]`, `const ns::Foo *` → `Foo | None`).
+
+Types matched by no entry pass through unchanged (e.g. `Vec3` stays `Vec3`).
+
+The `pybind11` format renders raw C++ types only, so none of these Python
+mappings belong in `pybind11.output.yml`.
 
 ### Class Stubs
 
@@ -1013,6 +1041,38 @@ class Calculator:
     @overload
     def add(self, a: float, b: float) -> float: ...
 ```
+
+### Operators
+
+`pyi` carries the same `operator_mappings` table as `pybind11` (keep the two in
+sync in custom formats), so each mapped operator is stubbed as the dunder
+method pybind11 binds:
+
+```python
+class Vec2:
+    @overload
+    def __add__(self, o: Vec2) -> Vec2: ...
+    @overload
+    def __add__(self, k: float) -> Vec2: ...   # free operator+(const Vec2 &, double)
+    def __neg__(self) -> Vec2: ...
+    def __eq__(self, o: Vec2) -> bool: ...
+    def __bool__(self) -> bool: ...
+    def __repr__(self) -> str: ...
+```
+
+- Free operators attached to a class (first operand is the class) render as
+  methods of that class, with the first operand becoming `self`.
+- All definitions of one dunder — member and free — are emitted together;
+  when there is more than one, each gets `@overload`.
+- `operator<<` (member, attached free, or a free `operator<<(std::ostream &, const T &)`)
+  yields one `def __repr__(self) -> str: ...`.
+- `operator bool` and `operator!` both map to `__bool__`; when both exist a
+  single `def __bool__(self) -> bool: ...` is emitted.
+- Unmapped operators (e.g. `operator=`) and free operators that do not attach
+  to a bound class are not stubbed: pybind11 binds them under names that are
+  not valid Python identifiers.
+
+A class or enum whose body would otherwise be empty renders `...`.
 
 ### Enum Stubs
 
