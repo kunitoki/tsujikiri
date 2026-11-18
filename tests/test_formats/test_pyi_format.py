@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import io
+from typing import Optional
 
 import pytest
 
@@ -80,7 +82,7 @@ class TestPrologue:
     def test_overload_import(self, pyi_output_config):
         mod = TIRModule(name="mymod")
         out = _gen(mod, pyi_output_config)
-        assert "from typing import overload" in out
+        assert "from typing import Callable, overload" in out
 
     def test_api_version_attr_when_set(self, pyi_output_config):
         mod = TIRModule(name="mymod")
@@ -536,3 +538,310 @@ class TestPyiFreeFunctionDeprecated:
         output = buf.getvalue()
         assert "# deprecated" in output
         assert "use newOp" in output
+
+
+# ---------------------------------------------------------------------------
+# Docstring placement — a documented stub uses the docstring as its body
+# ---------------------------------------------------------------------------
+
+
+def _method(
+    name: str,
+    doc: Optional[str] = None,
+    is_static: bool = False,
+    param_type: str = "int",
+    return_doc: Optional[str] = None,
+) -> TIRMethod:
+    return TIRMethod(
+        name=name,
+        spelling=name,
+        qualified_name=f"ns::Foo::{name}",
+        return_type="int",
+        parameters=[TIRParameter("x", param_type)],
+        is_static=is_static,
+        doc=doc,
+        return_doc=return_doc,
+    )
+
+
+def _function(name: str, doc: Optional[str] = None, param_type: str = "int") -> TIRFunction:
+    return TIRFunction(
+        name=name,
+        qualified_name=f"ns::{name}",
+        namespace="ns",
+        return_type="int",
+        parameters=[TIRParameter("x", param_type)],
+        doc=doc,
+    )
+
+
+class TestDocstringPlacement:
+    @pytest.fixture(scope="class")
+    def output(self, pyi_output_config) -> str:
+        cls = _simple_class(
+            ctors=[TIRConstructor(parameters=[TIRParameter("w", "int", doc="The width.")], doc="Builds it.")],
+            methods=[
+                _method("width", doc="Gets the width.", return_doc="The width."),
+                _method("plain"),
+                _method("make", doc="Makes one.", is_static=True),
+                _method("raw", is_static=True),
+                _method("set", doc="Sets an int."),
+                _method("set", param_type="float"),
+                _method("count", doc="Counts ints.", is_static=True),
+                _method("count", is_static=True, param_type="float"),
+            ],
+            fields=[TIRField(name="x_", type_spelling="int", doc="X coordinate")],
+        )
+        scoped = TIREnum(
+            name="Channel",
+            qualified_name="ns::Channel",
+            is_scoped=True,
+            values=[TIREnumValue("Red", 0, doc="Red one."), TIREnumValue("Green", 1)],
+        )
+        plain = TIREnum(name="Mode", qualified_name="ns::Mode", values=[TIREnumValue("Fast", 0, doc="Fast mode.")])
+        mod = TIRModule(
+            name="m",
+            classes=[cls],
+            class_by_name={"Foo": cls},
+            enums=[scoped, plain],
+            functions=[
+                _function("documented", doc="Free fn."),
+                _function("bare"),
+                _function("over", doc="Over int."),
+                _function("over", param_type="float"),
+            ],
+        )
+        return _gen(mod, pyi_output_config)
+
+    def test_output_is_valid_python(self, output: str) -> None:
+        ast.parse(output)
+
+    def test_constructor_docstring_is_body(self, output: str) -> None:
+        assert '    def __init__(self, w: int) -> None:\n        """Builds it.\n' in output
+        assert "-> None: ..." not in output
+
+    def test_method_docstring_is_body(self, output: str) -> None:
+        assert '    def width(self, x: int) -> int:\n        """Gets the width.\n' in output
+
+    def test_undocumented_method_keeps_ellipsis(self, output: str) -> None:
+        assert "    def plain(self, x: int) -> int: ...\n" in output
+        assert "    def raw(x: int) -> int: ...\n" in output
+
+    def test_static_method_docstring_is_body(self, output: str) -> None:
+        assert '    @staticmethod\n    def make(x: int) -> int:\n        """Makes one."""\n' in output
+
+    def test_overloaded_method_docstrings(self, output: str) -> None:
+        assert '    @overload\n    def set(self, x: int) -> int:\n        """Sets an int."""\n' in output
+        assert "    @overload\n    def set(self, x: float) -> int: ...\n" in output
+
+    def test_overloaded_static_method_docstrings(self, output: str) -> None:
+        assert '    @overload\n    @staticmethod\n    def count(x: int) -> int:\n        """Counts ints."""\n' in output
+        assert "    @overload\n    @staticmethod\n    def count(x: float) -> int: ...\n" in output
+
+    def test_function_docstring_is_body(self, output: str) -> None:
+        assert 'def documented(x: int) -> int:\n    """Free fn."""\n' in output
+        assert "def bare(x: int) -> int: ...\n" in output
+
+    def test_overloaded_function_docstrings(self, output: str) -> None:
+        assert '@overload\ndef over(x: int) -> int:\n    """Over int."""\n' in output
+        assert "@overload\ndef over(x: float) -> int: ...\n" in output
+
+    def test_enum_value_docstrings_align_with_value(self, output: str) -> None:
+        assert '    Red: int = 0\n    """Red one."""\n    Green: int = 1\n' in output
+        assert '    Fast: Mode\n    """Fast mode."""' in output
+
+    def test_field_docstring(self, output: str) -> None:
+        assert '    x_: int\n    """X coordinate"""' in output
+
+
+# ---------------------------------------------------------------------------
+# Operators — stubbed as the dunder methods pybind11 binds
+# ---------------------------------------------------------------------------
+
+
+def _op(
+    operator_type: str,
+    params: Optional[list[TIRParameter]] = None,
+    return_type: str = "ns::Foo",
+    owner: str = "Foo",
+    doc: Optional[str] = None,
+) -> TIRMethod:
+    name = operator_type.removesuffix("unary")
+    return TIRMethod(
+        name=name,
+        spelling=name,
+        qualified_name=f"ns::{owner}::{name}",
+        return_type=return_type,
+        parameters=params or [],
+        is_operator=True,
+        operator_type=operator_type,
+        doc=doc,
+    )
+
+
+def _free_op(operator_type: str, params: list[TIRParameter], return_type: str = "ns::Foo") -> TIRFunction:
+    return TIRFunction(
+        name=operator_type,
+        qualified_name=f"ns::{operator_type}",
+        namespace="ns",
+        return_type=return_type,
+        parameters=params,
+        is_operator=True,
+        operator_type=operator_type,
+    )
+
+
+class TestOperators:
+    @pytest.fixture(scope="class")
+    def output(self, pyi_output_config) -> str:
+        foo = _simple_class(
+            methods=[
+                _op("operator+", [TIRParameter("o", "const ns::Foo &")], doc="Adds two."),
+                _op("operator+", [TIRParameter("o", "int")]),
+                _op("operator-unary"),
+                _op("operator==", [TIRParameter("o", "const ns::Foo &")], return_type="bool"),
+                _op("operator!", return_type="bool"),
+                _op("operator bool", return_type="bool"),
+                _op("operator=", [TIRParameter("o", "const ns::Foo &")], return_type="ns::Foo &"),
+                _op("operator<<", [TIRParameter("os", "std::ostream &")], return_type="std::ostream &"),
+                TIRMethod(
+                    name="items",
+                    spelling="items",
+                    qualified_name="ns::Foo::items",
+                    return_type="std::vector<ns::Foo>",
+                    parameters=[TIRParameter("keys", "const std::vector<std::optional<std::string>> &")],
+                ),
+            ]
+        )
+        bare = _simple_class(
+            "Bare", "ns::Bare", methods=[_op("operator=", [TIRParameter("o", "int")], "ns::Bare &", owner="Bare")]
+        )
+        truthy = _simple_class(
+            "Truthy",
+            "ns::Truthy",
+            methods=[_op("operator bool", return_type="bool", owner="Truthy", doc="Is set.")],
+        )
+        printable = _simple_class("Printable", "ns::Printable")
+        mod = TIRModule(
+            name="m",
+            classes=[foo, bare, truthy, printable],
+            class_by_name={c.name: c for c in (foo, bare, truthy, printable)},
+            enums=[
+                TIREnum(name="Nothing", qualified_name="ns::Nothing", is_scoped=True),
+                TIREnum(name="Void", qualified_name="ns::Void"),
+            ],
+            functions=[
+                _free_op("operator*", [TIRParameter("f", "const ns::Foo &"), TIRParameter("k", "int")]),
+                _free_op("operator+", [TIRParameter("f", "const ns::Foo &"), TIRParameter("k", "double")]),
+                _free_op(
+                    "operator<<",
+                    [TIRParameter("os", "std::ostream &"), TIRParameter("f", "const ns::Foo &")],
+                    "std::ostream &",
+                ),
+                _free_op(
+                    "operator<<",
+                    [TIRParameter("os", "std::ostream &"), TIRParameter("p", "const ns::Printable &")],
+                    "std::ostream &",
+                ),
+                _free_op("operator-", [TIRParameter("k", "int"), TIRParameter("f", "const ns::Foo &")]),
+                _function("regular"),
+            ],
+        )
+        return _gen(mod, pyi_output_config)
+
+    @staticmethod
+    def _class(output: str, name: str) -> str:
+        start = output.index(f"class {name}")
+        end = output.find("\nclass ", start + 1)
+        return output[start : end if end != -1 else len(output)]
+
+    def test_output_is_valid_python(self, output: str) -> None:
+        ast.parse(output)
+
+    def test_no_raw_operator_names(self, output: str) -> None:
+        assert "def operator" not in output
+
+    def test_member_and_free_overloads_are_contiguous(self, output: str) -> None:
+        assert (
+            "    @overload\n    def __add__(self, o: Foo) -> Foo:\n"
+            '        """Adds two."""\n'
+            "    @overload\n    def __add__(self, o: int) -> Foo: ...\n"
+            "    @overload\n    def __add__(self, k: float) -> Foo: ...\n"
+        ) in output
+
+    def test_unary_operator(self, output: str) -> None:
+        assert "    def __neg__(self) -> Foo: ...\n" in output
+
+    def test_single_operator_has_no_overload(self, output: str) -> None:
+        assert "    def __eq__(self, o: Foo) -> bool: ...\n" in output
+        assert "@overload\n    def __eq__" not in output
+
+    def test_free_operator_drops_self_operand(self, output: str) -> None:
+        assert "    def __mul__(self, k: int) -> Foo: ...\n" in output
+
+    def test_bool_conversions_collapse(self, output: str) -> None:
+        assert self._class(output, "Foo").count("def __bool__") == 1
+        assert "    def __bool__(self) -> bool: ...\n" in output
+
+    def test_single_bool_keeps_docstring(self, output: str) -> None:
+        assert '    def __bool__(self) -> bool:\n        """Is set."""' in self._class(output, "Truthy")
+
+    def test_repr_emitted_once(self, output: str) -> None:
+        foo = self._class(output, "Foo")
+        assert foo.count("def __repr__") == 1
+        assert "    def __repr__(self) -> str: ...\n" in foo
+
+    def test_free_ostream_operator_alone_gives_repr(self, output: str) -> None:
+        assert self._class(output, "Printable").strip() == "class Printable:\n    def __repr__(self) -> str: ..."
+
+    def test_unmapped_operator_skipped_and_empty_body_is_ellipsis(self, output: str) -> None:
+        assert self._class(output, "Bare").strip() == "class Bare:\n    ..."
+
+    def test_unattached_free_operators_not_module_functions(self, output: str) -> None:
+        assert "\ndef __" not in output
+        assert "def regular(x: int) -> int: ..." in output
+
+    def test_empty_enums_have_ellipsis_body(self, output: str) -> None:
+        assert "class Nothing(enum.IntEnum):\n    ...\n" in output
+        assert "class Void(int):\n    ...\n" in output
+
+    def test_container_and_namespace_types_are_mapped(self, output: str) -> None:
+        assert "    def items(self, keys: list[str | None]) -> list[Foo]: ...\n" in output
+
+
+class TestPyiTypeMappings:
+    @pytest.mark.parametrize(
+        ("cpp", "py"),
+        [
+            ("const ns::Foo &", "Foo"),
+            ("ns::Foo &&", "Foo"),
+            ("ns::Foo *", "Foo | None"),
+            ("const ns::Outer::Inner *", "Inner | None"),
+            ("const std::vector<ns::Foo> &", "list[Foo]"),
+            ("std::array<int, 4>", "list[int]"),
+            ("std::list<double>", "list[float]"),
+            ("std::deque<bool>", "list[bool]"),
+            ("std::set<std::string>", "set[str]"),
+            ("std::unordered_set<int>", "set[int]"),
+            ("std::map<std::string, std::vector<int>>", "dict[str, list[int]]"),
+            ("std::unordered_map<int, const ns::Foo *>", "dict[int, Foo | None]"),
+            ("std::pair<int, float>", "tuple[int, float]"),
+            ("std::tuple<int, std::string, bool>", "tuple[int, str, bool]"),
+            ("std::tuple<>", "tuple[()]"),
+            ("std::optional<ns::Foo>", "Foo | None"),
+            ("std::variant<int, std::string>", "int | str"),
+            ("std::function<void()>", "Callable[[], None]"),
+            ("std::function<ns::Foo &(const ns::Foo &, int)>", "Callable[[Foo, int], Foo]"),
+            ("std::shared_ptr<ns::Foo>", "Foo"),
+            ("std::unique_ptr<ns::Foo>", "Foo"),
+            ("unsigned char", "int"),
+            ("signed char", "int"),
+            ("long long", "int"),
+            ("std::size_t", "int"),
+            ("const char *", "str"),
+            ("void *", "object"),
+            ("char", "str"),
+        ],
+    )
+    def test_mapping(self, pyi_output_config, cpp: str, py: str) -> None:
+        assert Generator(pyi_output_config)._map_type(cpp) == py

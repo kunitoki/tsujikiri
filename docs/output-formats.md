@@ -26,6 +26,7 @@ unsupported_types:
 type_mappings:
   "std::string": "String"
   "int32_t": "int"
+  "std::optional<{T}>": "{T}?"     # generic entry, see "Generic type mappings"
 
 # Emit one callable per arity for parameters that have C++ default values
 expand_default_arguments: true
@@ -92,6 +93,90 @@ Leaving the key unset (`None`) inherits the value from the format named by
 | `pybind11` | unset | `py::arg("x") = 1.0` |
 | `pyi` | unset | `x: float = 1.0` |
 
+### Generic type mappings
+
+A `type_mappings` key containing `{Name}` placeholders is a *generic* entry that
+matches any instantiation of a template. Captured arguments are mapped again
+(recursively), so generic and exact entries compose:
+
+```yaml
+type_mappings:
+  "int": "integer"
+  "std::string": "string"
+  "std::optional<{T}>": "{T}?"
+  "std::vector<{T}>": "{T}[]"
+  "std::map<{K}, {V}>": "table<{K}, {V}>"
+  "std::variant<{T...}>": "{T...|}"
+  "std::tuple<{T...}>": "[{T...}]"
+  "std::unique_ptr<{T}>": "{T}"
+```
+
+| C++ type | Result |
+|----------|--------|
+| `std::optional<int>` | `integer?` |
+| `const std::optional<std::string> &` | `string?` |
+| `std::optional<std::vector<std::string>>` | `string[]?` |
+| `std::map<std::string, std::optional<int>>` | `table<string, integer?>` |
+| `std::variant<int, std::string, double>` | `integer\|string\|double` |
+| `std::tuple<int, bool>` | `[integer, bool]` |
+
+**Placeholders in keys:**
+
+- `{T}` captures exactly one template argument. Captures are bracket-balanced, so
+  `std::optional<{T}>` captures `std::map<int, float>` whole, and
+  `std::map<{K}, {V}>` splits `std::map<std::pair<int, int>, float>` at the
+  top-level comma only.
+- `{T...}` captures one or more comma-separated arguments. Only one variadic
+  placeholder is allowed per key.
+- Whitespace around `<`, `>`, `,`, `(`, `)`, `[`, `]`, `&` and `*` is ignored, so
+  `std::map<{K}, {V}>` also matches `std::map<int,float>`.
+- A key must match the *whole* type spelling: `vector<{T}>` does not match
+  `std::vector<int>`.
+
+**Placeholders in values:**
+
+- `{T}` inserts the mapped capture. For a variadic capture it inserts all mapped
+  arguments joined with `, `.
+- `{T...SEP}` joins the mapped variadic arguments with `SEP`, e.g. `{T...|}`,
+  `{T... | }`. An empty separator (`{T...}`) means `, `.
+- Braces that are not immediately followed by a name are literal, so Luau-style
+  values like `"{ [{K}]: {V} }"` work as expected.
+
+**Resolution order** for each type spelling:
+
+1. exact `type_mappings` entries (also trying the spelling with `const`/`&`/`&&`
+   stripped, most specific first);
+2. exact typesystem primitive/typedef entries;
+3. generic entries, over the same candidate spellings — the entry with the most
+   literal (non-placeholder) text wins, ties go to the entry declared first.
+   Each entry is tried on every spelling before the next entry, so a catch-all
+   such as `"{NS}::{T}"` cannot shadow `"std::vector<{T}>"` on
+   `const std::vector<int> &`;
+4. otherwise the spelling passes through unchanged.
+
+Pointer types are never stripped: `std::optional<int> *` only matches a key that
+includes the `*`, e.g. `"{T} *": "{T}?"`.
+
+**Validation:** malformed generic keys are reported when the format is loaded
+(and by `--validate-config`): adjacent placeholders with no literal text between
+them (`x<{A}{B}>`), a key consisting only of placeholders (`{T}`), a duplicate
+placeholder name, more than one variadic placeholder, a value placeholder that
+does not appear in the key, and `{T...}` in the value when `{T}` is not variadic.
+
+Generic entries are inherited through `extends` like any other `type_mappings`
+entry, so a custom format can extend `luals` and add just the generic mappings:
+
+```yaml
+# my_formats/myls.output.yml
+format_name: myls
+extends: luals
+type_mappings:
+  "std::optional<{T}>": "{T}?"
+  "std::vector<{T}>": "{T}[]"
+template: |
+  {% extends "luals.tpl" %}
+```
+
 ### `type_mappings` vs `add_type_mapping` transform
 
 | | `type_mappings` in `.output.yml` | `add_type_mapping` transform |
@@ -109,7 +194,8 @@ Every entity carries first-class documentation fields that templates render
 directly, so you don't need `custom_data` lookups to document your API:
 
 - `node.doc` — description of a class, method, function, field, enum, enum value or constructor;
-- `node.return_doc` — description of a method/function return value;
+- `node.return_doc` — description of a method/function return value, or of the
+  object built by a constructor;
 - `parameter.doc` — description of a single parameter.
 
 These are populated (in precedence order) from transform `doc`/`return_doc`
@@ -121,8 +207,9 @@ Each built-in format renders them as follows:
 
 | Format | Description (`doc`) | Parameters (`parameter.doc`) | Return (`return_doc`) |
 |--------|---------------------|------------------------------|-----------------------|
-| `luals` | `---` comment line | appended to `---@param name type <doc>` | `---@return type # <doc>` |
-| `pyi` | docstring summary | `Args:` section in the docstring | `Returns:` section in the docstring |
+| `luals` | `---<doc>` comment line (overloads: the first overload's doc) | appended to `---@param name type <doc>` | `---@return type # <doc>` |
+| `luau` | `--- <doc>` comment line | `--- @param name <doc>` (constructors) | `--- @return <doc>` (constructors) |
+| `pyi` | docstring summary, used as the stub body in place of `...` | `Args:` section in the docstring | `Returns:` section in the docstring |
 | `pybind11` | docstring string literal | `Args:` section appended to the docstring | `Returns:` section appended to the docstring |
 | `luabridge3` | `//` comment above `.addFunction` | `// @param name <doc>` comment | `// @return <doc>` comment |
 
@@ -138,6 +225,7 @@ void setVolume(float volume, float fadeTime);
 `luals` emits:
 
 ```lua
+---Sets the volume of the container.
 ---@param volume number Volume in decibel space, -100..20.
 ---@param fadeTime number Fade time to reach the desired volume.
 ---@return nil
@@ -147,13 +235,34 @@ function Container:setVolume(volume, fadeTime) end
 and `pyi` emits:
 
 ```python
-def set_volume(self, volume: float, fadeTime: float) -> None: ...
+def set_volume(self, volume: float, fadeTime: float) -> None:
     """Sets the volume of the container.
 
     Args:
         volume: Volume in decibel space, -100..20.
         fadeTime: Fade time to reach the desired volume.
     """
+```
+
+Undocumented stubs keep the `...` body (`def reset(self) -> None: ...`). Each
+`@overload` gets its own docstring, and enum value and field docstrings sit at
+the same indentation as the attribute they document.
+
+Constructors are documented the same way. In C++, a `@return` on a constructor
+comment becomes the constructor's `return_doc`:
+
+```cpp
+/// Builds a widget.
+/// @param size The initial size.
+/// @return A fresh widget.
+Widget(int size);
+```
+
+```lua
+---Builds a widget.
+---@param size integer The initial size.
+---@return Widget # A fresh widget.
+function Widget.new(size) end
 ```
 
 ---
@@ -522,6 +631,38 @@ function Shape:set_name(name) end
 function Calculator.max(a, b) end
 ```
 
+### Constructors
+
+A single constructor, or an overload set where only the first constructor is
+documented, is annotated as one `new` function with `---@overload` lines for the
+remaining overloads:
+
+```lua
+---Builds a widget.
+---@param size integer The initial size.
+---@return Widget # A fresh widget.
+---@overload fun(scale: number): Widget
+function Widget.new(size) end
+```
+
+`---@overload` lines cannot carry documentation, so when any later overload has
+a description, parameter docs or a return doc, every overload gets its own fully
+annotated definition instead. Repeated definitions are prefixed with
+`---@diagnostic disable-next-line: duplicate-set-field`:
+
+```lua
+---Builds a widget.
+---@param size integer The initial size.
+---@return Widget # A fresh widget.
+function Widget.new(size) end
+
+---Builds a scaled widget.
+---@param scale number Scale factor.
+---@return Widget
+---@diagnostic disable-next-line: duplicate-set-field
+function Widget.new(scale) end
+```
+
 ### Overloads
 
 ```lua
@@ -632,6 +773,22 @@ declare Vec3: {
 }
 ```
 
+Documented constructors get `---` comments above `new` (block
+`class_constructor_docs`). When `new` is overloaded, each documented overload is
+introduced by a `--- new(...)` signature line; undocumented overloads are
+skipped:
+
+```lua
+declare Vec3: {
+    --- new(x: number, y: number)
+    --- Builds a vector.
+    --- @param x Horizontal component.
+    --- @param y Vertical component.
+    --- @return A new vector.
+    new: ((x: number, y: number) -> Vec3) & (() -> Vec3),
+}
+```
+
 ### Overloads
 
 Overloaded instance methods are emitted as repeated `function` lines (the Luau
@@ -683,6 +840,7 @@ tsujikiri -i project.input.yml --target pybind11 src/py_bindings.cpp
 ```cpp
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/functional.h>
 #include "myproject.hpp"
 
 namespace py = pybind11;
@@ -823,13 +981,37 @@ The pyi format ships with a comprehensive C++ → Python type mapping table:
 
 | C++ type | Python type |
 |----------|-------------|
-| `int`, `unsigned int`, `long`, `short`, `int8_t`, … `uint64_t`, `size_t` | `int` |
+| `int`, `unsigned int`, `long`, `long long`, `short`, `signed char`, `unsigned char`, `int8_t`, … `uint64_t`, `size_t`, `std::size_t` | `int` |
 | `float`, `double` | `float` |
 | `bool` | `bool` |
-| `std::string`, `const char *`, `char *`, `std::string_view` | `str` |
+| `std::string`, `const char *`, `char *`, `char`, `std::string_view` | `str` |
 | `void` | `None` |
+| `void *` | `object` |
 
-Types not in this table pass through unchanged (e.g. `Vec3` stays `Vec3`).
+Standard containers use the conversions of `pybind11/stl.h` and
+`pybind11/functional.h` (both included by the `pybind11` format), through
+[generic type mappings](#generic-type-mappings), so arguments map recursively:
+
+| C++ type | Python type |
+|----------|-------------|
+| `std::vector<T>`, `std::array<T, N>`, `std::list<T>`, `std::deque<T>` | `list[T]` |
+| `std::set<T>`, `std::unordered_set<T>` | `set[T]` |
+| `std::map<K, V>`, `std::unordered_map<K, V>` | `dict[K, V]` |
+| `std::pair<A, B>`, `std::tuple<Ts...>` | `tuple[A, B]`, `tuple[Ts...]` (`std::tuple<>` → `tuple[()]`) |
+| `std::optional<T>` | `T \| None` |
+| `std::variant<Ts...>` | `T1 \| T2 \| ...` |
+| `std::function<R(Args...)>` | `Callable[[Args...], R]` |
+| `std::shared_ptr<T>`, `std::unique_ptr<T>` | `T` |
+
+Fallback entries then drop C++ spelling that has no meaning in a stub:
+`const`, `&` and `&&` are removed, a pointer `T *` becomes `T | None`, and a
+namespace prefix is dropped so class types use their stub name
+(`const std::vector<ns::Foo> &` → `list[Foo]`, `const ns::Foo *` → `Foo | None`).
+
+Types matched by no entry pass through unchanged (e.g. `Vec3` stays `Vec3`).
+
+The `pybind11` format renders raw C++ types only, so none of these Python
+mappings belong in `pybind11.output.yml`.
 
 ### Class Stubs
 
@@ -859,6 +1041,38 @@ class Calculator:
     @overload
     def add(self, a: float, b: float) -> float: ...
 ```
+
+### Operators
+
+`pyi` carries the same `operator_mappings` table as `pybind11` (keep the two in
+sync in custom formats), so each mapped operator is stubbed as the dunder
+method pybind11 binds:
+
+```python
+class Vec2:
+    @overload
+    def __add__(self, o: Vec2) -> Vec2: ...
+    @overload
+    def __add__(self, k: float) -> Vec2: ...   # free operator+(const Vec2 &, double)
+    def __neg__(self) -> Vec2: ...
+    def __eq__(self, o: Vec2) -> bool: ...
+    def __bool__(self) -> bool: ...
+    def __repr__(self) -> str: ...
+```
+
+- Free operators attached to a class (first operand is the class) render as
+  methods of that class, with the first operand becoming `self`.
+- All definitions of one dunder — member and free — are emitted together;
+  when there is more than one, each gets `@overload`.
+- `operator<<` (member, attached free, or a free `operator<<(std::ostream &, const T &)`)
+  yields one `def __repr__(self) -> str: ...`.
+- `operator bool` and `operator!` both map to `__bool__`; when both exist a
+  single `def __bool__(self) -> bool: ...` is emitted.
+- Unmapped operators (e.g. `operator=`) and free operators that do not attach
+  to a bound class are not stubbed: pybind11 binds them under names that are
+  not valid Python identifiers.
+
+A class or enum whose body would otherwise be empty renders `...`.
 
 ### Enum Stubs
 
@@ -945,10 +1159,12 @@ constructor_group = {
     is_overloaded: bool,
     constructors: [
         {
-            params: [{ name, original_name, type, raw_type, ownership, default }],
+            params: [{ name, original_name, type, raw_type, ownership, index, default, doc }],
             overload_index: int,
             is_noexcept: bool,
             is_explicit: bool,
+            doc: string|null,         # constructor description
+            return_doc: string|null,  # description of the constructed object
             code_injections: [injection]
         }
     ]

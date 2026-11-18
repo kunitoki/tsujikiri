@@ -220,14 +220,15 @@ class TestPyiGolden:
         return _render(vec_module, load_output_config(resolve_format_path("pyi")))
 
     def test_defaults_stay_native_python_defaults(self, out: str) -> None:
-        assert "def offset(self, dx: float, dy: float = 0.0, scale: float = 1.0) -> geo::Vec2: ..." in out
+        assert "def offset(self, dx: float, dy: float = 0.0, scale: float = 1.0) -> Vec2: ..." in out
 
     def test_constructor_is_not_truncated(self, out: str) -> None:
         assert "def __init__(self, x: float, y: float = 1.0) -> None: ..." in out
 
-    def test_operators_remain_unmapped(self, out: str) -> None:
-        assert "__neg__" not in out
-        assert "__add__" not in out
+    def test_operators_are_stubbed_as_dunders(self, out: str) -> None:
+        assert "def __neg__(self) -> Vec2: ..." in out
+        assert "def __add__(self, b: Vec2) -> Vec2: ..." in out
+        assert "operator" not in out
 
     def test_array_field_is_not_declared(self, out: str) -> None:
         assert "raw:" not in out

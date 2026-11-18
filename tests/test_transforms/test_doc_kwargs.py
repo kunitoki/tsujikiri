@@ -117,6 +117,18 @@ class TestModifyConstructorDoc:
         mod = _module()
         ModifyConstructorStage(**{"class": "Cls", "signature": "int", "doc": "Builds it."}).apply(mod)
         assert _cls(mod).constructors[0].doc == "Builds it."
+        assert _cls(mod).constructors[0].return_doc is None
+
+    def test_sets_return_doc(self):
+        mod = _module()
+        ModifyConstructorStage(**{"class": "Cls", "signature": "int", "return_doc": "A new Cls."}).apply(mod)
+        assert _cls(mod).constructors[0].return_doc == "A new Cls."
+        assert _cls(mod).constructors[0].doc is None
+
+    def test_constructor_param_doc_via_modify_argument(self):
+        mod = _module()
+        ModifyArgumentStage(**{"class": "Cls", "constructor": True, "argument": "v", "doc": "the value"}).apply(mod)
+        assert _cls(mod).constructors[0].parameters[0].doc == "the value"
 
 
 class TestModifyFieldDoc:
@@ -168,11 +180,13 @@ class TestInjectConstructorDoc:
             **{
                 "class": "Cls",
                 "doc": "Builds it.",
+                "return_doc": "A sized Cls.",
                 "parameters": [{"name": "size", "type": "int", "doc": "the size"}],
             }
         ).apply(mod)
         injected = _cls(mod).constructors[-1]
         assert injected.doc == "Builds it."
+        assert injected.return_doc == "A sized Cls."
         assert injected.parameters[0].doc == "the size"
 
 

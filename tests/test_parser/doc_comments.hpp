@@ -11,6 +11,12 @@ public:
     /// @param size The initial size.
     Container(int size);
 
+    /// Constructs a scaled container.
+    /// @param scale The scale factor.
+    /// @param count The element count.
+    /// @return A new scaled container.
+    Container(float scale, int count);
+
     /**
      * Sets the volume.
      *

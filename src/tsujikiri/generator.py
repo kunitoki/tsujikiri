@@ -28,6 +28,7 @@ from jinja2.bccache import Bucket
 
 from tsujikiri.configurations import GenerationConfig, OutputConfig, load_output_config
 from tsujikiri.typesystem import TypesystemConfig
+from tsujikiri.type_patterns import TypePattern, compile_type_patterns
 from tsujikiri.formats import _FORMATS_DIR
 from tsujikiri.generator_filters import (
     camel_to_snake,
@@ -232,6 +233,7 @@ class Generator:
         self.extra_dirs: List[Path] = extra_dirs or []
         self.custom_data: Dict[str, Any] = custom_data or {}
         self.template_cache: TemplateCache = template_cache or TemplateCache()
+        self._type_patterns: List[TypePattern] = compile_type_patterns(output_config.type_mappings)
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -676,6 +678,7 @@ class Generator:
                     "is_noexcept": ctor.is_noexcept,
                     "is_explicit": ctor.is_explicit,
                     "doc": ctor.doc,
+                    "return_doc": ctor.return_doc,
                     "code_injections": [{"position": c.position, "code": c.code} for c in ctor.code_injections],
                     "is_default_expansion": False,
                     "omitted_params": [],
@@ -1001,8 +1004,16 @@ class Generator:
         automatically covers ``const std::string &`` unless a more specific
         entry exists.  Pointer types (``*``) are never stripped — ``char``,
         ``char *`` and ``const char *`` remain distinct.
+
+        Exact entries (format, then typesystem) win; generic placeholder
+        entries such as ``std::optional<{T}>`` are tried last, most specific
+        entry first, each over the same candidates, and map their captured
+        arguments recursively.  Trying the entries in the outer loop keeps a
+        catch-all such as ``{NS}::{T}`` from shadowing ``std::vector<{T}>`` on
+        ``const std::vector<int> &``.
         """
-        for candidate in _type_lookup_candidates(type_spelling):
+        candidates = _type_lookup_candidates(type_spelling)
+        for candidate in candidates:
             if candidate in self.cfg.type_mappings:
                 return self.cfg.type_mappings[candidate]
         if self._typesystem:
@@ -1012,6 +1023,11 @@ class Generator:
             for tt in self._typesystem.typedef_types:
                 if tt.cpp_name == type_spelling:
                     return tt.target_name
+        for pattern in self._type_patterns:
+            for candidate in candidates:
+                captures = pattern.match(candidate)
+                if captures is not None:
+                    return pattern.render(captures, self._map_type)
         return type_spelling
 
     def _is_unsupported(self, type_spelling: str) -> bool:

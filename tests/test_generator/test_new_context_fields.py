@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from typing import List, Optional
 
 from tsujikiri.generator import Generator
 from tsujikiri.ir import IRCodeInjection
@@ -1033,6 +1034,127 @@ class TestDocStringLuaLS:
         # Only the standard header comment should appear
         lines = [ln for ln in out.splitlines() if ln.startswith("---")]
         assert all("@" in ln or ln == "---" for ln in lines)
+
+
+def _doc_method(
+    name: str,
+    doc: Optional[str] = None,
+    is_static: bool = False,
+    param_type: str = "int",
+    operator_type: Optional[str] = None,
+) -> TIRMethod:
+    return TIRMethod(
+        name=name,
+        spelling=name,
+        qualified_name=f"ns::MyClass::{name}",
+        return_type="int",
+        parameters=[TIRParameter("x", param_type)],
+        is_static=is_static,
+        is_operator=operator_type is not None,
+        operator_type=operator_type,
+        doc=doc,
+    )
+
+
+def _doc_function(name: str, doc: Optional[str] = None, param_type: str = "int") -> TIRFunction:
+    return TIRFunction(
+        name=name,
+        qualified_name=f"ns::{name}",
+        namespace="ns",
+        return_type="int",
+        parameters=[TIRParameter("x", param_type)],
+        doc=doc,
+    )
+
+
+class TestMethodDocStringLuaLS:
+    """Method/function summary docs render as a ``---`` line before the annotations."""
+
+    def _class_output(
+        self, methods: List[TIRMethod], output_config, functions: Optional[List[TIRFunction]] = None
+    ) -> str:
+        cls = _simple_class(methods=methods)
+        mod = TIRModule(name="m", classes=[cls], class_by_name={"MyClass": cls}, functions=functions or [])
+        return _generate(mod, output_config)
+
+    def test_method_doc(self, luals_output_config):
+        out = self._class_output([_doc_method("width", doc="Gets the width.")], luals_output_config)
+        assert "---Gets the width.\n---@param x integer\n---@return integer\nfunction MyClass:width(x) end" in out
+
+    def test_undocumented_method_has_no_summary(self, luals_output_config):
+        out = self._class_output([_doc_method("width")], luals_output_config)
+        assert "\n---@param x integer\n---@return integer\nfunction MyClass:width(x) end" in out
+        assert "---\n" not in out
+
+    def test_overloaded_method_uses_first_doc(self, luals_output_config):
+        methods = [_doc_method("set", doc="Sets it."), _doc_method("set", doc="Ignored.", param_type="float")]
+        out = self._class_output(methods, luals_output_config)
+        assert "---Sets it.\n---@param x integer\n---@return integer\n---@overload fun(self: MyClass, x: number)" in out
+        assert "Ignored." not in out
+
+    def test_static_method_doc(self, luals_output_config):
+        out = self._class_output([_doc_method("make", doc="Makes one.", is_static=True)], luals_output_config)
+        assert "---Makes one.\n---@param x integer\n---@return integer\nfunction MyClass.make(x) end" in out
+
+    def test_overloaded_static_method_doc(self, luals_output_config):
+        methods = [
+            _doc_method("count", doc="Counts.", is_static=True),
+            _doc_method("count", is_static=True, param_type="float"),
+        ]
+        out = self._class_output(methods, luals_output_config)
+        assert "---Counts.\n---@param x integer\n---@return integer\n---@overload fun(x: number)" in out
+
+    def test_operator_method_doc(self, luals_output_config):
+        out = self._class_output(
+            [_doc_method("operator+", doc="Adds.", operator_type="operator+")], luals_output_config
+        )
+        assert "---Adds.\n---@param x integer\n---@return integer\nfunction MyClass:__add(x) end" in out
+
+    def test_overloaded_operator_method_doc(self, luals_output_config):
+        methods = [
+            _doc_method("operator+", doc="Adds.", operator_type="operator+"),
+            _doc_method("operator+", operator_type="operator+", param_type="float"),
+        ]
+        out = self._class_output(methods, luals_output_config)
+        assert "---Adds.\n---@param x integer\n---@return integer\n---@overload fun(self: MyClass, x: number)" in out
+
+    def test_tostring_method_doc(self, luals_output_config):
+        out = self._class_output(
+            [_doc_method("operator<<", doc="Text form.", operator_type="operator<<")], luals_output_config
+        )
+        assert "---Text form.\n---@return string\nfunction MyClass:__tostring() end" in out
+
+    def test_overloaded_tostring_method_doc(self, luals_output_config):
+        methods = [
+            _doc_method("operator<<", doc="Text form.", operator_type="operator<<"),
+            _doc_method("operator<<", operator_type="operator<<", param_type="float"),
+        ]
+        out = self._class_output(methods, luals_output_config)
+        assert "---Text form.\n---@return string\nfunction MyClass:__tostring() end" in out
+
+    def test_free_operator_doc(self, luals_output_config):
+        fn = TIRFunction(
+            name="operator+",
+            qualified_name="ns::operator+",
+            namespace="ns",
+            return_type="int",
+            parameters=[TIRParameter("a", "const ns::MyClass &"), TIRParameter("x", "int")],
+            is_operator=True,
+            operator_type="operator+",
+            doc="Adds freely.",
+        )
+        out = self._class_output([], luals_output_config, functions=[fn])
+        assert "---Adds freely.\n---@param x integer\n---@return integer\nfunction MyClass:__add(x) end" in out
+
+    def test_function_doc(self, luals_output_config):
+        mod = TIRModule(name="m", functions=[_doc_function("compute", doc="Computes.")])
+        out = _generate(mod, luals_output_config)
+        assert "---Computes.\n---@param x integer\n---@return integer\nfunction compute(x) end" in out
+
+    def test_overloaded_function_doc(self, luals_output_config):
+        fns = [_doc_function("over", doc="Over int."), _doc_function("over", param_type="float")]
+        out = _generate(TIRModule(name="m", functions=fns), luals_output_config)
+        assert "---Over int.\n---@param x integer\n---@return integer\n---@overload fun(x: number)" in out
 
 
 class TestApiVersionGating:

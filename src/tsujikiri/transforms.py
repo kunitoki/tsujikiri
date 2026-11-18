@@ -421,13 +421,16 @@ class ModifyMethodStage(TransformStage):
 
 
 class ModifyArgumentStage(TransformStage):
-    """Modify a specific argument of a method.
+    """Modify one or more arguments of a method or constructor.
 
     YAML::
       stage: modify_argument
       class: MyClass
-      method: setData
-      argument: data        # by name, or 0-based index as integer
+      method: setData       # method pattern (mutually exclusive with ``constructor``)
+      constructor: false    # optional: target constructors instead of methods
+      signature: "int"      # optional: restrict to one constructor (``constructor: true`` only)
+      argument: data        # name, 0-based index, '*', or a list of names/indices
+      argument_is_regex: false  # optional: treat name selectors as regexes
       rename: value         # optional: new binding name
       remove: false         # optional: set emit=False (remove from signature)
       type: "std::string"   # optional: override type in output
@@ -440,11 +443,28 @@ class ModifyArgumentStage(TransformStage):
     def __init__(self, **kwargs: Any) -> None:
         self.class_pattern: str = kwargs.get("class", "*")
         self.class_is_regex: bool = kwargs.get("class_is_regex", False)
+        self.constructor: bool = bool(kwargs.get("constructor", False))
+        if self.constructor and "method" in kwargs:
+            raise ValueError("'constructor' and 'method' are mutually exclusive")
+        if not self.constructor and "signature" in kwargs:
+            raise ValueError("'signature' requires 'constructor: true'")
+        self.signature: Optional[str] = kwargs.get("signature")
         self.method_pattern: str = kwargs.get("method", "*")
         self.method_is_regex: bool = kwargs.get("method_is_regex", False)
+        self.argument_is_regex: bool = kwargs.get("argument_is_regex", False)
         raw_arg = kwargs["argument"]
-        self.arg_index: Optional[int] = int(raw_arg) if str(raw_arg).isdigit() else None
-        self.arg_name: Optional[str] = None if self.arg_index is not None else str(raw_arg)
+        raw_items: List[Any] = list(raw_arg) if isinstance(raw_arg, list) else [raw_arg]
+        if not raw_items:
+            raise ValueError("'argument' must not be an empty list")
+        self.arg_indices: List[int] = []
+        self.arg_names: List[str] = []
+        for item in raw_items:
+            if isinstance(item, bool) or not isinstance(item, (int, str)):
+                raise ValueError(f"'argument' entries must be names or integer indices, got {item!r}")
+            if isinstance(item, int) or item.isdigit():
+                self.arg_indices.append(int(item))
+            else:
+                self.arg_names.append(item)
         self.rename: Optional[str] = kwargs.get("rename")
         self.remove: bool = kwargs.get("remove", False)
         self.type_override: Optional[str] = kwargs.get("type")
@@ -452,24 +472,31 @@ class ModifyArgumentStage(TransformStage):
         self.ownership: Optional[str] = kwargs.get("ownership")
         self.doc: Optional[str] = kwargs.get("doc")
 
-    def _find_param(self, method: TIRMethod) -> Optional[TIRParameter]:
-        if self.arg_index is not None:
-            params = method.parameters
-            if 0 <= self.arg_index < len(params):
-                return params[self.arg_index]
-            return None
-        for p in method.parameters:
-            if p.name == self.arg_name:
-                return p
-        return None
+    def _find_params(self, parameters: List[TIRParameter]) -> List[TIRParameter]:
+        """Return every parameter selected by an index or a name pattern, in declaration order."""
+        return [
+            p
+            for i, p in enumerate(parameters)
+            if i in self.arg_indices or any(_matches(p.name, n, self.argument_is_regex) for n in self.arg_names)
+        ]
+
+    def _targets(self, cls: TIRClass) -> List[List[TIRParameter]]:
+        if self.constructor:
+            return [
+                ctor.parameters  # type: ignore[misc]
+                for ctor in cls.constructors
+                if self.signature is None or _ctor_signature(ctor) == self.signature  # type: ignore[arg-type]
+            ]
+        return [
+            m.parameters  # type: ignore[misc]
+            for m in cls.methods
+            if _matches(m.name, self.method_pattern, self.method_is_regex)
+        ]
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
-            for method in cls.methods:
-                if _matches(method.name, self.method_pattern, self.method_is_regex):
-                    param = self._find_param(method)
-                    if param is None:
-                        continue
+            for parameters in self._targets(cls):
+                for param in self._find_params(parameters):
                     if self.rename is not None:
                         param.rename = self.rename
                     if self.remove:
@@ -535,6 +562,8 @@ class ModifyConstructorStage(TransformStage):
       class: MyClass
       signature: "int, float"   # comma+space joined param types; "" = default ctor
       remove: false             # optional: set emit=False
+      doc: "Builds it."         # optional: constructor description
+      return_doc: "A new one."  # optional: constructor return description
     """
 
     name = "modify_constructor"
@@ -545,6 +574,7 @@ class ModifyConstructorStage(TransformStage):
         self.signature: str = kwargs.get("signature", "")
         self.remove: bool = kwargs.get("remove", False)
         self.doc: Optional[str] = kwargs.get("doc")
+        self.return_doc: Optional[str] = kwargs.get("return_doc")
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
@@ -554,6 +584,8 @@ class ModifyConstructorStage(TransformStage):
                         ctor.emit = False
                     if self.doc is not None:
                         ctor.doc = self.doc
+                    if self.return_doc is not None:
+                        ctor.return_doc = self.return_doc
 
 
 class RemoveOverloadStage(TransformStage):
@@ -1025,6 +1057,7 @@ class InjectConstructorStage(TransformStage):
         self.class_is_regex: bool = kwargs.get("class_is_regex", False)
         self.parameters: List[Dict[str, str]] = kwargs.get("parameters", [])
         self.doc: Optional[str] = kwargs.get("doc")
+        self.return_doc: Optional[str] = kwargs.get("return_doc")
 
     def apply(self, module: TIRModule) -> None:
         for cls in _find_classes(module, self.class_pattern, self.class_is_regex):
@@ -1036,7 +1069,12 @@ class InjectConstructorStage(TransformStage):
             if is_overload:
                 for existing in cls.constructors:
                     existing.is_overload = True
-            ctor = TIRConstructor(parameters=params, is_overload=is_overload, doc=self.doc)  # type: ignore[arg-type]
+            ctor = TIRConstructor(
+                parameters=params,  # type: ignore[arg-type]
+                is_overload=is_overload,
+                doc=self.doc,
+                return_doc=self.return_doc,
+            )
             cls.constructors.append(ctor)  # type: ignore[arg-type]
 
 

@@ -2,6 +2,7 @@
 // DO NOT EDIT - Auto-generated pybind11 bindings for {{ module_name }} by tsujikiri
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/functional.h>
 
 {% for inc in includes %}
 #include {{ inc }}

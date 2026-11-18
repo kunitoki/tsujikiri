@@ -77,6 +77,7 @@ class TestPrologue:
         out = _gen(mod, pybind11_output_config)
         assert "#include <pybind11/pybind11.h>" in out
         assert "#include <pybind11/stl.h>" in out
+        assert "#include <pybind11/functional.h>" in out
 
     def test_namespace_alias(self, pybind11_output_config):
         mod = TIRModule(name="mymod")

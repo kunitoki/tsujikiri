@@ -2078,3 +2078,80 @@ class TestOutputNewlines:
         data = manifest_path.read_bytes()
         assert b"\r" not in data
         assert data.endswith(b"}\n")
+
+
+# ---------------------------------------------------------------------------
+# Generic type mappings in custom formats
+# ---------------------------------------------------------------------------
+
+
+class TestGenericTypeMappings:
+    @staticmethod
+    def _input(tmp_path: Path) -> Path:
+        hpp = tmp_path / "api.hpp"
+        hpp.write_text(
+            "#include <optional>\n"
+            "#include <vector>\n"
+            "namespace api { std::optional<std::vector<int>> f(const std::optional<float> &x); }\n"
+        )
+        p = tmp_path / "api.input.yml"
+        p.write_text(
+            yaml.dump({"source": {"path": str(hpp), "parse_args": ["-std=c++17"]}, "filters": {"namespaces": ["api"]}}),
+            encoding="utf-8",
+        )
+        return p
+
+    @staticmethod
+    def _format(tmp_path: Path, name: str, mappings: dict[str, str]) -> Path:
+        fmt = tmp_path / f"{name}.output.yml"
+        fmt.write_text(
+            yaml.dump(
+                {
+                    "format_name": name,
+                    "extends": "luals",
+                    "type_mappings": mappings,
+                    "template": '{% extends "luals.tpl" %}\n',
+                }
+            ),
+            encoding="utf-8",
+        )
+        return fmt
+
+    def test_generic_mappings_applied(self, tmp_path: Path) -> None:
+        fmt = self._format(tmp_path, "gen", {"std::optional<{T}>": "{T}?", "std::vector<{T}>": "{T}[]"})
+        stdout, _ = _run("--input", str(self._input(tmp_path)), "--target", str(fmt), "-")
+        assert "---@param x number?" in stdout
+        assert "---@return integer[]?" in stdout
+
+    def test_malformed_mapping_first_target_exits_1(self, tmp_path: Path) -> None:
+        fmt = self._format(tmp_path, "bad", {"x<{A}{B}>": "y"})
+        _, stderr = _run("--input", str(self._input(tmp_path)), "--target", str(fmt), "-", expected_exit=1)
+        assert f"tsujikiri: error: format '{fmt}'" in stderr
+        assert "placeholders must be separated by literal text" in stderr
+
+    def test_malformed_mapping_later_target_exits_1(self, tmp_path: Path) -> None:
+        fmt = self._format(tmp_path, "bad", {"x<{T}>": "{U}"})
+        _, stderr = _run(
+            "--input",
+            str(self._input(tmp_path)),
+            "--target",
+            "luals",
+            str(tmp_path / "ok.lua"),
+            "--target",
+            str(fmt),
+            str(tmp_path / "bad.lua"),
+            expected_exit=1,
+        )
+        assert "value placeholder '{U}' does not appear in the key" in stderr
+
+    def test_validate_config_reports_malformed_mapping(self, tmp_path: Path) -> None:
+        fmt = self._format(tmp_path, "bad", {"x<{A...}, {B...}>": "y"})
+        _, stderr = _run(
+            "--input", str(self._input(tmp_path)), "--target", str(fmt), "-", "--validate-config", expected_exit=1
+        )
+        assert f"ERROR: format '{fmt}': type mapping 'x<{{A...}}, {{B...}}>'" in stderr
+
+    def test_validate_config_accepts_valid_mapping(self, tmp_path: Path) -> None:
+        fmt = self._format(tmp_path, "good", {"std::optional<{T}>": "{T}?"})
+        _, stderr = _run("--input", str(self._input(tmp_path)), "--target", str(fmt), "-", "--validate-config")
+        assert "Config is valid." in stderr

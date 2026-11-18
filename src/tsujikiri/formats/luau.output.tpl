@@ -62,6 +62,22 @@ end
 {%- if has_ctor or static_fields or static_groups %}
 declare {{ cls.name }}: {
 {%- if has_ctor %}
+{%- block class_constructor_docs scoped %}
+{%- for ov in cls.constructor_group.constructors if ov | entity_has_doc %}
+{%- if cls.constructor_group.is_overloaded %}
+    --- new({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %})
+{%- endif %}
+{%- if ov.doc %}
+    --- {{ ov.doc }}
+{%- endif %}
+{%- for p in ov.params if p.doc %}
+    --- @param {{ p.name }} {{ p.doc }}
+{%- endfor %}
+{%- if ov.return_doc %}
+    --- @return {{ ov.return_doc }}
+{%- endif %}
+{%- endfor %}
+{%- endblock %}
 {%- if cls.constructor_group.is_overloaded %}
     new: {% for ov in cls.constructor_group.constructors %}(({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}) -> {{ cls.name }}){% if not loop.last %} & {% endif %}{% endfor %},
 {%- else %}

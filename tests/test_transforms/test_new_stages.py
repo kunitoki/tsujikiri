@@ -3,6 +3,12 @@ modify_constructor, remove_overload, inject_code, set_type_hint."""
 
 from __future__ import annotations
 
+import re
+from typing import Any, List
+
+import pytest
+
+from tsujikiri.configurations import TransformSpec
 from tsujikiri.tir import (
     TIRClass,
     TIRConstructor,
@@ -20,6 +26,7 @@ from tsujikiri.transforms import (
     ModifyMethodStage,
     RemoveOverloadStage,
     SetTypeHintStage,
+    build_pipeline_from_config,
 )
 
 
@@ -220,6 +227,194 @@ class TestModifyArgumentStage:
         process_methods = [m for m in _get_cls(mod).methods if m.name == "process"]
         for m in process_methods:
             assert m.parameters[0].rename is None
+
+
+def _selector_module() -> TIRModule:
+    """A class with multi-parameter methods and overloaded constructors."""
+    cls = TIRClass(
+        name="Cls",
+        qualified_name="ns::Cls",
+        namespace="ns",
+        methods=[
+            TIRMethod(
+                name="draw",
+                spelling="draw",
+                qualified_name="ns::Cls::draw",
+                return_type="void",
+                parameters=[
+                    TIRParameter("ctx_", "void *"),
+                    TIRParameter("x_", "int"),
+                    TIRParameter("y", "int"),
+                    TIRParameter("userData", "void *"),
+                ],
+            ),
+            TIRMethod(
+                name="fill",
+                spelling="fill",
+                qualified_name="ns::Cls::fill",
+                return_type="void",
+                parameters=[TIRParameter("ctx_", "void *"), TIRParameter("color", "int")],
+            ),
+        ],
+        constructors=[
+            TIRConstructor(parameters=[TIRParameter("size_", "int"), TIRParameter("name_", "const char *")]),
+            TIRConstructor(parameters=[TIRParameter("size_", "float")]),
+        ],
+    )
+    return TIRModule(name="m", classes=[cls], class_by_name={"Cls": cls})
+
+
+def _names(params: List[TIRParameter]) -> List[str]:
+    return [p.rename or p.name for p in params if p.emit]
+
+
+class TestModifyArgumentSelectors:
+    def test_list_of_names(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(
+            **{"class": "Cls", "method": "draw", "argument": ["ctx_", "userData"], "remove": True}
+        ).apply(mod)
+        assert _names(_get_method(mod, "draw").parameters) == ["x_", "y"]
+        assert _names(_get_method(mod, "fill").parameters) == ["ctx_", "color"]
+
+    def test_mixed_names_indices_and_digit_strings(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(**{"class": "Cls", "method": "draw", "argument": [0, "2", "userData"], "doc": "d"}).apply(
+            mod
+        )
+        assert [p.doc for p in _get_method(mod, "draw").parameters] == ["d", None, "d", "d"]
+
+    def test_digit_string_scalar_is_index(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(**{"class": "Cls", "method": "fill", "argument": "1", "rename": "c"}).apply(mod)
+        assert _names(_get_method(mod, "fill").parameters) == ["ctx_", "c"]
+
+    def test_regex_names_across_methods(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(
+            **{"class": "Cls", "argument": "ctx_|userData", "argument_is_regex": True, "remove": True}
+        ).apply(mod)
+        assert _names(_get_method(mod, "draw").parameters) == ["x_", "y"]
+        assert _names(_get_method(mod, "fill").parameters) == ["color"]
+
+    def test_regex_is_full_match(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(
+            **{"class": "Cls", "method": "draw", "argument": "x", "argument_is_regex": True, "remove": True}
+        ).apply(mod)
+        assert _names(_get_method(mod, "draw").parameters) == ["ctx_", "x_", "y", "userData"]
+
+    def test_list_of_regexes(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(
+            **{"class": "Cls", "method": "draw", "argument": [".*_", "^y$"], "argument_is_regex": True, "doc": "d"}
+        ).apply(mod)
+        assert [p.doc for p in _get_method(mod, "draw").parameters] == ["d", "d", "d", None]
+
+    def test_wildcard_selects_all(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(**{"class": "Cls", "method": "fill", "argument": "*", "ownership": "cpp"}).apply(mod)
+        assert [p.ownership for p in _get_method(mod, "fill").parameters] == ["cpp", "cpp"]
+
+    def test_partial_matches_and_out_of_range_entries(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(
+            **{"class": "Cls", "method": "fill", "argument": [9, "nope", "color"], "rename": "c"}
+        ).apply(mod)
+        assert _names(_get_method(mod, "fill").parameters) == ["ctx_", "c"]
+
+    def test_duplicate_selectors_apply_once(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(**{"class": "Cls", "method": "fill", "argument": [1, "color", "*"], "doc": "d"}).apply(mod)
+        assert [p.doc for p in _get_method(mod, "fill").parameters] == ["d", "d"]
+
+    def test_scalar_name_still_works(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(**{"class": "Cls", "method": "draw", "argument": "y", "rename": "yy"}).apply(mod)
+        assert _names(_get_method(mod, "draw").parameters) == ["ctx_", "x_", "yy", "userData"]
+
+    def test_constructor_all_overloads(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(**{"class": "Cls", "constructor": True, "argument": "size_", "rename": "size"}).apply(mod)
+        ctors = _get_cls(mod).constructors
+        assert _names(ctors[0].parameters) == ["size", "name_"]
+        assert _names(ctors[1].parameters) == ["size"]
+        assert _names(_get_method(mod, "draw").parameters) == ["ctx_", "x_", "y", "userData"]
+
+    def test_constructor_signature_restricts(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(
+            **{
+                "class": "Cls",
+                "constructor": True,
+                "signature": "int, const char *",
+                "argument": ["size_", "name_"],
+                "argument_is_regex": False,
+                "doc": "d",
+            }
+        ).apply(mod)
+        ctors = _get_cls(mod).constructors
+        assert [p.doc for p in ctors[0].parameters] == ["d", "d"]
+        assert [p.doc for p in ctors[1].parameters] == [None]
+
+    def test_constructor_signature_without_match_is_noop(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(
+            **{"class": "Cls", "constructor": True, "signature": "double", "argument": "*", "remove": True}
+        ).apply(mod)
+        assert all(p.emit for c in _get_cls(mod).constructors for p in c.parameters)
+
+    def test_constructor_false_targets_methods(self) -> None:
+        mod = _selector_module()
+        ModifyArgumentStage(
+            **{"class": "Cls", "constructor": False, "method": "fill", "argument": 0, "remove": True}
+        ).apply(mod)
+        assert _names(_get_method(mod, "fill").parameters) == ["color"]
+        assert all(p.emit for c in _get_cls(mod).constructors for p in c.parameters)
+
+    def test_constructor_param_rename_via_pipeline(self) -> None:
+        mod = _selector_module()
+        pipeline = build_pipeline_from_config(
+            [
+                TransformSpec(
+                    stage="modify_argument",
+                    kwargs={"class": "Cls", "constructor": True, "signature": "float", "argument": 0, "rename": "f"},
+                )
+            ]
+        )
+        pipeline.run(mod)
+        assert _names(_get_cls(mod).constructors[1].parameters) == ["f"]
+        assert _names(_get_cls(mod).constructors[0].parameters) == ["size_", "name_"]
+
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            ({"argument": []}, "must not be an empty list"),
+            ({"argument": True}, "entries must be names or integer indices, got True"),
+            ({"argument": [0, None]}, "got None"),
+            ({"argument": [{"a": 1}]}, "got {'a': 1}"),
+            ({"argument": 1.5}, "got 1.5"),
+            (
+                {"argument": 0, "constructor": True, "method": "draw"},
+                "'constructor' and 'method' are mutually exclusive",
+            ),
+            ({"argument": 0, "signature": "int"}, "'signature' requires 'constructor: true'"),
+        ],
+    )
+    def test_invalid_options_raise(self, kwargs: dict[str, Any], message: str) -> None:
+        with pytest.raises(ValueError, match=re.escape(message)):
+            ModifyArgumentStage(**{"class": "Cls", **kwargs})
+
+    def test_invalid_options_reported_by_pipeline(self) -> None:
+        with pytest.raises(ValueError, match="transform stage 'modify_argument'.*mutually exclusive"):
+            build_pipeline_from_config(
+                [
+                    TransformSpec(
+                        stage="modify_argument",
+                        kwargs={"class": "Cls", "constructor": True, "method": "draw", "argument": 0},
+                    )
+                ]
+            )
 
 
 # ---------------------------------------------------------------------------

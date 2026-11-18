@@ -38,19 +38,34 @@ local {{ cls.name }} = {}
 {%- if not cls.force_abstract %}
 {%- if cls.constructor_group.is_overloaded %}
 {%- set first = cls.constructor_group.constructors[0] %}
+{%- set ns = namespace(documented=false) %}
+{%- for ov in cls.constructor_group.constructors[1:] if ov | entity_has_doc %}{% set ns.documented = true %}{% endfor %}
 {%- block class_constructor_group scoped %}
-{% for p in first.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
-{% endfor -%}---@return {{ cls.name }}
+{%- if ns.documented %}
+{%- for ov in cls.constructor_group.constructors %}
+{% if not loop.first %}
+{% endif %}{% if ov.doc %}---{{ ov.doc }}
+{% endif %}{% for p in ov.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% endfor -%}---@return {{ cls.name }}{% if ov.return_doc %} # {{ ov.return_doc }}{% endif %}
+{% if not loop.first %}---@diagnostic disable-next-line: duplicate-set-field
+{% endif %}function {{ cls.name }}.new({% if ov.params %}{{ ov.params | map(attribute='name') | join(', ') }}{% endif %}) end
+{%- endfor %}
+{%- else %}
+{% if first.doc %}---{{ first.doc }}
+{% endif %}{% for p in first.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% endfor -%}---@return {{ cls.name }}{% if first.return_doc %} # {{ first.return_doc }}{% endif %}
 {%- for ov in cls.constructor_group.constructors[1:] %}
 ---@overload fun({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ cls.name }}
 {%- endfor %}
 function {{ cls.name }}.new({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
+{%- endif %}
 {%- endblock %}
 {%- elif cls.constructor_group.constructors %}
 {%- set ctor = cls.constructor_group.constructors[0] %}
 {%- block class_constructor scoped %}
-{% for p in ctor.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
-{% endfor -%}---@return {{ cls.name }}
+{% if ctor.doc %}---{{ ctor.doc }}
+{% endif %}{% for p in ctor.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% endfor -%}---@return {{ cls.name }}{% if ctor.return_doc %} # {{ ctor.return_doc }}{% endif %}
 function {{ cls.name }}.new({% if ctor.params %}{{ ctor.params | map(attribute='name') | join(', ') }}{% endif %}) end
 {%- endblock %}
 {%- endif %}
@@ -63,7 +78,8 @@ function {{ cls.name }}.new({% if ctor.params %}{{ ctor.params | map(attribute='
 {%- block class_static_method_group scoped %}
 {%- if group.is_overloaded %}
 {%- set first = group.methods[0] %}
-{% for p in first.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% if first.doc %}---{{ first.doc }}
+{% endif %}{% for p in first.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
 {% endfor -%}---@return {{ first.return_type }}{% if first.return_doc %} # {{ first.return_doc }}{% endif %}
 {%- for ov in group.methods[1:] %}
 ---@overload fun({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
@@ -71,7 +87,8 @@ function {{ cls.name }}.new({% if ctor.params %}{{ ctor.params | map(attribute='
 function {{ cls.name }}.{{ group.name }}({% if first.params %}{{ first.params | map(attribute='name') | join(', ') }}{% endif %}) end
 {% else %}
 {%- set method = group.methods[0] %}
-{% for p in method.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% if method.doc %}---{{ method.doc }}
+{% endif %}{% for p in method.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
 {% endfor -%}---@return {{ method.return_type }}{% if method.return_doc %} # {{ method.return_doc }}{% endif %}
 function {{ cls.name }}.{{ group.name }}({% if method.params %}{{ method.params | map(attribute='name') | join(', ') }}{% endif %}) end
 {% endif %}
@@ -81,17 +98,20 @@ function {{ cls.name }}.{{ group.name }}({% if method.params %}{{ method.params 
 {%- if group.is_overloaded %}
 {%- set first = group.methods[0] %}
 {%- if first.is_operator and first.operator_name == "__tostring" %}
----@return string
+{% if first.doc %}---{{ first.doc }}
+{% endif %}---@return string
 function {{ cls.name }}:__tostring() end
 {%- elif first.is_operator and first.operator_name %}
-{% for p in first.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% if first.doc %}---{{ first.doc }}
+{% endif %}{% for p in first.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
 {% endfor -%}---@return {{ first.return_type }}{% if first.return_doc %} # {{ first.return_doc }}{% endif %}
 {%- for ov in group.methods[1:] %}
 ---@overload fun(self: {{ cls.name }}{% if ov.params %}, {{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
 {%- endfor %}
 function {{ cls.name }}:{{ first.operator_name }}({% if first.params %}{{ first.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {%- elif not first.is_operator %}
-{% for p in first.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% if first.doc %}---{{ first.doc }}
+{% endif %}{% for p in first.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
 {% endfor -%}---@return {{ first.return_type }}{% if first.return_doc %} # {{ first.return_doc }}{% endif %}
 {%- for ov in group.methods[1:] %}
 ---@overload fun(self: {{ cls.name }}{% if ov.params %}, {{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
@@ -101,14 +121,17 @@ function {{ cls.name }}:{{ group.name }}({% if first.params %}{{ first.params | 
 {% else %}
 {%- set method = group.methods[0] %}
 {%- if method.is_operator and method.operator_name == "__tostring" %}
----@return string
+{% if method.doc %}---{{ method.doc }}
+{% endif %}---@return string
 function {{ cls.name }}:__tostring() end
 {%- elif method.is_operator and method.operator_name %}
-{% for p in method.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% if method.doc %}---{{ method.doc }}
+{% endif %}{% for p in method.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
 {% endfor -%}---@return {{ method.return_type }}{% if method.return_doc %} # {{ method.return_doc }}{% endif %}
 function {{ cls.name }}:{{ method.operator_name }}({% if method.params %}{{ method.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {%- elif not method.is_operator %}
-{% for p in method.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% if method.doc %}---{{ method.doc }}
+{% endif %}{% for p in method.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
 {% endfor -%}---@return {{ method.return_type }}{% if method.return_doc %} # {{ method.return_doc }}{% endif %}
 function {{ cls.name }}:{{ group.name }}({% if method.params %}{{ method.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {%- endif %}
@@ -123,7 +146,8 @@ function {{ cls.name }}:{{ group.name }}({% if method.params %}{{ method.params 
 {%- block class_free_operator_group scoped %}
 {%- if group.operator_name %}
 {%- set fn = group.functions[0] %}
-{% for p in fn.params[1:] %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% if fn.doc %}---{{ fn.doc }}
+{% endif %}{% for p in fn.params[1:] %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
 {% endfor -%}---@return {{ fn.return_type }}{% if fn.return_doc %} # {{ fn.return_doc }}{% endif %}
 {%- for ov in group.functions[1:] %}
 ---@overload fun(self: {{ cls.name }}{% if ov.params[1:] %}, {{ ov.params[1:] | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
@@ -172,7 +196,8 @@ local {{ enum.name }} = {
 {%- if first.is_deprecated %}
 ---@deprecated {% if first.deprecation_message %}{{ first.deprecation_message }}{% endif %}
 {%- endif %}
-{% for p in first.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% if first.doc %}---{{ first.doc }}
+{% endif %}{% for p in first.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
 {% endfor -%}---@return {{ first.return_type }}{% if first.return_doc %} # {{ first.return_doc }}{% endif %}
 {%- for ov in group.functions[1:] %}
 ---@overload fun({% if ov.params %}{{ ov.params | param_pairs('name', ': ', 'type', ', ') }}{% endif %}): {{ ov.return_type }}
@@ -184,7 +209,8 @@ function {{ group.name }}({% if first.params %}{{ first.params | param_pairs('na
 {%- if fn.is_deprecated %}
 ---@deprecated {% if fn.deprecation_message %}{{ fn.deprecation_message }}{% endif %}
 {%- endif %}
-{% for p in fn.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
+{% if fn.doc %}---{{ fn.doc }}
+{% endif %}{% for p in fn.params %}---@param {{ p.name }} {{ p.type }}{% if p.doc %} {{ p.doc }}{% endif %}
 {% endfor -%}---@return {{ fn.return_type }}{% if fn.return_doc %} # {{ fn.return_doc }}{% endif %}
 function {{ group.name }}({% if fn.params %}{{ fn.params | param_pairs('name', '', '', ', ') }}{% endif %}) end
 {% endif %}

@@ -104,10 +104,13 @@ class ModifyArgumentStage(TransformStage):
     name: str
     class_pattern: str
     class_is_regex: bool
+    constructor: bool
+    signature: str | None
     method_pattern: str
     method_is_regex: bool
-    arg_index: int | None
-    arg_name: str | None
+    argument_is_regex: bool
+    arg_indices: list[int]
+    arg_names: list[str]
     rename: str | None
     remove: bool
     type_override: str | None
@@ -137,6 +140,7 @@ class ModifyConstructorStage(TransformStage):
     signature: str
     remove: bool
     doc: str | None
+    return_doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 
@@ -272,6 +276,7 @@ class InjectConstructorStage(TransformStage):
     class_is_regex: bool
     parameters: list[dict[str, str]]
     doc: str | None
+    return_doc: str | None
     def __init__(self, **kwargs: Any) -> None: ...
     def apply(self, module: TIRModule) -> None: ...
 

@@ -76,10 +76,14 @@ docs declaratively instead of relying on template-side `custom_data` lookups:
   `modify_constructor`, `modify_enum`, `modify_function`, `inject_method`,
   `inject_constructor`, `inject_function`.
 - `return_doc` — documentation for the return value (`node.return_doc`). Accepted
-  by `modify_method`, `modify_function`, `inject_method`, `inject_function`.
+  by `modify_method`, `modify_function`, `modify_constructor`, `inject_method`,
+  `inject_constructor`, `inject_function`. On constructors it describes the
+  constructed object (LuaLS `---@return Cls # ...`, Luau `--- @return ...`,
+  Python `Returns:`).
 - per-parameter `doc` — each entry in a `parameters:` list (on `inject_method`,
   `inject_constructor`, `inject_function`) may carry a `doc:` key, and
-  `modify_argument`'s `doc` documents a single existing parameter.
+  `modify_argument`'s `doc` documents the selected existing parameter(s) of
+  methods or, with `constructor: true`, of constructors.
 
 These override any documentation auto-extracted from C++ comments
 (see [Documentation extraction](attributes.md#documentation-extraction)).
@@ -100,9 +104,9 @@ Precedence is **transform › attribute › extracted comment**.
 | `add_type_mapping` | Rewrite a C++ type spelling globally | `from`, `to` |
 | `modify_method` | Multi-field edit on matching methods | `class`, `method` |
 | `modify_class` | Multi-field edit on matching classes (rename/remove/doc) | `class` |
-| `modify_argument` | Edit a single parameter of a method | `class`, `method`, `argument` |
+| `modify_argument` | Edit one or more parameters of methods or constructors | `class`, `argument` |
 | `modify_field` | Edit a class field | `class`, `field` |
-| `modify_constructor` | Remove a constructor by signature | `class`, `signature` |
+| `modify_constructor` | Remove or document a constructor by signature | `class`, `signature` |
 | `remove_overload` | Remove one overload of a method | `class`, `method`, `signature` |
 | `inject_code` | Insert raw code at a position in output | `target`, `position`, `code` |
 | `set_type_hint` | Override class-level type trait metadata | `class` |
@@ -326,7 +330,9 @@ Appends a synthetic `TIRMethod` to a class. The method appears in the output exa
 | `class` | string | — | Target class name (required; no regex, no wildcard) |
 | `name` | string | — | Name of the injected method (required) |
 | `return_type` | string | `"void"` | C++ return type spelling |
-| `parameters` | list | `[]` | Each item has `name` (string) and `type` (string) |
+| `parameters` | list | `[]` | Each item has `name` (string), `type` (string) and optional `doc` (string) |
+| `doc` | string | — | Constructor description |
+| `return_doc` | string | — | Description of the constructed object |
 | `is_static` | bool | `false` | Whether to register as a static method |
 | `wrapper_code` | string | `null` | Complete callable expression (e.g. a lambda) bound instead of `&Class::method` |
 
@@ -489,13 +495,14 @@ class level.
 
 ## `modify_argument`
 
-Edits a single parameter of one or more matching methods. Can rename the parameter, remove it from the binding signature, override its type or default value, and set ownership semantics.
+Edits one or more parameters of matching methods — or, with `constructor: true`, of matching constructors. Can rename parameters, remove them from the binding signature, override their type or default value, set ownership semantics, and document them.
 
 ```yaml
 - stage: modify_argument
   class: MyClass
-  method: setData
-  argument: data          # by parameter name, OR 0-based integer index
+  method: setData         # method pattern (omit / mutually exclusive with constructor: true)
+  argument: data          # name, 0-based index, "*", or a list of names/indices
+  argument_is_regex: false
   class_is_regex: false
   method_is_regex: false
   rename: value           # optional: new parameter name in binding
@@ -503,6 +510,7 @@ Edits a single parameter of one or more matching methods. Can rename the paramet
   type: "std::string"     # optional: override type in output
   default: "std::string{}"  # optional: override default expression
   ownership: "cpp"        # optional: "none" | "cpp" | "script"
+  doc: "The payload."     # optional: parameter documentation
 ```
 
 **All keys:**
@@ -511,16 +519,26 @@ Edits a single parameter of one or more matching methods. Can rename the paramet
 |-----|------|---------|-------|
 | `class` | string | `"*"` | Class name pattern |
 | `class_is_regex` | bool | `false` | Treat `class` as regex |
-| `method` | string | `"*"` | Method name pattern |
+| `method` | string | `"*"` | Method name pattern; not allowed together with `constructor: true` |
 | `method_is_regex` | bool | `false` | Treat `method` as regex |
-| `argument` | string or int | — | Parameter name or 0-based index (required) |
+| `constructor` | bool | `false` | Target the class's constructors instead of its methods |
+| `signature` | string | — | Restrict to the constructor with this comma+space joined parameter type signature (same format as [`modify_constructor`](#modify_constructor)); requires `constructor: true` |
+| `argument` | string, int, or list | — | Parameter selector(s) (required, see below) |
+| `argument_is_regex` | bool | `false` | Treat name selectors in `argument` as regexes (full match) |
 | `rename` | string | — | New parameter name |
 | `remove` | bool | `false` | Set `emit=False` — hides from signature |
 | `type` | string | — | Override type spelling in output |
 | `default` | string | — | Override default expression |
 | `ownership` | string | — | `"none"` \| `"cpp"` \| `"script"` |
+| `doc` | string | — | Parameter documentation (overrides extracted `@param` docs) |
 
-**Selecting by index:** If `argument` is a string of digits (e.g. `"0"`, `"1"`), it selects by zero-based position. Otherwise it selects by name.
+**Selecting parameters:** `argument` accepts a single selector or a non-empty list of selectors; a parameter is edited when *any* selector matches it (each parameter is edited at most once):
+
+- an integer, or a string of digits (`0`, `"1"`), selects by zero-based position — out-of-range indices are ignored;
+- `"*"` selects every parameter;
+- any other string selects by parameter name, or by full-match regex when `argument_is_regex: true`.
+
+Invalid configurations are rejected when the pipeline is built (and by `--validate-config`): an empty list, entries that are not names or integers (e.g. `true`, `null`, maps), `constructor: true` together with `method`, and `signature` without `constructor: true`.
 
 **Example — rename a parameter with a trailing underscore convention:**
 ```yaml
@@ -540,6 +558,41 @@ transforms:
     method: process
     argument: 0           # first parameter (by index)
     remove: true          # hidden from callers; must have a default or wrapper
+```
+
+**Example — remove several parameters at once, across every method of a class:**
+```yaml
+transforms:
+  - stage: modify_argument
+    class: Renderer
+    argument: [ctx, userData, 3]   # by name and by index
+    remove: true
+
+  - stage: modify_argument
+    class: ".*"
+    class_is_regex: true
+    argument: "(ctx|userData)_?"   # one regex instead of many entries
+    argument_is_regex: true
+    remove: true
+```
+
+**Example — rename constructor parameters:**
+```yaml
+transforms:
+  # every constructor of Widget: size_ -> size
+  - stage: modify_argument
+    class: Widget
+    constructor: true
+    argument: size_
+    rename: size
+
+  # only Widget(int, const char *): document its second parameter
+  - stage: modify_argument
+    class: Widget
+    constructor: true
+    signature: "int, const char *"
+    argument: 1
+    doc: "Display name."
 ```
 
 **Example — add a default value for an optional parameter:**
@@ -610,13 +663,15 @@ transforms:
 
 ## `modify_constructor`
 
-Removes a specific constructor from the binding by matching its parameter type signature.
+Removes or documents a specific constructor, matched by its parameter type signature.
 
 ```yaml
 - stage: modify_constructor
   class: MyClass
   signature: "int, float"   # comma+space joined param types
-  remove: true              # currently only remove is supported
+  remove: false             # optional: hide the constructor
+  doc: "Builds a MyClass."  # optional: constructor description
+  return_doc: "A new MyClass."  # optional: description of the constructed object
 ```
 
 **All keys:**
@@ -627,6 +682,10 @@ Removes a specific constructor from the binding by matching its parameter type s
 | `class_is_regex` | bool | `false` | Treat `class` as regex |
 | `signature` | string | `""` | Comma+space joined parameter type spellings; `""` = default constructor |
 | `remove` | bool | `false` | Set `emit=False` on the matched constructor |
+| `doc` | string | — | Constructor description (overrides the extracted comment) |
+| `return_doc` | string | — | Description of the constructed object (overrides an extracted `@return`) |
+
+To document or rename constructor *parameters*, use [`modify_argument`](#modify_argument) with `constructor: true`.
 
 **Signature format:** join the parameter type spellings exactly as libclang reports them, separated by `, `. For `Circle(double radius)`, the signature is `"double"`. For `Shape(const char* name, int id)`, the signature is `"const char *, int"`.
 
@@ -732,7 +791,7 @@ Inserts arbitrary raw code at a specific position in the generated output. The c
 | `method` | `TIRMethod.code_injections` | `{{ method.code_injections \| code_at("...") }}` |
 | `constructor` | `TIRConstructor.code_injections` | `{{ ctor.code_injections \| code_at("...") }}` |
 
-**Template requirement:** The Jinja2 template must use `{{ code_injections | code_at("beginning") }}` and `{{ code_injections | code_at("end") }}` at appropriate positions. Both built-in formats (luabridge3 and luals) support module-level and class-level injections.
+**Template requirement:** The Jinja2 template must use `{{ code_injections | code_at("beginning") }}` and `{{ code_injections | code_at("end") }}` at appropriate positions. All built-in formats render module-level and class-level injections.
 
 **Example — inject a custom method into the luabridge3 class block:**
 ```yaml
@@ -756,6 +815,43 @@ transforms:
     code: |
       // Bindings generated for mylib v2.1 — DO NOT EDIT
 ```
+
+**Recipe — hand-written Lua type annotations (LuaLS / Luau):**
+
+Put annotations that cannot be derived from C++ (aliases, callback signatures, Lua-side helpers, extra fields) in a format-specific override, so they only reach the stub file. `format_overrides.<format>.transforms` run after the global transforms for that format only:
+
+```yaml
+format_overrides:
+  luals:
+    transforms:
+      # extra ---@field lines, attached to the generated ---@class Widget block
+      - stage: inject_code
+        target: class
+        class: Widget
+        position: beginning
+        code: |
+          ---@field userData any Arbitrary Lua payload.
+
+      # free-standing declarations, after all generated classes
+      - stage: inject_code
+        target: module
+        position: end
+        code: |
+
+          ---@alias WidgetCallback fun(w: Widget, size: integer): boolean
+
+          ---@param cb WidgetCallback
+          function Widget.onResize(cb) end
+  luau:
+    transforms:
+      - stage: inject_code
+        target: module
+        position: end
+        code: |
+          export type WidgetCallback = (w: Widget, size: number) -> boolean
+```
+
+In LuaLS, `target: class` + `position: beginning` lands right after the generated `---@class`/`---@field` lines, so injected `---@field` lines extend the class annotation. Format-override transforms run once per source entry; with several `sources`, a module-level injection would be emitted once per source. In that case, add the block once through [`template_extends`](output-formats.md#extending-a-built-in-format) by overriding the format's `epilogue` block instead.
 
 **Example — inject code at the beginning of every Shape constructor:**
 ```yaml

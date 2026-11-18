@@ -1,12 +1,12 @@
-![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=32)
+![Backdrop](https://raw.githubusercontent.com/kunitoki/tsujikiri/main/backdrop.jpeg?x=34)
 
-[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=32)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
-[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=32)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
-[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=32)](https://codecov.io/gh/kunitoki/tsujikiri)
-[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=32)](https://tsujikiri.readthedocs.io/en/latest/)
-[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=32)](https://pypi.org/project/tsujikiri/)
-[![Downloads](https://img.shields.io/pypi/dw/tsujikiri?x=32)](https://pypistats.org/packages/tsujikiri)
-[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=32)](https://pypi.org/project/tsujikiri/)
+[![Tests](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml/badge.svg?x=34)](https://github.com/kunitoki/tsujikiri/actions/workflows/tests.yml)
+[![Type Check](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml/badge.svg?x=34)](https://github.com/kunitoki/tsujikiri/actions/workflows/typecheck.yml)
+[![Coverage](https://codecov.io/gh/kunitoki/tsujikiri/graph/badge.svg?token=5HVQQVUNFM&x=34)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Documentation](https://app.readthedocs.org/projects/tsujikiri/badge/?version=latest&x=34)](https://tsujikiri.readthedocs.io/en/latest/)
+[![PyPI version](https://img.shields.io/pypi/v/tsujikiri?x=34)](https://pypi.org/project/tsujikiri/)
+[![Downloads](https://img.shields.io/pypi/dw/tsujikiri?x=34)](https://pypistats.org/packages/tsujikiri)
+[![Python](https://img.shields.io/pypi/pyversions/tsujikiri?x=34)](https://pypi.org/project/tsujikiri/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 # tsujikiri — 辻斬り
@@ -296,7 +296,7 @@ The test suite covers parsing, filtering, transforms, generation, CLI integratio
 
 ## Coverage
 
-[![Coverage tree](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?x=32&token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
+[![Coverage tree](https://codecov.io/gh/kunitoki/tsujikiri/graphs/tree.svg?x=34&token=5HVQQVUNFM)](https://codecov.io/gh/kunitoki/tsujikiri)
 
 ---
 

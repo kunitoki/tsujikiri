@@ -424,6 +424,17 @@ class TestBuiltinReturnsAndParam:
         _processor().apply(_make_module(cls))
         assert method.return_doc == "the result"
 
+    def test_sets_return_doc_and_param_doc_on_constructor(self):
+        param = TIRParameter(name="size", type_spelling="int")
+        ctor = TIRConstructor(
+            parameters=[param],
+            attributes=['tsujikiri::returns("a new object")', 'tsujikiri::param("size", "initial size")'],
+        )
+        cls = _make_class(constructors=[ctor])
+        _processor().apply(_make_module(cls))
+        assert ctor.return_doc == "a new object"
+        assert param.doc == "initial size"
+
     def test_returns_no_args_is_noop(self):
         method = _make_method(attrs=["tsujikiri::returns"])
         cls = _make_class(methods=[method])
@@ -510,6 +521,13 @@ class TestBuiltinRenameArgument:
         method = _make_method(attrs=['tsujikiri::rename_argument("x")'])
         cls = _make_class(methods=[method])  # type: ignore[arg-type]
         _processor().apply(_make_module(cls))  # no crash
+
+    def test_on_constructor(self):
+        param = TIRParameter(name="size_", type_spelling="int")
+        ctor = TIRConstructor(parameters=[param], attributes=['tsujikiri::rename_argument("size_", "size")'])
+        cls = _make_class(constructors=[ctor])
+        _processor().apply(_make_module(cls))
+        assert param.rename == "size"
 
     def test_on_function(self):
         param = TIRParameter(name="radius", type_spelling="double")

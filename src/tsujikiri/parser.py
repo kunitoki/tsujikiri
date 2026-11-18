@@ -265,6 +265,9 @@ def _parse_parameters(cursor, params: Optional[List] = None) -> List[IRParameter
 # Matches [[content]] where content has no unbalanced brackets.
 _ATTR_BLOCK_RE = re.compile(r"\[\[([^\[\]]+?)\]\]")
 
+# One or more ``[[...]]`` blocks at the very start of a line.
+_LEADING_ATTRS_RE = re.compile(r"\s*(?:\[\[[^\[\]]+?\]\]\s*)+")
+
 # ``clang::annotate("<spec>")`` is an alias for the ``[[<spec>]]`` attribute.
 # libclang surfaces it as an ANNOTATE_ATTR child cursor (whose spelling is the
 # unescaped payload) rather than through the source text, so _collect_attr_blocks
@@ -317,12 +320,43 @@ def _collect_attr_blocks(text: str) -> List[str]:
     """
     result = []
     for m in _ATTR_BLOCK_RE.finditer(text):
-        for part in m.group(1).split(","):
+        for part in _split_attr_list(m.group(1)):
             part = part.strip()
             if not part or _ANNOTATE_RE.match(part):
                 continue
             result.append(part)
     return result
+
+
+def _split_attr_list(text: str) -> List[str]:
+    """Split an attribute list on commas outside parentheses and string literals.
+
+    ``ns::a, ns::b("x, y", "z")`` yields ``["ns::a", ' ns::b("x, y", "z")']``.
+    """
+    parts: List[str] = []
+    depth = 0
+    quote = ""
+    escaped = False
+    start = 0
+    for i, ch in enumerate(text):
+        if quote:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            parts.append(text[start:i])
+            start = i + 1
+    parts.append(text[start:])
+    return parts
 
 
 def _get_attributes(cursor, annotate_attrs: Optional[List] = None) -> List[str]:
@@ -369,10 +403,16 @@ def _get_attributes(cursor, annotate_attrs: Optional[List] = None) -> List[str]:
     # before the declaration, making start_line the attribute line and start_col
     # point past the "[[". In that case "before" misses the "[["; scan the full
     # start line when it contains "[[" that "before" did not capture.
+    # A single-line declaration (``[[attr]] void f();``) contains a terminator,
+    # so only the attribute blocks leading the line are taken in that case.
     full_start = lines[start_line - 1]
     if "[[" in full_start and "[[" not in before:
         if not any(c in full_start for c in (";", "{", "}")):
             attrs.extend(_collect_attr_blocks(full_start))
+        else:
+            leading = _LEADING_ATTRS_RE.match(full_start)
+            if leading:
+                attrs.extend(_collect_attr_blocks(leading.group(0)))
 
     # Text after the cursor end on the same line (trailing attr)
     after = lines[end_line - 1][end_col - 1 :]
@@ -453,8 +493,9 @@ _DOC_COMMAND_RE = re.compile(r"^[@\\](\w+)\b[ \t]*(.*)$")
 def _strip_comment_markers(raw: str) -> List[str]:
     """Strip C/C++ comment delimiters from a raw comment, returning content lines.
 
-    Handles ``///``, ``//!``, ``//``, ``/** ... */``, ``/*! ... */`` and the
-    per-line leading ``*`` convention. Returned lines keep their interior text
+    Handles ``///``, ``//!``, ``//``, ``/** ... */``, ``/*! ... */``, their
+    trailing-member ``<`` forms (``///<``, ``/**< ... */``) and the per-line
+    leading ``*`` convention. Returned lines keep their interior text
     but have surrounding markers and a single leading space removed.
     """
     text = raw.strip()
@@ -463,6 +504,8 @@ def _strip_comment_markers(raw: str) -> List[str]:
         text = text[2:]
         if text.startswith(("*", "!")):
             text = text[1:]
+            if text.startswith("<"):
+                text = text[1:]
         if text.endswith("*/"):
             text = text[:-2]
         lines = []
@@ -482,6 +525,8 @@ def _strip_comment_markers(raw: str) -> List[str]:
             stripped = stripped[2:]
             if stripped.startswith(("/", "!")):
                 stripped = stripped[1:]
+                if stripped.startswith("<"):
+                    stripped = stripped[1:]
             if stripped.startswith(" "):
                 stripped = stripped[1:]
         lines.append(stripped.rstrip())
@@ -704,18 +749,43 @@ def _is_anonymous_enum(cursor) -> bool:
     return not s or s.startswith("(") or "unnamed" in s
 
 
+def _is_inherited_enumerator_comment(cursor, previous) -> bool:
+    """Return True if libclang handed *cursor* the doc comment of the *previous* enumerator.
+
+    libclang attaches a leading doc comment to every following enumerator up to the
+    next comment (``/// a`` above ``A, B`` documents both).  The comment is only
+    genuinely B's own when another comment starts between the two enumerators.
+    """
+    if previous is None or not cursor.raw_comment or cursor.raw_comment != previous.raw_comment:
+        return False
+    lines = _read_source_lines(cursor.location.file.name)
+    end = previous.extent.end
+    start = cursor.extent.start
+    if end.line == start.line:
+        gap = lines[end.line - 1][end.column - 1 : start.column - 1]
+    else:
+        gap_lines = [lines[end.line - 1][end.column - 1 :], *lines[end.line : start.line - 1]]
+        gap_lines.append(lines[start.line - 1][: start.column - 1])
+        # A trailing ``///<`` comment on the previous enumerator's line belongs to it.
+        gap_lines[0] = re.sub(r"(//[/!]<|/\*[*!]<).*", "", gap_lines[0])
+        gap = "\n".join(gap_lines)
+    return "//" not in gap and "/*" not in gap
+
+
 def _parse_enum(cursor, namespace: str) -> IREnum:
     is_anonymous = _is_anonymous_enum(cursor)
     name = cursor.spelling if not is_anonymous else f"__anon_enum_{cursor.location.line}"
     qualified = f"{namespace}::{name}" if namespace else name
     values = []
     annotate_attrs = []
+    previous = None
     for child in cursor.get_children():
         kind = child.kind
         if kind == CursorKind.ANNOTATE_ATTR:
             annotate_attrs.append(child)
         elif kind == CursorKind.ENUM_CONSTANT_DECL:
-            value_doc, _vp, _vr = _extract_docs(child)
+            value_doc = None if _is_inherited_enumerator_comment(child, previous) else _extract_docs(child)[0]
+            previous = child
             values.append(
                 IREnumValue(
                     name=child.spelling,
@@ -893,7 +963,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
     is_ctor_overload = len(public_ctors) > 1
     for ctor, ctor_parameters, ctor_ch, ctor_toks in public_ctors:
         deprecated = _is_deprecated(ctor)
-        ctor_doc, ctor_param_docs, _ctor_return_doc = _extract_docs(ctor)
+        ctor_doc, ctor_param_docs, ctor_return_doc = _extract_docs(ctor)
         _apply_param_docs(ctor_parameters, ctor_param_docs)
         ir_class.constructors.append(
             IRConstructor(
@@ -906,6 +976,7 @@ def _parse_class(cursor, namespace: str, parent_name: Optional[str] = None) -> I
                 deprecation_message=_get_deprecation_message(ctor) if deprecated else None,
                 attributes=_get_attributes(ctor, annotate_attrs=ctor_ch[1]),
                 doc=ctor_doc,
+                return_doc=ctor_return_doc,
             )
         )
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Dict, Optional
 
 import pytest
 
@@ -42,6 +43,17 @@ class TestExtractionFromHeader:
         ctor = cls.constructors[0]
         assert ctor.doc == "Constructs a container."
         assert ctor.parameters[0].doc == "The initial size."
+        assert ctor.return_doc is None
+
+    def test_constructor_overload_docs_and_return_doc(self, doc_module):
+        cls = self._container(doc_module)
+        ctor = cls.constructors[1]
+        assert ctor.doc == "Constructs a scaled container."
+        assert {p.name: p.doc for p in ctor.parameters} == {
+            "scale": "The scale factor.",
+            "count": "The element count.",
+        }
+        assert ctor.return_doc == "A new scaled container."
 
     def test_block_comment_method_and_params(self, doc_module):
         cls = self._container(doc_module)
@@ -104,6 +116,18 @@ class TestStripCommentMarkers:
 
     def test_line_continuation_without_marker(self):
         assert _strip_comment_markers("/// a\nplain") == ["a", "plain"]
+
+    def test_trailing_member_line_markers(self):
+        assert _strip_comment_markers("///< after") == ["after"]
+        assert _strip_comment_markers("//!< after") == ["after"]
+
+    def test_trailing_member_block_markers(self):
+        assert _strip_comment_markers("/**< after */") == ["after"]
+        assert _strip_comment_markers("/*!< after */") == ["after"]
+
+    def test_plain_comment_keeps_less_than(self):
+        assert _strip_comment_markers("//< text") == ["< text"]
+        assert _strip_comment_markers("/*< text */") == ["< text"]
 
 
 # ---------------------------------------------------------------------------
@@ -216,3 +240,62 @@ class TestApplyParamDocs:
         _apply_param_docs(params, {"b": "doc b"})
         assert params[0].doc is None
         assert params[1].doc == "doc b"
+
+
+# ---------------------------------------------------------------------------
+# Enumerator docs — libclang leaks a leading comment onto following enumerators
+# ---------------------------------------------------------------------------
+
+
+class TestEnumeratorDocs:
+    @pytest.fixture(scope="class")
+    def enums(self, tmp_path_factory: pytest.TempPathFactory) -> Dict[str, Dict[str, Optional[str]]]:
+        header = tmp_path_factory.mktemp("enum_docs") / "enum_docs.hpp"
+        header.write_text(
+            "namespace ee {\n"
+            "enum A { /// a1\n"
+            "    A1, A2, A3 };\n"
+            "enum B {\n"
+            "    B1, ///< b1\n"
+            "    B2,\n"
+            "    /** b3 */\n"
+            "    B3,\n"
+            "    B4\n"
+            "};\n"
+            "enum class C {\n"
+            "    C1,\n"
+            "    /// c2\n"
+            "    C2 = 4,\n"
+            "\n"
+            "    C3\n"
+            "};\n"
+            "enum D {\n"
+            "    /// same\n"
+            "    D1,\n"
+            "    /// same\n"
+            "    D2,\n"
+            "    D3, /*!< trail */\n"
+            "    D4\n"
+            "};\n"
+            "enum E { /// same line\n"
+            "    E1, /// same line\n"
+            "    E2 };\n"
+            "}\n"
+        )
+        module = parse_translation_unit(SourceConfig(path=str(header), parse_args=["-std=c++17"]), ["ee"], "ee")
+        return {e.name: {v.name: v.doc for v in e.values} for e in module.enums}
+
+    def test_leading_comment_documents_only_first(self, enums: Dict[str, Dict[str, Optional[str]]]) -> None:
+        assert enums["A"] == {"A1": "a1", "A2": None, "A3": None}
+
+    def test_trailing_and_block_comments(self, enums: Dict[str, Dict[str, Optional[str]]]) -> None:
+        assert enums["B"] == {"B1": "b1", "B2": None, "B3": "b3", "B4": None}
+
+    def test_blank_line_does_not_extend_comment(self, enums: Dict[str, Dict[str, Optional[str]]]) -> None:
+        assert enums["C"] == {"C1": None, "C2": "c2", "C3": None}
+
+    def test_identical_own_comments_are_kept(self, enums: Dict[str, Dict[str, Optional[str]]]) -> None:
+        assert enums["D"] == {"D1": "same", "D2": "same", "D3": "trail", "D4": None}
+
+    def test_identical_comment_on_same_line_is_kept(self, enums: Dict[str, Dict[str, Optional[str]]]) -> None:
+        assert enums["E"]["E1"] == "same line"
